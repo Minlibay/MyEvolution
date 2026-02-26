@@ -1,0 +1,236 @@
+{
+  "experiment_info": {
+    "name": "basic_tool_evolution",
+    "description": "Базовый эксперимент по эволюции инструментов",
+    "duration": 10000,
+    "actual_duration": 872,
+    "execution_time": 4.145662307739258,
+    "config": {
+      "experiment": {
+        "name": "basic_tool_evolution",
+        "description": "Базовый эксперимент по эволюции инструментов",
+        "duration": 10000
+      },
+      "simulation": {
+        "world": {
+          "width": 100,
+          "height": 100,
+          "seed": 42
+        },
+        "agents": {
+          "initial_population": 20,
+          "max_population": 100
+        },
+        "learning": {
+          "learning_rate": 0.1,
+          "discount_factor": 0.95,
+          "epsilon_decay": 0.995
+        },
+        "evolution": {
+          "reproduction_interval": 100,
+          "mutation_rate": 0.1,
+          "selection_pressure": 0.8
+        }
+      },
+      "environment": {
+        "resource_spawn_rate": 0.1,
+        "season_length": 1000
+      },
+      "logging": {
+        "log_interval": 10,
+        "save_interval": 1000,
+        "metrics": [
+          "population",
+          "technology",
+          "behavior"
+        ]
+      }
+    }
+  },
+  "basic_statistics": {
+    "final_population": 0,
+    "total_births": 0,
+    "total_deaths": 0,
+    "total_discoveries": 0,
+    "total_tools": 0,
+    "unique_tool_types": 0,
+    "final_generation": 0,
+    "genetic_diversity": 0,
+    "average_intelligence": 0,
+    "average_exploration_rate": 0,
+    "resource_density": 0
+  },
+  "technology_analysis": {
+    "total_discoveries": 0,
+    "discovery_trend": 0.0,
+    "discovery_acceleration_points": [],
+    "tool_surge_points": [],
+    "final_complexity": 0.0,
+    "complexity_trend": 0.0
+  },
+  "evolution_analysis": {
+    "genetic_diversity_trend": -0.00020684796526135914,
+    "intelligence_evolution": 0.0002650106007754491,
+    "exploration_evolution": 1.492552813534108e-05,
+    "correlations": {
+      "diversity_intelligence": -0.7380085713299566,
+      "diversity_population": 0.41306318921190494,
+      "intelligence_discoveries": NaN
+    },
+    "diversity_peaks": [
+      [
+        143,
+        0.32363649124692756
+      ],
+      [
+        236,
+        0.2937945069058733
+      ]
+    ],
+    "intelligence_peaks": [
+      [
+        236,
+        0.5945416530005747
+      ]
+    ]
+  },
+  "cultural_analysis": {
+    "action_diversity_evolution": 0.0,
+    "learning_acceleration": -1.4518410790737808,
+    "knowledge_spread_rate": 0.0,
+    "cultural_complexity_index": 0.0
+  },
+  "insights": [],
+  "comprehensive_analysis": {
+    "success_evaluation": {
+      "survival_score": 0.0,
+      "discovery_score": 0.0,
+      "tool_score": 0.0,
+      "diversity_score": 0,
+      "overall_score": 0.0,
+      "success_level": "Плохо"
+    },
+    "expectation_comparison": {
+      "population": {
+        "expected": 10,
+        "actual": 0,
+        "comparison": "Ниже ожиданий"
+      },
+      "discoveries": {
+        "expected": 50,
+        "actual": 0,
+        "comparison": "Ниже ожиданий"
+      }
+    },
+    "key_patterns": [
+      "Низкая культурная сложность"
+    ],
+    "recommendations": [
+      "Рассмотрите увеличение начальной популяции или улучшение условий выживания",
+      "Увеличьте exploration_rate или добавьте больше ресурсов для стимуляции открытий",
+      "Знания распространяются медленно - увеличьте культурную передачу"
+    ]
+  },
+  "final_metrics": {
+    "timestamp": 871,
+    "population": {
+      "size": 0,
+      "average_age": 0.0,
+      "average_health": 0.0,
+      "average_energy": 0.0,
+      "average_hunger": 0.0,
+      "birth_rate": 0.0,
+      "death_rate": 0.0
+    },
+    "genetics": {
+      "diversity": 0.0,
+      "average_intelligence": 0.0,
+      "average_exploration_bias": 0.0,
+      "average_strength": 0.0
+    },
+    "technology": {
+      "total_tools": 0,
+      "unique_tool_types": 0,
+      "average_complexity": 0.0,
+      "discovery_rate": 0.0,
+      "total_discoveries": 0
+    },
+    "behavior": {
+      "average_exploration_rate": 0.0,
+      "action_diversity": 0.0,
+      "cooperation_events": 0,
+      "total_actions": 0
+    },
+    "environment": {
+      "resource_density": 0.0095,
+      "object_types_distribution": {
+        "stone": 95,
+        "bone": 5,
+        "wood": 1,
+        "plant": 1
+      },
+      "season": 0,
+      "temperature": 29.691343328679274
+    },
+    "economics": {
+      "total_resources_collected": 0,
+      "total_resources_consumed": 0,
+      "average_inventory_size": 0.0
+    },
+    "learning": {
+      "total_learning_episodes": 0,
+      "average_q_table_size": 0.0,
+      "convergence_metrics": {}
+    }
+  },
+  "metrics_summary": {
+    "population_size": {
+      "mean": 7.088302752293578,
+      "std": 6.127674541331959,
+      "min": "0",
+      "max": "20",
+      "final": 0,
+      "trend": -0.02173601323823449
+    },
+    "total_discoveries": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": "0",
+      "max": "0",
+      "final": 0,
+      "trend": 0.0
+    },
+    "genetic_diversity": {
+      "mean": 0.2612675993903583,
+      "std": 0.10075232758302241,
+      "min": 0.0,
+      "max": 0.3961736579858216,
+      "final": 0.0,
+      "trend": -0.00020684796526135914
+    },
+    "average_intelligence": {
+      "mean": 0.6237541818100023,
+      "std": 0.09502720357962219,
+      "min": 0.0,
+      "max": 0.8298191932893391,
+      "final": 0.0,
+      "trend": 0.0002650106007754491
+    },
+    "total_tools": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": "0",
+      "max": "0",
+      "final": 0,
+      "trend": 0.0
+    },
+    "action_diversity": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "final": 0.0,
+      "trend": 0.0
+    }
+  }
+}

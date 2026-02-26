@@ -1,0 +1,33 @@
+experiment:
+  name: "basic_tool_evolution"
+  description: "Базовый эксперимент по эволюции инструментов"
+  duration: 10000
+
+simulation:
+  world:
+    width: 100
+    height: 100
+    seed: 42
+  
+  agents:
+    initial_population: 20
+    max_population: 100
+    
+  learning:
+    learning_rate: 0.1
+    discount_factor: 0.95
+    epsilon_decay: 0.995
+    
+  evolution:
+    reproduction_interval: 100
+    mutation_rate: 0.1
+    selection_pressure: 0.8
+
+environment:
+  resource_spawn_rate: 0.1
+  season_length: 1000
+  
+logging:
+  log_interval: 10
+  save_interval: 1000
+  metrics: ["population", "technology", "behavior"]

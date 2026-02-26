@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Evolution Simulation</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 0; background: #0b1020; color: #e7e9ee; }
+    header { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:12px; }
+    button { background:#243bff; color:#fff; border:0; padding:8px 10px; border-radius:8px; cursor:pointer; }
+    button.secondary { background:#2a2f45; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .layout { display:grid; grid-template-columns: 1fr 420px; gap: 12px; padding: 12px; }
+    .panel { background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow:hidden; }
+    .panel h3 { margin:0; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 14px; color:#cbd2ff; }
+    #canvasWrap { padding: 10px; position: relative; }
+    canvas { background: #070a14; border-radius: 10px; width: 100%; height: 720px; }
+    #events { height: 720px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .event { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    input[type=range] { width: 180px; }
+    .kv { display:flex; gap:10px; font-size: 12px; color:#aab0c0; }
+    .kv b { color:#e7e9ee; }
+
+    #agentTooltip {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: none;
+      pointer-events: none;
+      z-index: 10;
+      background: rgba(17, 22, 42, 0.95);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 10px;
+      padding: 8px 10px;
+      min-width: 140px;
+      max-width: 260px;
+      font-size: 12px;
+      color: #e7e9ee;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    #agentTooltip .title { font-weight: 700; margin-bottom: 6px; color: #cbd2ff; }
+    #agentTooltip .muted { color: #aab0c0; }
+    #agentTooltip .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <div class="kv" id="status"></div>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="panel">
+    <h3>Мир (агенты/объекты)</h3>
+    <div id="canvasWrap">
+      <canvas id="cv" width="1000" height="720"></canvas>
+      <div id="agentTooltip"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>История</h3>
+    <div id="history" style="max-height:220px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;"></div>
+    <h3>События (хвост)</h3>
+    <div id="events"></div>
+  </div>
+</div>
+
+<script>
+  const status = document.getElementById('status');
+
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+
+  const agentTooltip = document.getElementById('agentTooltip');
+
+  const sprites = {
+    male: new Image(),
+    female: new Image(),
+  };
+
+  sprites.male.src = '/static/sprites/male.png';
+  sprites.female.src = '/static/sprites/female.png';
+
+  const agentRenderState = new Map();
+
+  // Camera (pan/zoom)
+  const camera = { x: 0, y: 0, zoom: 1, _initialized: true };
+  const cameraLimits = { minZoom: 0.75, maxZoom: 6 };
+  let dragging = false;
+  let dragStart = null;
+  let autoCenteredOnce = false;
+
+  function computeCameraLimits(snapshot) {
+    if (!snapshot) return;
+    // World is drawn to fit the canvas at zoom=1. Allow zooming out a bit and in a lot.
+    cameraLimits.minZoom = 0.6;
+    cameraLimits.maxZoom = 6;
+  }
+
+  function clampCamera(snapshot) {
+    if (!snapshot) return;
+    computeCameraLimits(snapshot);
+
+    camera.zoom = Math.max(cameraLimits.minZoom, Math.min(cameraLimits.maxZoom, camera.zoom));
+
+    const worldW = cv.width * camera.zoom;
+    const worldH = cv.height * camera.zoom;
+
+    // Bounds so that the world stays within the viewport.
+    let minX = cv.width - worldW;
+    let maxX = 0;
+    let minY = cv.height - worldH;
+    let maxY = 0;
+
+    // If world is smaller than viewport, center it.
+    if (minX > maxX) {
+      minX = maxX = (cv.width - worldW) / 2;
+    }
+    if (minY > maxY) {
+      minY = maxY = (cv.height - worldH) / 2;
+    }
+
+    camera.x = Math.max(minX, Math.min(maxX, camera.x));
+    camera.y = Math.max(minY, Math.min(maxY, camera.y));
+  }
+
+  function centerOnAgents(snapshot) {
+    if (!snapshot || !snapshot.agents || snapshot.agents.length === 0) return;
+    const w = snapshot.world.width;
+    const h = snapshot.world.height;
+    const sx = cv.width / w;
+    const sy = cv.height / h;
+
+    let ax = 0;
+    let ay = 0;
+    for (const a of snapshot.agents) {
+      ax += a.x;
+      ay += a.y;
+    }
+    ax /= snapshot.agents.length;
+    ay /= snapshot.agents.length;
+
+    const px = ax * sx;
+    const py = ay * sy;
+    camera.x = cv.width / 2 - px * camera.zoom;
+    camera.y = cv.height / 2 - py * camera.zoom;
+    clampCamera(snapshot);
+  }
+
+  function resetCamera(snapshot) {
+    camera.zoom = 1;
+    camera.x = 0;
+    camera.y = 0;
+    clampCamera(snapshot);
+  }
+
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (!lastSnapshot) return;
+    const rect = cv.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    // Fixed 5% per wheel "notch" (quantize for trackpads)
+    const steps = Math.max(1, Math.min(10, Math.round(Math.abs(e.deltaY) / 100)));
+    const stepFactor = 1.05;
+    const zoomFactor = (e.deltaY < 0) ? Math.pow(stepFactor, steps) : Math.pow(1 / stepFactor, steps);
+    const oldZoom = camera.zoom;
+    const newZoom = Math.max(cameraLimits.minZoom, Math.min(cameraLimits.maxZoom, oldZoom * zoomFactor));
+
+    // Zoom to cursor
+    camera.x = mx - (mx - camera.x) * (newZoom / oldZoom);
+    camera.y = my - (my - camera.y) * (newZoom / oldZoom);
+    camera.zoom = newZoom;
+    clampCamera(lastSnapshot);
+  }, { passive: false });
+
+  cv.addEventListener('mousedown', (e) => {
+    dragging = true;
+    dragStart = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y };
+  });
+  window.addEventListener('mouseup', () => { dragging = false; dragStart = null; });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging || !dragStart) return;
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    camera.x = dragStart.cx + dx;
+    camera.y = dragStart.cy + dy;
+    clampCamera(lastSnapshot);
+  });
+
+  cv.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    centerOnAgents(lastSnapshot);
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'r' || e.key === 'R') {
+      resetCamera(lastSnapshot);
+    }
+  });
+
+  const ruAction = {
+    move: 'идет',
+    gather: 'собирает',
+    consume: 'ест',
+    drink: 'пьет',
+    sleep: 'спит',
+    communicate: 'говорит',
+    mate: 'спаривается',
+    care: 'ухаживает',
+    combine: 'комбинирует',
+    break: 'ломает',
+    attack: 'охотится',
+    rest: 'отдыхает',
+  };
+
+  function actionToRu(action) {
+    if (!action) return '...';
+    return ruAction[action] || action;
+  }
+
+  function renderHistory(snapshot) {
+    const el = document.getElementById('history');
+    if (!el) return;
+    const items = snapshot.history || [];
+    el.innerHTML = '';
+    for (let i = items.length - 1; i >= 0; i--) {
+      const h = items[i];
+      const div = document.createElement('div');
+      div.className = 'event';
+      let extra = '';
+      if (h.reason_details) {
+        const d = h.reason_details;
+        const agent = d.agent_id ? ` (${d.agent_id})` : '';
+        const hng = (d.hunger === undefined || d.hunger === null) ? '—' : d.hunger.toFixed(2);
+        const thr = (d.thirst === undefined || d.thirst === null) ? '—' : d.thirst.toFixed(2);
+        const slp = (d.sleepiness === undefined || d.sleepiness === null) ? '—' : d.sleepiness.toFixed(2);
+        const eng = (d.energy === undefined || d.energy === null) ? '—' : d.energy.toFixed(2);
+        const hlth = (d.health === undefined || d.health === null) ? '—' : d.health.toFixed(2);
+        const age = (d.age === undefined || d.age === null) ? '—' : d.age;
+        extra = `; ${d.cause_ru}${agent}; голод=${hng} жажда=${thr} сон=${slp} энергия=${eng} здоровье=${hlth} возраст=${age}`;
+      }
+      div.textContent = `Симуляция №${h.run} завершена: ${h.reason}${extra} (t=${h.ended_at_timestep}, день=${h.ended_at_day} ${h.ended_at_time})`;
+      el.appendChild(div);
+    }
+    if (items.length === 0) {
+      const div = document.createElement('div');
+      div.className = 'event';
+      div.textContent = 'История пока пуста';
+      el.appendChild(div);
+    }
+  }
+
+  function getSpriteSheet(sex) {
+    if (sex === 'female') return sprites.female;
+    return sprites.male;
+  }
+
+  function getFrameRect(img, col, row) {
+    const fw = Math.floor(img.width / 4);
+    const fh = Math.floor(img.height / 2);
+    return { sx: col * fw, sy: row * fh, sw: fw, sh: fh };
+  }
+
+  function chooseFrame(agent, timestep) {
+    // Sheet layout assumption:
+    // row 0: walk cycle (2 frames) + (unused/back)
+    // row 1: sit, gather/crouch, eat frame A, eat frame B
+    const action = agent.last_action || 'rest';
+    const phase = timestep % 2;
+
+    if (action === 'move') {
+      return { col: phase, row: 0, flip: agent.facing === 'right' };
+    }
+    if (action === 'gather' || action === 'combine') {
+      return { col: 1, row: 1, flip: agent.facing === 'right' };
+    }
+    if (action === 'consume') {
+      return { col: 2 + phase, row: 1, flip: agent.facing === 'right' };
+    }
+    // rest + default
+    return { col: 0, row: 1, flip: agent.facing === 'right' };
+  }
+
+  function ping() {
+    try { ws.send('ping'); } catch (e) {}
+  }
+
+  function colorForObject(type) {
+    const map = { stone:'#8b8f9f', wood:'#9b6b3d', plant:'#2bd46a', berry:'#ff3b3b', bone:'#e7e7e7', fiber:'#ffd35c', animal:'#ff9a3b' };
+    return map[type] || '#4aa3ff';
+  }
+
+  function colorForAgent(a) {
+    if (a.health > 0.7) return '#41d67e';
+    if (a.health > 0.4) return '#ffcf5c';
+    return '#ff4d6d';
+  }
+
+  const ruObj = {
+    stone: 'камень',
+    wood: 'дерево',
+    plant: 'растение',
+    berry: 'ягоды',
+    bone: 'кость',
+    fiber: 'волокно',
+    animal: 'мясо',
+    water: 'вода',
+  };
+
+  const ruToolKind = {
+    wooden_axe: 'деревянный топор',
+    wooden_spear: 'деревянное копьё',
+    stone_hammer: 'каменный молот',
+  };
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function findAgentUnderCursor(snapshot, mx, my) {
+    if (!snapshot || !snapshot.agents || snapshot.agents.length === 0) return null;
+
+    const w = snapshot.world.width;
+    const h = snapshot.world.height;
+    const sx = cv.width / w;
+    const sy = cv.height / h;
+
+    const wx = (mx - camera.x) / camera.zoom;
+    const wy = (my - camera.y) / camera.zoom;
+
+    let best = null;
+    let bestD2 = Infinity;
+    const threshold = 18;
+    const threshold2 = threshold * threshold;
+
+    for (const a of snapshot.agents) {
+      const ax = a.x * sx;
+      const ay = a.y * sy;
+      const dx = wx - ax;
+      const dy = wy - ay;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = a;
+      }
+    }
+
+    if (best && bestD2 <= threshold2) return best;
+    return null;
+  }
+
+  function findObjectUnderCursor(snapshot, mx, my) {
+    if (!snapshot || !snapshot.objects || snapshot.objects.length === 0) return null;
+
+    const w = snapshot.world.width;
+    const h = snapshot.world.height;
+    const sx = cv.width / w;
+    const sy = cv.height / h;
+
+    const wx = (mx - camera.x) / camera.zoom;
+    const wy = (my - camera.y) / camera.zoom;
+
+    let best = null;
+    let bestD2 = Infinity;
+    const threshold = 10;
+    const threshold2 = threshold * threshold;
+
+    for (const o of snapshot.objects) {
+      const ox = o.x * sx;
+      const oy = o.y * sy;
+      const dx = wx - ox;
+      const dy = wy - oy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = o;
+      }
+    }
+
+    if (best && bestD2 <= threshold2) return best;
+    return null;
+  }
+
+  function renderAgentTooltip(agent) {
+    if (!agentTooltip) return;
+    if (!agent) {
+      agentTooltip.style.display = 'none';
+      return;
+    }
+
+    const inv = agent.inventory || {};
+    const byType = inv.by_type || {};
+    const food = inv.food ?? null;
+
+    const invParts = [];
+    const keys = Object.keys(byType);
+    keys.sort();
+    for (const k of keys) {
+      const v = byType[k];
+      if (!v) continue;
+      invParts.push(`${ruObj[k] || k}=${v}`);
+    }
+    if (food !== null) {
+      invParts.push(`еда=${food}`);
+    }
+
+    const tools = agent.tools_list || [];
+    const toolParts = [];
+    for (const t of tools) {
+      const kind = t.kind || null;
+      const label = kind ? (ruToolKind[kind] || kind) : (t.tool_type || 'tool');
+      const d = (t.durability_left === undefined || t.durability_left === null) ? null : t.durability_left.toFixed(0);
+      toolParts.push(d ? `${label} (${d}%)` : `${label}`);
+    }
+
+    const title = escapeHtml(agent.name || agent.id);
+    const invLine = invParts.length ? escapeHtml(invParts.join(', ')) : 'пусто';
+    const toolLine = toolParts.length ? escapeHtml(toolParts.join(', ')) : 'нет';
+
+    agentTooltip.innerHTML = `
+      <div class="title">${title}</div>
+      <div class="muted">Инвентарь:</div>
+      <div class="mono">${invLine}</div>
+      <div style="height:6px"></div>
+      <div class="muted">Инструменты:</div>
+      <div class="mono">${toolLine}</div>
+    `;
+    agentTooltip.style.display = 'block';
+  }
+
+  function renderObjectTooltip(obj) {
+    if (!agentTooltip) return;
+    if (!obj) {
+      agentTooltip.style.display = 'none';
+      return;
+    }
+
+    const title = `${ruObj[obj.type] || obj.type}`;
+    const qty = (obj.quantity === undefined || obj.quantity === null) ? 1 : obj.quantity;
+
+    const nutrition = (obj.nutrition === undefined || obj.nutrition === null) ? null : obj.nutrition;
+    const toxicity = (obj.toxicity === undefined || obj.toxicity === null) ? null : obj.toxicity;
+    const hardness = (obj.hardness === undefined || obj.hardness === null) ? null : obj.hardness;
+    const durability = (obj.durability === undefined || obj.durability === null) ? null : obj.durability;
+
+    const lines = [];
+    lines.push(`кол-во=${qty}`);
+    if (nutrition !== null && nutrition > 0) lines.push(`питательность=${nutrition.toFixed(2)}`);
+    if (toxicity !== null && toxicity > 0) lines.push(`токсичность=${toxicity.toFixed(2)}`);
+    if (hardness !== null && hardness > 0) lines.push(`твёрдость=${hardness.toFixed(2)}`);
+    if (durability !== null && durability > 0) lines.push(`прочность=${durability.toFixed(2)}`);
+
+    agentTooltip.innerHTML = `
+      <div class="title">${escapeHtml(title)}</div>
+      <div class="mono">${escapeHtml(lines.join(', '))}</div>
+    `;
+    agentTooltip.style.display = 'block';
+  }
+
+  function positionAgentTooltip(mx, my) {
+    if (!agentTooltip) return;
+    const pad = 12;
+    const wrap = document.getElementById('canvasWrap');
+    if (!wrap) return;
+
+    const rect = wrap.getBoundingClientRect();
+    const maxX = rect.width - agentTooltip.offsetWidth - pad;
+    const maxY = rect.height - agentTooltip.offsetHeight - pad;
+    const x = Math.max(pad, Math.min(maxX, mx + pad));
+    const y = Math.max(pad, Math.min(maxY, my + pad));
+    agentTooltip.style.left = `${x}px`;
+    agentTooltip.style.top = `${y}px`;
+  }
+
+  cv.addEventListener('mousemove', (e) => {
+    if (!lastSnapshot) return;
+    const rect = cv.getBoundingClientRect();
+    // Mouse is in CSS pixels; convert to canvas pixels for hit-testing.
+    const mxCss = e.clientX - rect.left;
+    const myCss = e.clientY - rect.top;
+    const scaleX = cv.width / rect.width;
+    const scaleY = cv.height / rect.height;
+    const mx = mxCss * scaleX;
+    const my = myCss * scaleY;
+
+    const a = findAgentUnderCursor(lastSnapshot, mx, my);
+    if (a) {
+      renderAgentTooltip(a);
+      positionAgentTooltip(mxCss, myCss);
+      return;
+    }
+
+    const o = findObjectUnderCursor(lastSnapshot, mx, my);
+    if (o) {
+      renderObjectTooltip(o);
+      positionAgentTooltip(mxCss, myCss);
+      return;
+    }
+
+    renderAgentTooltip(null);
+  });
+
+  cv.addEventListener('mouseleave', () => {
+    renderAgentTooltip(null);
+  });
+
+  function draw(snapshot) {
+    const w = snapshot.world.width;
+    const h = snapshot.world.height;
+
+    ctx.clearRect(0, 0, cv.width, cv.height);
+
+    // Apply camera transform
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.zoom, camera.zoom);
+
+    // Scale world to canvas
+    const sx = cv.width / w;
+    const sy = cv.height / h;
+
+    // Objects
+    for (const o of snapshot.objects) {
+      ctx.fillStyle = colorForObject(o.type);
+      ctx.globalAlpha = 0.7;
+      ctx.fillRect(o.x * sx, o.y * sy, Math.max(1, sx*0.7), Math.max(1, sy*0.7));
+    }
+
+    // Agents
+    for (const a of snapshot.agents) {
+      const prev = agentRenderState.get(a.id) || { x: a.x, y: a.y, facing: 'right' };
+      const dx = a.x - prev.x;
+      const facing = dx < 0 ? 'left' : dx > 0 ? 'right' : prev.facing;
+      agentRenderState.set(a.id, { x: a.x, y: a.y, facing });
+
+      const img = getSpriteSheet(a.sex);
+      const ready = img.complete && img.naturalWidth > 0;
+      const px = a.x * sx;
+      const py = a.y * sy;
+
+      // Draw sprite (fallback to circle if sprite not loaded yet)
+      if (ready) {
+        const frame = chooseFrame({ ...a, facing }, snapshot.timestep);
+        const r = getFrameRect(img, frame.col, frame.row);
+        const drawH = a.is_child ? 30 : 44;
+        const drawW = Math.round((r.sw / r.sh) * drawH);
+
+        ctx.save();
+        ctx.translate(px, py);
+
+        if (frame.flip) {
+          ctx.scale(-1, 1);
+        }
+
+        // Anchor at feet
+        const ox = frame.flip ? -drawW / 2 : -drawW / 2;
+        const oy = -drawH;
+        ctx.globalAlpha = 1.0;
+        ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, ox, oy, drawW, drawH);
+        ctx.restore();
+      } else {
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = colorForAgent(a);
+        const r = 4;
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Speech bubble (placeholder: last action)
+      const who = a.name || a.id;
+      let bubbleText = `${who}`;
+      if (a.is_child) {
+        bubbleText = `${who} (ребёнок)`;
+      }
+      if (a.pregnant) {
+        const pr = a.pregnancy_remaining ?? 0;
+        bubbleText = `${who}: беременность (${pr})`;
+      }
+      if (a.speech) {
+        bubbleText = `${who}: ${a.speech}`;
+      } else if (a.last_action) {
+        bubbleText = `${who}: ${actionToRu(a.last_action)}`;
+      }
+      ctx.save();
+      ctx.font = '12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const padX = 6;
+      const padY = 4;
+      const textW = ctx.measureText(bubbleText).width;
+      const bw = textW + padX * 2;
+      const bh = 18;
+      const bx = px - bw / 2;
+      const by = py - 58;
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#11162a';
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+      ctx.fillStyle = '#e7e9ee';
+      ctx.fillText(bubbleText, bx + padX, by + 13);
+      ctx.restore();
+    }
+
+    // Night overlay
+    if (snapshot.world && snapshot.world.is_daytime === false) {
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#02040d';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.restore();
+    }
+  }
+
+  function renderEvents(snapshot) {
+    const el = document.getElementById('events');
+    el.innerHTML = '';
+    const events = snapshot.events || [];
+    const nameById = new Map((snapshot.agents || []).map(a => [a.id, a.name || a.id]));
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      const div = document.createElement('div');
+      div.className = 'event';
+      if (e.type === 'agent_action') {
+        const who = nameById.get(e.agent_id) || e.agent_id;
+        div.textContent = `[t=${e.timestamp}] ${who} -> ${actionToRu(e.action)} успех=${e.success} награда=${(e.reward ?? 0).toFixed(2)}`;
+      } else if (e.type === 'communication') {
+        const speaker = nameById.get(e.speaker_id) || e.speaker_id;
+        const listener = nameById.get(e.listener_id) || e.listener_id;
+        div.textContent = `[t=${e.timestamp}] ${speaker} сказал '${e.token}' → ${listener} (успех=${e.success})`;
+      } else {
+        const who = e.agent_id ? (nameById.get(e.agent_id) || e.agent_id) : '';
+        div.textContent = `[t=${e.timestamp}] ${e.type} ${who}`;
+      }
+      el.appendChild(div);
+    }
+  }
+
+  function renderStatus(snapshot) {
+    const lang = snapshot.language || {};
+    const pct = (x) => (x === undefined || x === null) ? '—' : `${(x * 100).toFixed(0)}%`;
+    const num = (x) => (x === undefined || x === null) ? '—' : `${x}`;
+
+    const day = snapshot.world.day ?? 0;
+    const hh = String(snapshot.world.hour ?? 0).padStart(2, '0');
+    const mm = String(snapshot.world.minute ?? 0).padStart(2, '0');
+    const isDay = snapshot.world.is_daytime ?? true;
+    const dayNight = isDay ? 'день' : 'ночь';
+    const runNo = snapshot.run && snapshot.run.number ? snapshot.run.number : 1;
+
+    const prog = snapshot.progress || {};
+    const needsLoad = (prog.needs_load_avg === undefined || prog.needs_load_avg === null) ? '—' : prog.needs_load_avg.toFixed(2);
+    const critical = (prog.critical_share === undefined || prog.critical_share === null) ? '—' : `${(prog.critical_share * 100).toFixed(0)}%`;
+    const avgAge = (prog.avg_age_alive === undefined || prog.avg_age_alive === null) ? '—' : prog.avg_age_alive.toFixed(0);
+    const maxAge = (prog.max_age_alive === undefined || prog.max_age_alive === null) ? '—' : `${prog.max_age_alive}`;
+    const combOk = (prog.combine_success_recent === undefined || prog.combine_success_recent === null) ? '—' : `${prog.combine_success_recent}`;
+    const totalTools = (prog.total_tools === undefined || prog.total_tools === null) ? '—' : `${prog.total_tools}`;
+
+    const deaths = prog.death_causes_recent || {};
+    const deathParts = [];
+    const deathKeys = Object.keys(deaths);
+    deathKeys.sort();
+    for (const k of deathKeys) {
+      deathParts.push(`${k}=${deaths[k]}`);
+    }
+    const deathLine = deathParts.length ? deathParts.join(', ') : '—';
+
+    const kinds = prog.tool_kinds || {};
+    const kindParts = [];
+    const kindKeys = Object.keys(kinds);
+    kindKeys.sort();
+    for (const k of kindKeys) {
+      const label = ruToolKind[k] || k;
+      kindParts.push(`${label}=${kinds[k]}`);
+    }
+    const kindLine = kindParts.length ? kindParts.join(', ') : '—';
+
+    status.innerHTML = `
+      <span title="Номер текущего прогона симуляции (auto-restart при вымирании)"><b>симуляция</b>: №${runNo}</span>
+      <span title="Текущий шаг симуляции (timestep)"><b>t</b>: ${snapshot.timestep}</span>
+      <span title="Номер дня в симуляции (счётчик суток)"><b>день</b>: ${day}</span>
+      <span title="Внутрисуточное время + день/ночь (влияет на сонливость и поведение)"><b>время</b>: ${hh}:${mm} (${dayNight})</span>
+      <span title="Количество живых агентов сейчас"><b>agents</b>: ${snapshot.agents.length}</span>
+      <span title="Сезон (0-3: весна/лето/осень/зима)"><b>season</b>: ${snapshot.world.season}</span>
+      <span title="Температура среды (°C)"><b>T</b>: ${snapshot.world.temperature.toFixed(1)}</span>
+      <span title="Средняя нагрузка нужд по живым: (голод+жажда+сонливость)/3, диапазон 0..1"><b>нужды</b>: ${needsLoad}</span>
+      <span title="Доля живых агентов в критическом состоянии: max(голод,жажда,сонливость) ≥ 0.85"><b>критич</b>: ${critical}</span>
+      <span title="Возраст живых агентов: средний/максимальный (в шагах симуляции)"><b>возраст</b>: ${avgAge}/${maxAge}</span>
+      <span title="Успешные крафты (combine, success=true) за последние 200 событий"><b>крафт(ok/200)</b>: ${combOk}</span>
+      <span title="Сколько инструментов существует в мире сейчас (в Environment.tools)"><b>инструм</b>: ${totalTools}</span>
+      <span title="Распределение инструментов по 'kind' (именованные рецепты и unknown)"><b>типы</b>: ${kindLine}</span>
+      <span title="Смерти по причинам за последние 200 событий"><b>смерти(200)</b>: ${deathLine}</span>
+      <span title="Размер словаря: количество устойчивых токенов (по весу в лексиконе)"><b>язык: словарь</b>: ${num(lang.lexicon_size)}</span>
+      <span title="Стабильность: насколько доминирует лучший токен для каждого смысла (0..100%)"><b>стабильность</b>: ${pct(lang.stability)}</span>
+      <span title="Сходимость: насколько агенты используют похожие соответствия смысл→токен (0..100%)"><b>сходимость</b>: ${pct(lang.convergence)}</span>
+      <span title="Успешность коммуникации за последние 200 событий: доля успехов и количество попыток"><b>успех (200)</b>: ${pct(lang.comm_success_rate_recent)} (${num(lang.comm_count_recent)})</span>
+    `;
+  }
+
+  let lastSnapshot = null;
+  let lastPaintMs = 0;
+  const targetFrameMs = 1000 / 30;
+
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+
+  function ping() {
+    try { ws.send('ping'); } catch (e) {}
+  }
+
+  ws.onopen = () => {
+    // Keep connection alive; server pushes updates.
+    setInterval(() => ping(), 1000);
+  };
+
+  ws.onmessage = (ev) => {
+    let snapshot;
+    try {
+      snapshot = JSON.parse(ev.data);
+    } catch {
+      return;
+    }
+
+    lastSnapshot = snapshot;
+    renderStatus(snapshot);
+    renderHistory(snapshot);
+    renderEvents(snapshot);
+
+    const now = performance.now();
+    if (now - lastPaintMs > 33) {
+      draw(snapshot);
+      lastPaintMs = now;
+    }
+  };
+
+  ws.onclose = () => {
+    status.innerHTML = '<b>WS disconnected</b>';
+  };
+</script>
+</body>
+</html>

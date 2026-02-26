@@ -1,0 +1,33 @@
+experiment:
+  name: "cultural_transmission"
+  description: "Исследование культурной передачи знаний"
+  duration: 20000
+
+simulation:
+  world:
+    width: 120
+    height: 120
+    seed: 456
+  
+  agents:
+    initial_population: 25
+    max_population: 120
+    
+  learning:
+    learning_rate: 0.12
+    discount_factor: 0.92
+    epsilon_decay: 0.996
+    
+  evolution:
+    reproduction_interval: 120
+    mutation_rate: 0.08
+    selection_pressure: 0.6
+
+environment:
+  resource_spawn_rate: 0.12
+  season_length: 1500
+  
+logging:
+  log_interval: 8
+  save_interval: 800
+  metrics: ["population", "technology", "behavior", "cultural"]

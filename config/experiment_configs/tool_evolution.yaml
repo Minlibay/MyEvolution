@@ -1,0 +1,33 @@
+experiment:
+  name: "tool_evolution_focus"
+  description: "Эксперимент с фокусом на эволюции инструментов"
+  duration: 15000
+
+simulation:
+  world:
+    width: 150
+    height: 150
+    seed: 123
+  
+  agents:
+    initial_population: 30
+    max_population: 150
+    
+  learning:
+    learning_rate: 0.15
+    discount_factor: 0.9
+    epsilon_decay: 0.998
+    
+  evolution:
+    reproduction_interval: 80
+    mutation_rate: 0.15
+    selection_pressure: 0.7
+
+environment:
+  resource_spawn_rate: 0.15
+  season_length: 1200
+  
+logging:
+  log_interval: 5
+  save_interval: 500
+  metrics: ["population", "technology", "behavior", "evolution"]
