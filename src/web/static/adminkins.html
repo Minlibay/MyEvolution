@@ -1,0 +1,1706 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Adminkins</title>
+  <style>
+    :root {
+      --bg0: #050714;
+      --bg1: #0b1020;
+      --card: rgba(255,255,255,0.05);
+      --stroke: rgba(255,255,255,0.10);
+      --stroke2: rgba(255,255,255,0.16);
+      --text: #e7e9ee;
+      --muted: #aab0c0;
+      --brand: #243bff;
+      --brand2: #2e6bff;
+      --danger: #c32e2e;
+      --ok: #24c16a;
+      --warn: #f0b429;
+      --shadow: 0 16px 50px rgba(0,0,0,0.45);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      margin: 0;
+      background:
+        radial-gradient(900px 500px at 20% -10%, rgba(36,59,255,0.35), transparent 60%),
+        radial-gradient(900px 500px at 80% -10%, rgba(46,107,255,0.22), transparent 60%),
+        radial-gradient(900px 500px at 50% 110%, rgba(36,193,106,0.12), transparent 60%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+      background: rgba(6, 8, 18, 0.78);
+      backdrop-filter: blur(10px);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+
+    a { color:#cbd2ff; text-decoration:none; }
+    a:hover { text-decoration: underline; }
+
+    .brand {
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(36,59,255,1), rgba(46,107,255,0.75));
+      box-shadow: 0 10px 24px rgba(36,59,255,0.25);
+      border: 1px solid rgba(255,255,255,0.16);
+    }
+    .title { font-weight: 800; letter-spacing: 0.2px; }
+
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 18px 16px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .panel {
+      background: var(--card);
+      border:1px solid var(--stroke);
+      border-radius: var(--radius);
+      overflow:hidden;
+      box-shadow: var(--shadow);
+    }
+    .panel h3 {
+      margin:0;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 14px;
+      color:#cbd2ff;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+    }
+    .pad { padding: 14px; }
+
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+    input, textarea, select {
+      padding:10px 10px;
+      border-radius: 12px;
+      border:1px solid rgba(255,255,255,0.12);
+      background: rgba(5,7,20,0.55);
+      color: var(--text);
+      outline: none;
+    }
+    input:focus, textarea:focus, select:focus { border-color: rgba(46,107,255,0.7); box-shadow: 0 0 0 4px rgba(46,107,255,0.14); }
+    textarea { width:100%; min-height: 110px; resize: vertical; }
+
+    button {
+      background: linear-gradient(135deg, var(--brand), var(--brand2));
+      color:#fff;
+      border:0;
+      padding:10px 12px;
+      border-radius: 12px;
+      cursor:pointer;
+      font-weight: 700;
+      letter-spacing: 0.1px;
+    }
+    button:hover { filter: brightness(1.05); }
+    button.secondary {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    button.secondary:hover { background: rgba(255,255,255,0.10); }
+    button.danger { background: linear-gradient(135deg, rgba(195,46,46,1), rgba(138,18,18,1)); }
+    button:disabled { opacity:0.55; cursor:not-allowed; filter:none; }
+
+    .muted { color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    .pill {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.14);
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 100%;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.25); }
+    .dot.ok { background: rgba(36,193,106,1); }
+    .dot.warn { background: rgba(240,180,41,1); }
+
+    .tabs {
+      display:flex;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 999px;
+      background: rgba(0,0,0,0.14);
+    }
+    .tab {
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: transparent;
+      border: 1px solid transparent;
+      font-weight: 800;
+      font-size: 12px;
+      color: #cbd2ff;
+      cursor: pointer;
+    }
+    .tab.active { background: rgba(46,107,255,0.16); border-color: rgba(46,107,255,0.25); }
+
+    .list { display:flex; flex-direction:column; gap:10px; }
+    .item {
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(0,0,0,0.14);
+    }
+
+    .split {
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .split { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo"></div>
+    <div>
+      <div class="title">Adminkins</div>
+      <div class="muted">bootstrap admin · users · news</div>
+    </div>
+  </div>
+  <div class="row">
+    <a href="/">← назад к симуляции</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+    <div id="globalState" class="pill"><span class="dot warn"></span><span class="mono">status…</span></div>
+    <div class="tabs">
+      <button id="tabUsers" class="tab active" type="button">Пользователи</button>
+      <button id="tabNews" class="tab" type="button">Новости</button>
+      <button id="tabMap" class="tab" type="button">Карта</button>
+      <button id="tabTools" class="tab" type="button">Инструменты</button>
+      <button id="tabSite" class="tab" type="button">SEO/Сайт</button>
+      <button id="tabPrivacy" class="tab" type="button">Политика</button>
+      <button id="tabChat" class="tab" type="button">Чат</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h3>Bootstrap первого администратора</h3>
+      <div class="pad">
+        <div class="muted" style="margin-bottom:10px;">
+          Работает только если в базе ещё нет ни одного администратора. После bootstrap регистрация закрывается.
+        </div>
+        <div class="split">
+          <input id="bootUser" placeholder="username" />
+          <input id="bootPass" type="password" placeholder="password (≥6)" />
+        </div>
+        <div class="row" style="margin-top:10px; justify-content:space-between;">
+          <button id="btnBootstrap">Создать admin</button>
+          <div class="muted">После создания админа публичная регистрация будет закрыта</div>
+        </div>
+        <div id="bootState" class="muted" style="margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Вход администратора</h3>
+      <div class="pad">
+        <div class="split">
+          <input id="loginUser" placeholder="username" />
+          <input id="loginPass" type="password" placeholder="password" />
+        </div>
+        <div class="row" style="margin-top:10px; justify-content:space-between;">
+          <div class="row">
+            <button id="btnLogin">Войти</button>
+            <button id="btnLogout" class="secondary" style="display:none;">Выйти</button>
+          </div>
+          <div class="muted">Токен сохраняется в <span class="mono">localStorage</span></div>
+        </div>
+        <div id="loginState" class="muted" style="margin-top:8px;"></div>
+        <div class="muted" style="margin-top:6px;">Токен доступа хранится в браузере (<span class="mono">localStorage</span>). Ключ: <span class="mono">evosim_token</span></div>
+      </div>
+    </div>
+
+    <div id="usersPanel" class="panel" style="grid-column: 1 / -1;">
+      <h3>Пользователи</h3>
+      <div class="pad">
+        <div class="row" style="margin-bottom:10px;">
+          <button id="btnReloadUsers" class="secondary">Обновить список</button>
+          <div id="usersState" class="muted"></div>
+        </div>
+
+        <div class="item" style="margin-bottom:10px;">
+          <div class="muted" style="margin-bottom:8px;">Создать пользователя (через админку, даже когда публичная регистрация закрыта)</div>
+          <div class="split">
+            <input id="newUser" placeholder="username" />
+            <input id="newPass" type="password" placeholder="password (≥6)" />
+          </div>
+          <div class="row" style="margin-top:10px; justify-content:space-between;">
+            <label class="row muted" style="gap:8px;">
+              <input id="newIsAdmin" type="checkbox" />
+              Сделать администратором
+            </label>
+            <button id="btnCreateUser">Создать</button>
+          </div>
+          <div id="createUserState" class="muted" style="margin-top:8px;"></div>
+        </div>
+
+        <div id="usersList" class="list"></div>
+      </div>
+    </div>
+
+    <div id="newsPanel" class="panel" style="grid-column: 1 / -1;">
+      <h3>Новости</h3>
+      <div class="pad">
+        <div class="row" style="margin-bottom:10px;">
+          <button id="btnReloadNews" class="secondary">Обновить новости</button>
+          <div id="newsState" class="muted"></div>
+        </div>
+
+        <div class="item" style="margin-bottom:10px;">
+          <div class="muted" style="margin-bottom:8px;">Добавить новость</div>
+          <input id="newsTitle" placeholder="заголовок" style="width:100%;" />
+          <textarea id="newsText" placeholder="текст"></textarea>
+          <div class="row">
+            <button id="btnPostNews">Опубликовать</button>
+            <div id="postNewsState" class="muted"></div>
+          </div>
+        </div>
+
+        <div id="newsList" class="list"></div>
+      </div>
+    </div>
+
+    <div id="mapPanel" class="panel" style="grid-column: 1 / -1; display:none;">
+      <h3>Карта</h3>
+      <div class="pad">
+        <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+          <div class="row" style="gap:10px;">
+            <div>
+              <div class="muted">Ширина</div>
+              <input id="mapW" type="number" min="10" max="300" style="width:110px;" />
+            </div>
+            <div>
+              <div class="muted">Высота</div>
+              <input id="mapH" type="number" min="10" max="300" style="width:110px;" />
+            </div>
+            <div>
+              <div class="muted">Кисть</div>
+              <select id="mapBrush">
+                <option value="water">Вода</option>
+                <option value="erase_water">Ластик воды</option>
+                <option value="wood">Дерево</option>
+                <option value="stone">Камень</option>
+                <option value="plant">Растения</option>
+                <option value="berry">Ягоды</option>
+                <option value="bone">Кости</option>
+                <option value="fiber">Волокно</option>
+                <option value="erase_obj">Ластик ресурсов</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <button id="btnMapLoad" class="secondary">Загрузить</button>
+            <button id="btnMapSave" class="secondary">Сохранить</button>
+            <button id="btnMapApply">Применить сейчас</button>
+          </div>
+        </div>
+        <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+          <div class="muted">Рисование: ЛКМ — рисовать, удерживай и веди. Колёсико — масштаб.</div>
+          <div id="mapState" class="muted"></div>
+        </div>
+
+        <div class="row" style="gap:12px; align-items:flex-start;">
+          <div style="flex:1; border:1px solid rgba(255,255,255,0.10); border-radius: 14px; overflow:hidden; background: rgba(0,0,0,0.14);">
+            <canvas id="mapCanvas" width="900" height="520" style="width:100%; height:520px; display:block;"></canvas>
+          </div>
+          <div style="width:240px;">
+            <div class="muted" style="margin-bottom:6px;">Миникарта</div>
+            <div style="border:1px solid rgba(255,255,255,0.10); border-radius: 14px; overflow:hidden; background: rgba(0,0,0,0.14);">
+              <canvas id="mapMini" width="240" height="240" style="width:100%; height:240px; display:block;"></canvas>
+            </div>
+            <div class="muted" style="margin-top:8px;">Панорама: ПКМ/средняя кнопка мыши. Зум: колёсико.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toolsPanel" class="panel" style="grid-column: 1 / -1; display:none;">
+      <h3>Инструменты (рецепты крафта)</h3>
+      <div class="pad">
+        <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+          <div class="row">
+            <button id="btnToolsReload" class="secondary">Обновить</button>
+            <button id="btnToolsSave" class="secondary">Сохранить</button>
+            <button id="btnToolsExport" class="secondary">Экспорт JSON</button>
+            <button id="btnToolsImport" class="secondary">Импорт JSON</button>
+          </div>
+          <div id="toolsState" class="muted"></div>
+        </div>
+
+        <div class="item" style="margin-bottom:10px;">
+          <div class="muted" style="margin-bottom:8px;">Шпаргалка</div>
+          <div class="mono" style="white-space:pre-wrap; font-size:12px; color:#cbd2ff;">
+Компоненты (ingredients):
+  - obj:wood, obj:stone, obj:bone, obj:fiber, obj:plant, obj:berry
+  - tool:KIND  (только инструменты с указанным kind)
+
+Можно повторять ингредиенты:
+  obj:wood, obj:wood, obj:stone
+
+kind должен быть уникальным (один kind = один рецепт)
+
+Effectiveness keys (действия): gather, attack, break, craft, move, rest
+
+Примеры:
+  kind=flint_knife
+  components=obj:stone, obj:bone
+  gather=1.4 break=1.1 attack=1.2
+
+  kind=super_axe
+  components=tool:wooden_axe, obj:stone
+  gather=2.2 break=1.6
+          </div>
+        </div>
+
+        <div class="item" style="margin-bottom:10px;">
+          <div class="muted" style="margin-bottom:8px;">Добавить рецепт (2 компонента → инструмент). Сразу начнёт использоваться агентами в <span class="mono">combine</span>.</div>
+          <div class="split">
+            <input id="toolKind" placeholder="kind (например: flint_knife)" />
+            <input id="toolDur" type="number" min="5" max="100" placeholder="durability (5..100)" />
+          </div>
+          <input id="toolComponents" placeholder="components (через запятую): obj:wood, obj:stone или tool:wooden_axe, obj:stone" style="width:100%; margin-top:8px;" />
+          <div class="split" style="margin-top:8px;">
+            <input id="toolEffGather" type="number" step="0.1" placeholder="gather (например 1.8)" />
+            <input id="toolEffAttack" type="number" step="0.1" placeholder="attack (например 1.1)" />
+          </div>
+          <div class="split" style="margin-top:8px;">
+            <input id="toolEffBreak" type="number" step="0.1" placeholder="break (например 1.4)" />
+            <input id="toolEffCraft" type="number" step="0.1" placeholder="craft (например 1.1)" />
+          </div>
+          <div class="split" style="margin-top:8px;">
+            <input id="toolPropSharp" type="number" step="0.05" placeholder="sharpness (0..1)" />
+            <input id="toolPropEff" type="number" step="0.05" placeholder="effectiveness (например 1.6)" />
+          </div>
+          <div class="row" style="margin-top:10px; justify-content:space-between;">
+            <button id="btnToolsAdd">Добавить в список</button>
+            <div class="muted">Потом нажми <span class="mono">Сохранить</span></div>
+          </div>
+        </div>
+
+        <div id="toolsList" class="list"></div>
+
+        <div id="toolsJsonBox" class="item" style="display:none; margin-top:10px;">
+          <div class="muted" style="margin-bottom:8px;">JSON (можно вставить, отредактировать, сохранить)</div>
+          <textarea id="toolsJson" style="height:220px;" placeholder='{"version":1,"recipes":[...]}'></textarea>
+          <div class="row" style="justify-content:space-between;">
+            <button id="btnToolsJsonApply">Применить JSON</button>
+            <button id="btnToolsJsonClose" class="secondary">Закрыть</button>
+          </div>
+          <div id="toolsJsonState" class="muted" style="margin-top:8px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="sitePanel" class="panel" style="grid-column: 1 / -1; display:none;">
+      <h3>SEO / Настройки сайта</h3>
+      <div class="pad">
+        <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+          <div class="row">
+            <button id="btnSiteLoad" class="secondary">Загрузить</button>
+            <button id="btnSiteSave">Сохранить</button>
+          </div>
+          <div id="siteState" class="muted"></div>
+        </div>
+
+        <div class="muted" style="margin-bottom:8px;">Эти настройки влияют на главную страницу (<span class="mono">/</span>): заголовок, meta-теги и баннер.</div>
+
+        <div class="item" style="margin-bottom:10px;">
+          <div class="muted" style="margin-bottom:6px;">Название проекта</div>
+          <input id="siteProjectName" placeholder="WorldSE" style="width:100%;" />
+        </div>
+
+        <div class="item" style="margin-bottom:10px;">
+          <div class="muted" style="margin-bottom:6px;">SEO: title</div>
+          <input id="siteSeoTitle" placeholder="WorldSE" style="width:100%;" />
+          <div class="muted" style="margin-top:10px; margin-bottom:6px;">SEO: description</div>
+          <textarea id="siteSeoDescription" style="height:110px;" placeholder="Короткое описание сайта..."></textarea>
+          <div class="muted" style="margin-top:10px; margin-bottom:6px;">SEO: keywords</div>
+          <input id="siteSeoKeywords" placeholder="симуляция, агенты, эволюция..." style="width:100%;" />
+          <div class="muted" style="margin-top:10px; margin-bottom:6px;">OG image URL (опционально)</div>
+          <input id="siteOgImage" placeholder="https://.../image.png" style="width:100%;" />
+        </div>
+
+        <div class="item" style="margin-bottom:10px;">
+          <div class="muted" style="margin-bottom:6px;">Баннер (HTML/iframe 728×90)</div>
+          <div class="muted" style="margin-bottom:8px;">Вставь сюда код <span class="mono">&lt;iframe&gt;</span> баннерной сети. Показывается в шапке справа.</div>
+          <textarea id="siteBannerHtml" style="height:160px;" placeholder="&lt;iframe ... width=\"728\" height=\"90\"&gt;&lt;/iframe&gt;"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div id="privacyPanel" class="panel" style="grid-column: 1 / -1; display:none;">
+      <h3>Политика конфиденциальности</h3>
+      <div class="pad">
+        <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+          <div class="row">
+            <button id="btnPrivacyLoad" class="secondary">Загрузить</button>
+            <button id="btnPrivacySave">Сохранить</button>
+          </div>
+          <div id="privacyState" class="muted"></div>
+        </div>
+        <div class="muted" style="margin-bottom:8px;">Текст показывается на странице <span class="mono">/privacy</span>. Формат: обычный текст.</div>
+        <textarea id="privacyText" style="height:360px;" placeholder="Текст политики..."></textarea>
+      </div>
+    </div>
+
+    <div id="chatPanel" class="panel" style="grid-column: 1 / -1; display:none;">
+      <h3>Чат: модерация и анонс</h3>
+      <div class="pad">
+        <div class="item" style="margin-bottom:10px;">
+          <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+            <div class="row">
+              <button id="btnChatAnnLoad" class="secondary">Загрузить анонс</button>
+              <button id="btnChatAnnSave">Сохранить анонс</button>
+            </div>
+            <div id="chatAnnState" class="muted"></div>
+          </div>
+          <div class="muted" style="margin-bottom:8px;">Анонс показывается всем пользователям в чате как закреплённое сообщение.</div>
+          <textarea id="chatAnnText" style="height:140px;" placeholder="Текст анонса..."></textarea>
+        </div>
+
+        <div class="item" style="margin-bottom:10px;">
+          <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+            <div class="row">
+              <button id="btnChatReload" class="secondary">Обновить чат (посл. 50)</button>
+            </div>
+            <div id="chatModState" class="muted"></div>
+          </div>
+          <div id="chatMessagesAdmin" class="list"></div>
+        </div>
+
+        <div class="item">
+          <div class="muted" style="margin-bottom:8px;">Блокировка пользователя в чате</div>
+          <div class="split">
+            <input id="chatBanUserId" type="number" placeholder="user_id" />
+            <select id="chatBanMode">
+              <option value="ban">заблокировать</option>
+              <option value="unban">разблокировать</option>
+            </select>
+          </div>
+          <div class="row" style="margin-top:10px; justify-content:space-between;">
+            <button id="btnChatBan">Применить</button>
+            <div class="muted">user_id смотри во вкладке Пользователи</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const globalState = document.getElementById('globalState');
+
+  const tabUsers = document.getElementById('tabUsers');
+  const tabNews = document.getElementById('tabNews');
+  const tabMap = document.getElementById('tabMap');
+  const tabTools = document.getElementById('tabTools');
+  const tabSite = document.getElementById('tabSite');
+  const tabPrivacy = document.getElementById('tabPrivacy');
+  const tabChat = document.getElementById('tabChat');
+  const usersPanel = document.getElementById('usersPanel');
+  const newsPanel = document.getElementById('newsPanel');
+  const mapPanel = document.getElementById('mapPanel');
+  const toolsPanel = document.getElementById('toolsPanel');
+  const sitePanel = document.getElementById('sitePanel');
+  const privacyPanel = document.getElementById('privacyPanel');
+  const chatPanel = document.getElementById('chatPanel');
+
+  const bootUser = document.getElementById('bootUser');
+  const bootPass = document.getElementById('bootPass');
+  const btnBootstrap = document.getElementById('btnBootstrap');
+  const bootState = document.getElementById('bootState');
+
+  const loginUser = document.getElementById('loginUser');
+  const loginPass = document.getElementById('loginPass');
+  const btnLogin = document.getElementById('btnLogin');
+  const btnLogout = document.getElementById('btnLogout');
+  const loginState = document.getElementById('loginState');
+
+  const btnReloadUsers = document.getElementById('btnReloadUsers');
+  const usersState = document.getElementById('usersState');
+  const usersList = document.getElementById('usersList');
+  const newUser = document.getElementById('newUser');
+  const newPass = document.getElementById('newPass');
+  const newIsAdmin = document.getElementById('newIsAdmin');
+  const btnCreateUser = document.getElementById('btnCreateUser');
+  const createUserState = document.getElementById('createUserState');
+
+  const btnReloadNews = document.getElementById('btnReloadNews');
+  const newsState = document.getElementById('newsState');
+  const newsList = document.getElementById('newsList');
+  const newsTitle = document.getElementById('newsTitle');
+  const newsText = document.getElementById('newsText');
+  const btnPostNews = document.getElementById('btnPostNews');
+  const postNewsState = document.getElementById('postNewsState');
+
+  const mapW = document.getElementById('mapW');
+  const mapH = document.getElementById('mapH');
+  const mapBrush = document.getElementById('mapBrush');
+  const btnMapLoad = document.getElementById('btnMapLoad');
+  const btnMapSave = document.getElementById('btnMapSave');
+  const btnMapApply = document.getElementById('btnMapApply');
+  const mapState = document.getElementById('mapState');
+  const mapCanvas = document.getElementById('mapCanvas');
+  const mapCtx = mapCanvas ? mapCanvas.getContext('2d') : null;
+  const mapMini = document.getElementById('mapMini');
+  const miniCtx = mapMini ? mapMini.getContext('2d') : null;
+
+  const btnToolsReload = document.getElementById('btnToolsReload');
+  const btnToolsSave = document.getElementById('btnToolsSave');
+  const btnToolsAdd = document.getElementById('btnToolsAdd');
+  const btnToolsExport = document.getElementById('btnToolsExport');
+  const btnToolsImport = document.getElementById('btnToolsImport');
+  const toolsState = document.getElementById('toolsState');
+  const toolsList = document.getElementById('toolsList');
+
+  const toolsJsonBox = document.getElementById('toolsJsonBox');
+  const toolsJson = document.getElementById('toolsJson');
+  const btnToolsJsonApply = document.getElementById('btnToolsJsonApply');
+  const btnToolsJsonClose = document.getElementById('btnToolsJsonClose');
+  const toolsJsonState = document.getElementById('toolsJsonState');
+
+  const toolKind = document.getElementById('toolKind');
+  const toolDur = document.getElementById('toolDur');
+  const toolComponents = document.getElementById('toolComponents');
+  const toolEffGather = document.getElementById('toolEffGather');
+  const toolEffAttack = document.getElementById('toolEffAttack');
+  const toolEffBreak = document.getElementById('toolEffBreak');
+  const toolEffCraft = document.getElementById('toolEffCraft');
+  const toolPropSharp = document.getElementById('toolPropSharp');
+  const toolPropEff = document.getElementById('toolPropEff');
+
+  const btnPrivacyLoad = document.getElementById('btnPrivacyLoad');
+  const btnPrivacySave = document.getElementById('btnPrivacySave');
+  const privacyState = document.getElementById('privacyState');
+  const privacyText = document.getElementById('privacyText');
+
+  const btnSiteLoad = document.getElementById('btnSiteLoad');
+  const btnSiteSave = document.getElementById('btnSiteSave');
+  const siteState = document.getElementById('siteState');
+  const siteProjectName = document.getElementById('siteProjectName');
+  const siteSeoTitle = document.getElementById('siteSeoTitle');
+  const siteSeoDescription = document.getElementById('siteSeoDescription');
+  const siteSeoKeywords = document.getElementById('siteSeoKeywords');
+  const siteOgImage = document.getElementById('siteOgImage');
+  const siteBannerHtml = document.getElementById('siteBannerHtml');
+
+  const btnChatAnnLoad = document.getElementById('btnChatAnnLoad');
+  const btnChatAnnSave = document.getElementById('btnChatAnnSave');
+  const chatAnnState = document.getElementById('chatAnnState');
+  const chatAnnText = document.getElementById('chatAnnText');
+
+  const btnChatReload = document.getElementById('btnChatReload');
+  const chatModState = document.getElementById('chatModState');
+  const chatMessagesAdmin = document.getElementById('chatMessagesAdmin');
+  const chatBanUserId = document.getElementById('chatBanUserId');
+  const chatBanMode = document.getElementById('chatBanMode');
+  const btnChatBan = document.getElementById('btnChatBan');
+
+  let toolsData = { version: 1, recipes: [] };
+
+  let mapData = { version: 1, width: 100, height: 100, terrain: { water: [] }, objects: [], settings: { disable_random_water_lakes: true, disable_random_initial_resources: true } };
+  const mapCam = { x: 0, y: 0, zoom: 1.0 };
+  const mapBaseCell = 12;
+  let mapIsDown = false;
+  let mapIsPan = false;
+  let panPrev = null;
+
+  function getToken() {
+    return localStorage.getItem('evosim_token');
+  }
+
+  function setToken(token) {
+    localStorage.setItem('evosim_token', token);
+  }
+
+  function clearToken() {
+    localStorage.removeItem('evosim_token');
+    localStorage.removeItem('evosim_username');
+    localStorage.removeItem('evosim_is_admin');
+  }
+
+  function setText(el, t) {
+    el.textContent = t || '';
+  }
+
+  function localizeDetail(detail) {
+    const d = (detail || '').toString();
+    if (!d) return '';
+    const map = {
+      invalid_username_or_password: 'Неверный логин или пароль',
+      invalid_token: 'Сессия недействительна. Войдите заново.',
+      not_authenticated: 'Нужно войти в аккаунт',
+      not_admin: 'Недостаточно прав (нужен администратор)',
+      registration_closed: 'Регистрация закрыта. Пользователей создаёт администратор.',
+      username_taken: 'Этот логин уже занят',
+      username_too_short: 'Логин слишком короткий',
+      password_too_short: 'Пароль слишком короткий',
+    };
+    return map[d] || d;
+  }
+
+  function setPill(el, kind, text) {
+    if (!el) return;
+    const k = kind || 'warn';
+    const safe = String(text || '');
+    el.innerHTML = `<span class="dot ${k}"></span><span class="mono">${escapeHtml(safe)}</span>`;
+  }
+
+  function showTab(which) {
+    const isUsers = which === 'users';
+    const isNews = which === 'news';
+    const isMap = which === 'map';
+    const isTools = which === 'tools';
+    const isSite = which === 'site';
+    const isPrivacy = which === 'privacy';
+    const isChat = which === 'chat';
+    if (tabUsers) tabUsers.classList.toggle('active', isUsers);
+    if (tabNews) tabNews.classList.toggle('active', isNews);
+    if (tabMap) tabMap.classList.toggle('active', isMap);
+    if (tabTools) tabTools.classList.toggle('active', isTools);
+    if (tabSite) tabSite.classList.toggle('active', isSite);
+    if (tabPrivacy) tabPrivacy.classList.toggle('active', isPrivacy);
+    if (tabChat) tabChat.classList.toggle('active', isChat);
+    if (usersPanel) usersPanel.style.display = isUsers ? '' : 'none';
+    if (newsPanel) newsPanel.style.display = isNews ? '' : 'none';
+    if (mapPanel) mapPanel.style.display = isMap ? '' : 'none';
+    if (toolsPanel) toolsPanel.style.display = isTools ? '' : 'none';
+    if (sitePanel) sitePanel.style.display = isSite ? '' : 'none';
+    if (privacyPanel) privacyPanel.style.display = isPrivacy ? '' : 'none';
+    if (chatPanel) chatPanel.style.display = isChat ? '' : 'none';
+    if (isMap) {
+      drawMap();
+    }
+    if (isTools) {
+      renderToolsList();
+    }
+  }
+
+  function setSiteState(t) {
+    if (siteState) siteState.textContent = t || '';
+  }
+
+  async function loadSiteSettings() {
+    const token = getToken();
+    if (!token) {
+      setSiteState('нужно войти');
+      return;
+    }
+    setSiteState('загрузка…');
+    try {
+      const res = await fetch(`/api/admin/site_settings?token=${encodeURIComponent(token)}`, { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(localizeDetail(data && data.detail));
+      const s = (data && data.site) ? data.site : {};
+      if (siteProjectName) siteProjectName.value = String(s.project_name || '');
+      if (siteSeoTitle) siteSeoTitle.value = String(s.seo_title || '');
+      if (siteSeoDescription) siteSeoDescription.value = String(s.seo_description || '');
+      if (siteSeoKeywords) siteSeoKeywords.value = String(s.seo_keywords || '');
+      if (siteOgImage) siteOgImage.value = String(s.seo_og_image || '');
+      if (siteBannerHtml) siteBannerHtml.value = String(s.banner_html || '');
+      setSiteState('ok');
+    } catch (e) {
+      setSiteState(String(e && e.message ? e.message : e));
+    }
+  }
+
+  async function saveSiteSettings() {
+    const token = getToken();
+    if (!token) {
+      setSiteState('нужно войти');
+      return;
+    }
+    setSiteState('сохранение…');
+    try {
+      const payload = {
+        project_name: (siteProjectName ? siteProjectName.value : ''),
+        seo_title: (siteSeoTitle ? siteSeoTitle.value : ''),
+        seo_description: (siteSeoDescription ? siteSeoDescription.value : ''),
+        seo_keywords: (siteSeoKeywords ? siteSeoKeywords.value : ''),
+        seo_og_image: (siteOgImage ? siteOgImage.value : ''),
+        banner_html: (siteBannerHtml ? siteBannerHtml.value : ''),
+      };
+      const res = await fetch(`/api/admin/site_settings?token=${encodeURIComponent(token)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(localizeDetail(data && data.detail));
+      setSiteState('ok');
+    } catch (e) {
+      setSiteState(String(e && e.message ? e.message : e));
+    }
+  }
+
+  function setPrivacyState(t) {
+    if (privacyState) privacyState.textContent = t || '';
+  }
+
+  async function loadPrivacy() {
+    const token = getToken();
+    if (!token) {
+      setPrivacyState('нужно войти');
+      return;
+    }
+    setPrivacyState('загрузка…');
+    try {
+      const res = await fetch(`/api/admin/privacy?token=${encodeURIComponent(token)}`, { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(localizeDetail(data && data.detail));
+      const p = (data && data.privacy) ? data.privacy : {};
+      if (privacyText) privacyText.value = String(p.text || '');
+      setPrivacyState('ok');
+    } catch (e) {
+      setPrivacyState(String(e && e.message ? e.message : e));
+    }
+  }
+
+  async function savePrivacy() {
+    const token = getToken();
+    if (!token) {
+      setPrivacyState('нужно войти');
+      return;
+    }
+    setPrivacyState('сохранение…');
+    try {
+      const payload = { text: (privacyText ? privacyText.value : '') };
+      const res = await fetch(`/api/admin/privacy?token=${encodeURIComponent(token)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(localizeDetail(data && data.detail));
+      setPrivacyState('ok');
+    } catch (e) {
+      setPrivacyState(String(e && e.message ? e.message : e));
+    }
+  }
+
+  function setToolsState(t) {
+    if (toolsState) toolsState.textContent = t || '';
+  }
+
+  function renderToolsList() {
+    if (!toolsList) return;
+    const items = (toolsData && toolsData.recipes) ? toolsData.recipes : [];
+    toolsList.innerHTML = '';
+    for (let i = 0; i < items.length; i++) {
+      const r = items[i];
+      const wrap = document.createElement('div');
+      wrap.className = 'item';
+      const comps = (r.components || []).join(', ');
+      const eff = r.effectiveness || {};
+      const props = r.properties || {};
+      const effStr = JSON.stringify(eff);
+      const propsStr = JSON.stringify(props);
+
+      wrap.innerHTML = `
+        <div class="row" style="justify-content:space-between; align-items:flex-start;">
+          <div style="flex:1;">
+            <div class="row" style="justify-content:space-between;">
+              <div><b>${escapeHtml(r.kind || 'tool')}</b></div>
+              <button class="secondary" data-del="${i}">Удалить</button>
+            </div>
+            <div style="margin-top:8px;" class="muted">components</div>
+            <input data-comps="${i}" value="${escapeHtml(comps)}" style="width:100%;" />
+            <div class="split" style="margin-top:8px;">
+              <div>
+                <div class="muted">durability_left</div>
+                <input data-dur="${i}" type="number" min="5" max="100" value="${escapeHtml(String(r.durability_left ?? ''))}" />
+              </div>
+              <div>
+                <div class="muted">effectiveness JSON</div>
+                <input data-eff="${i}" value="${escapeHtml(effStr)}" style="width:100%;" />
+              </div>
+            </div>
+            <div style="margin-top:8px;" class="muted">properties JSON (optional)</div>
+            <input data-props="${i}" value="${escapeHtml(propsStr)}" style="width:100%;" />
+          </div>
+        </div>
+      `;
+      const btn = wrap.querySelector('button[data-del]');
+      if (btn) {
+        btn.addEventListener('click', () => {
+          try {
+            toolsData.recipes.splice(i, 1);
+          } catch (e) {}
+          renderToolsList();
+        });
+      }
+
+      const inpComps = wrap.querySelector('input[data-comps]');
+      if (inpComps) {
+        inpComps.addEventListener('input', () => {
+          const v = String(inpComps.value || '');
+          toolsData.recipes[i].components = v.split(',').map(s => s.trim()).filter(Boolean);
+        });
+      }
+      const inpDur = wrap.querySelector('input[data-dur]');
+      if (inpDur) {
+        inpDur.addEventListener('input', () => {
+          const n = Number(inpDur.value);
+          if (Number.isFinite(n)) toolsData.recipes[i].durability_left = n;
+        });
+      }
+      const inpEff = wrap.querySelector('input[data-eff]');
+      if (inpEff) {
+        inpEff.addEventListener('input', () => {
+          try {
+            const obj = JSON.parse(String(inpEff.value || '{}'));
+            if (obj && typeof obj === 'object') toolsData.recipes[i].effectiveness = obj;
+          } catch (e) {}
+        });
+      }
+      const inpProps = wrap.querySelector('input[data-props]');
+      if (inpProps) {
+        inpProps.addEventListener('input', () => {
+          try {
+            const obj = JSON.parse(String(inpProps.value || '{}'));
+            if (obj && typeof obj === 'object') toolsData.recipes[i].properties = obj;
+          } catch (e) {}
+        });
+      }
+
+      toolsList.appendChild(wrap);
+    }
+    if (items.length === 0) {
+      const div = document.createElement('div');
+      div.className = 'muted';
+      div.textContent = 'Пока нет кастомных рецептов';
+      toolsList.appendChild(div);
+    }
+  }
+
+  async function loadTools() {
+    const token = getToken();
+    if (!token) return;
+    setToolsState('...');
+    const { res, data } = await jsonFetch('/api/admin/tools?token=' + encodeURIComponent(token), { cache: 'no-store' });
+    if (!res.ok) {
+      setToolsState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+    toolsData = data.tools || { version: 1, recipes: [] };
+    renderToolsList();
+    setToolsState('');
+  }
+
+  async function saveTools() {
+    const token = getToken();
+    if (!token) return;
+    setToolsState('...');
+    const { res, data } = await jsonFetch('/api/admin/tools?token=' + encodeURIComponent(token), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(toolsData)
+    });
+    if (!res.ok) {
+      setToolsState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+    setToolsState('сохранено');
+  }
+
+  function parseNum(v) {
+    if (v === undefined || v === null) return null;
+    const s = String(v).trim();
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function addToolRecipeFromForm() {
+    const kind = (toolKind.value || '').trim();
+    const compsRaw = (toolComponents.value || '').trim();
+    const dur = parseNum(toolDur.value);
+    const g = parseNum(toolEffGather.value);
+    const a = parseNum(toolEffAttack.value);
+    const b = parseNum(toolEffBreak.value);
+    const c = parseNum(toolEffCraft.value);
+    if (!kind || !compsRaw) {
+      setToolsState('Заполни kind и components');
+      return;
+    }
+
+    const comps = compsRaw.split(',').map(s => s.trim()).filter(Boolean);
+    if (comps.length < 2) {
+      setToolsState('Нужно минимум 2 компонента');
+      return;
+    }
+    const eff = {};
+    if (g !== null) eff.gather = g;
+    if (a !== null) eff.attack = a;
+    if (b !== null) eff.break = b;
+    if (c !== null) eff.craft = c;
+    if (Object.keys(eff).length === 0) {
+      setToolsState('Укажи хотя бы одно effectiveness значение');
+      return;
+    }
+    const props = {};
+    const sh = parseNum(toolPropSharp.value);
+    const pe = parseNum(toolPropEff.value);
+    if (sh !== null) props.sharpness = sh;
+    if (pe !== null) props.effectiveness = pe;
+    const item = {
+      kind,
+      components: comps,
+      effectiveness: eff,
+      durability_left: dur !== null ? dur : 60,
+      properties: props,
+    };
+    toolsData.recipes = toolsData.recipes || [];
+    const exists = toolsData.recipes.some(r => String(r.kind || '').trim() === kind);
+    if (exists) {
+      setToolsState('kind уже существует (он должен быть уникальным)');
+      return;
+    }
+    toolsData.recipes.push(item);
+    renderToolsList();
+    setToolsState('добавлено (не забудь сохранить)');
+  }
+
+  function setToolsJsonState(t) {
+    if (toolsJsonState) toolsJsonState.textContent = t || '';
+  }
+
+  function openToolsJsonBox(mode) {
+    if (!toolsJsonBox || !toolsJson) return;
+    toolsJsonBox.style.display = '';
+    setToolsJsonState('');
+    if (mode === 'export') {
+      toolsJson.value = JSON.stringify(toolsData, null, 2);
+    }
+    if (mode === 'import') {
+      toolsJson.value = JSON.stringify(toolsData, null, 2);
+    }
+  }
+
+  function closeToolsJsonBox() {
+    if (!toolsJsonBox) return;
+    toolsJsonBox.style.display = 'none';
+  }
+
+  function applyToolsJson() {
+    if (!toolsJson) return;
+    setToolsJsonState('...');
+    try {
+      const parsed = JSON.parse(String(toolsJson.value || ''));
+      if (!parsed || typeof parsed !== 'object') {
+        setToolsJsonState('Неверный JSON');
+        return;
+      }
+      if (!Array.isArray(parsed.recipes)) {
+        setToolsJsonState('Ожидается поле recipes: []');
+        return;
+      }
+      toolsData = { version: 1, recipes: parsed.recipes };
+      renderToolsList();
+      setToolsJsonState('применено (не забудь сохранить)');
+    } catch (e) {
+      setToolsJsonState('Ошибка парсинга JSON');
+    }
+  }
+
+  function setMapState(t) {
+    if (mapState) mapState.textContent = t || '';
+  }
+
+  function keyXY(x, y) { return `${x},${y}`; }
+
+  function waterSet() {
+    const s = new Set();
+    for (const c of (mapData.terrain && mapData.terrain.water) ? mapData.terrain.water : []) {
+      try { s.add(keyXY(c[0], c[1])); } catch (e) {}
+    }
+    return s;
+  }
+
+  function objMap() {
+    const m = new Map();
+    for (const o of mapData.objects || []) {
+      m.set(keyXY(o.x, o.y), o.type);
+    }
+    return m;
+  }
+
+  function setCell(x, y, brush) {
+    const w = mapData.width || 100;
+    const h = mapData.height || 100;
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    const ws = waterSet();
+    const om = objMap();
+    const k = keyXY(x, y);
+
+    if (brush === 'water') {
+      ws.add(k);
+      om.delete(k);
+    } else if (brush === 'erase_water') {
+      ws.delete(k);
+    } else if (brush === 'erase_obj') {
+      om.delete(k);
+    } else {
+      om.set(k, brush);
+      ws.delete(k);
+    }
+
+    mapData.terrain = { water: Array.from(ws).map(s => s.split(',').map(n => parseInt(n, 10))) };
+    mapData.objects = Array.from(om.entries()).map(([kk, t]) => {
+      const [sx, sy] = kk.split(',').map(n => parseInt(n, 10));
+      return { type: t, x: sx, y: sy, quantity: 1 };
+    });
+  }
+
+  function drawMap() {
+    if (!mapCtx || !mapCanvas) return;
+    const w = mapData.width || 100;
+    const h = mapData.height || 100;
+    mapW.value = String(w);
+    mapH.value = String(h);
+
+    const cell = Math.max(4, Math.min(60, mapBaseCell * mapCam.zoom));
+    const pad = 10;
+    const cw = mapCanvas.width;
+    const ch = mapCanvas.height;
+    mapCtx.clearRect(0, 0, cw, ch);
+    mapCtx.fillStyle = 'rgba(0,0,0,0.12)';
+    mapCtx.fillRect(0, 0, cw, ch);
+
+    const ws = waterSet();
+    const om = objMap();
+
+
+    // Camera: mapCam.x/y are pixel offsets of world origin inside canvas
+    const originX = pad + mapCam.x;
+    const originY = pad + mapCam.y;
+    const startX = Math.max(0, Math.floor((-originX) / cell) - 1);
+    const startY = Math.max(0, Math.floor((-originY) / cell) - 1);
+    const endX = Math.min(w, Math.ceil((cw - originX) / cell) + 1);
+    const endY = Math.min(h, Math.ceil((ch - originY) / cell) + 1);
+
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const px = originX + x * cell;
+        const py = originY + y * cell;
+        const k = keyXY(x, y);
+        const isWater = ws.has(k);
+        const obj = om.get(k) || null;
+
+        if (isWater) {
+          mapCtx.fillStyle = 'rgba(46, 107, 255, 0.60)';
+          mapCtx.fillRect(px, py, cell, cell);
+        } else {
+          mapCtx.fillStyle = 'rgba(255,255,255,0.04)';
+          mapCtx.fillRect(px, py, cell, cell);
+        }
+
+        if (obj) {
+          const colors = {
+            wood: 'rgba(180, 120, 60, 0.9)',
+            stone: 'rgba(180, 180, 190, 0.9)',
+            plant: 'rgba(36, 193, 106, 0.9)',
+            berry: 'rgba(200, 80, 160, 0.9)',
+            bone: 'rgba(220, 220, 200, 0.9)',
+            fiber: 'rgba(240, 180, 41, 0.9)',
+          };
+          mapCtx.fillStyle = colors[obj] || 'rgba(255,255,255,0.8)';
+          mapCtx.fillRect(px + 2, py + 2, cell - 4, cell - 4);
+        }
+
+        mapCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+        mapCtx.strokeRect(px, py, cell, cell);
+      }
+    }
+
+    setMapState(`размер: ${w}×${h} | вода: ${ws.size} | ресурсов: ${om.size}`);
+
+    drawMiniMap(w, h, ws, om, { originX, originY, cell, cw, ch });
+  }
+
+  function drawMiniMap(w, h, ws, om, view) {
+    if (!miniCtx || !mapMini) return;
+    const mw = mapMini.width;
+    const mh = mapMini.height;
+    miniCtx.clearRect(0, 0, mw, mh);
+    miniCtx.fillStyle = 'rgba(0,0,0,0.12)';
+    miniCtx.fillRect(0, 0, mw, mh);
+
+    const sx = mw / Math.max(1, w);
+    const sy = mh / Math.max(1, h);
+
+    // Water
+    miniCtx.fillStyle = 'rgba(46, 107, 255, 0.55)';
+    for (const kk of ws) {
+      const parts = kk.split(',');
+      const x = parseInt(parts[0], 10);
+      const y = parseInt(parts[1], 10);
+      miniCtx.fillRect(x * sx, y * sy, Math.max(1, sx), Math.max(1, sy));
+    }
+
+    // Objects
+    for (const [kk, t] of om.entries()) {
+      const parts = kk.split(',');
+      const x = parseInt(parts[0], 10);
+      const y = parseInt(parts[1], 10);
+      const colors = {
+        wood: 'rgba(180, 120, 60, 0.9)',
+        stone: 'rgba(180, 180, 190, 0.9)',
+        plant: 'rgba(36, 193, 106, 0.9)',
+        berry: 'rgba(200, 80, 160, 0.9)',
+        bone: 'rgba(220, 220, 200, 0.9)',
+        fiber: 'rgba(240, 180, 41, 0.9)',
+      };
+      miniCtx.fillStyle = colors[t] || 'rgba(255,255,255,0.85)';
+      miniCtx.fillRect(x * sx, y * sy, Math.max(1, sx), Math.max(1, sy));
+    }
+
+    // Viewport rectangle
+    const vx0 = (-view.originX) / view.cell;
+    const vy0 = (-view.originY) / view.cell;
+    const vx1 = (view.cw - view.originX) / view.cell;
+    const vy1 = (view.ch - view.originY) / view.cell;
+    const rx = Math.max(0, vx0) * sx;
+    const ry = Math.max(0, vy0) * sy;
+    const rw = Math.max(0, Math.min(w, vx1) - Math.max(0, vx0)) * sx;
+    const rh = Math.max(0, Math.min(h, vy1) - Math.max(0, vy0)) * sy;
+    miniCtx.strokeStyle = 'rgba(255,255,255,0.85)';
+    miniCtx.lineWidth = 2;
+    miniCtx.strokeRect(rx + 1, ry + 1, Math.max(2, rw - 2), Math.max(2, rh - 2));
+  }
+
+  function canvasToCell(e) {
+    const rect = mapCanvas.getBoundingClientRect();
+    const xCss = e.clientX - rect.left;
+    const yCss = e.clientY - rect.top;
+    const scaleX = mapCanvas.width / rect.width;
+    const scaleY = mapCanvas.height / rect.height;
+    const x = xCss * scaleX;
+    const y = yCss * scaleY;
+    const cell = Math.max(4, Math.min(60, mapBaseCell * mapCam.zoom));
+    const pad = 10;
+    const originX = pad + mapCam.x;
+    const originY = pad + mapCam.y;
+    const cx = Math.floor((x - originX) / cell);
+    const cy = Math.floor((y - originY) / cell);
+    return { x: cx, y: cy };
+  }
+
+  function canvasToWorldPx(e) {
+    const rect = mapCanvas.getBoundingClientRect();
+    const xCss = e.clientX - rect.left;
+    const yCss = e.clientY - rect.top;
+    const scaleX = mapCanvas.width / rect.width;
+    const scaleY = mapCanvas.height / rect.height;
+    return { x: xCss * scaleX, y: yCss * scaleY };
+  }
+
+  async function loadMap() {
+    const token = getToken();
+    if (!token) return;
+    setMapState('...');
+    const { res, data } = await jsonFetch('/api/admin/map?token=' + encodeURIComponent(token), { cache: 'no-store' });
+    if (!res.ok) {
+      setMapState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+    mapData = data.map || mapData;
+    drawMap();
+  }
+
+  async function saveMap() {
+    const token = getToken();
+    if (!token) return;
+    const w = parseInt(mapW.value || '0', 10);
+    const h = parseInt(mapH.value || '0', 10);
+    mapData.width = w;
+    mapData.height = h;
+    setMapState('...');
+    const { res, data } = await jsonFetch('/api/admin/map?token=' + encodeURIComponent(token), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(mapData)
+    });
+    if (!res.ok) {
+      setMapState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+    drawMap();
+    setMapState('сохранено');
+  }
+
+  async function applyMapNow() {
+    const token = getToken();
+    if (!token) return;
+    await saveMap();
+    setMapState('применяем (перезапуск прогона)...');
+    const { res, data } = await jsonFetch('/api/admin/map/apply?token=' + encodeURIComponent(token), { method: 'POST' });
+    if (!res.ok) {
+      setMapState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+    setMapState('применено');
+  }
+
+  async function jsonFetch(url, options) {
+    const res = await fetch(url, options || {});
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+  }
+
+  async function refreshBootstrapStatus() {
+    const { res, data } = await jsonFetch('/api/admin/bootstrap/status', { cache: 'no-store' });
+    if (!res.ok) {
+      setPill(globalState, 'warn', 'ошибка получения статуса');
+      return;
+    }
+    const adminExists = !!data.admin_exists;
+    const regOpen = !!data.registration_open;
+    const msg = `admin_exists=${adminExists} | registration_open=${regOpen}`;
+    setPill(globalState, adminExists ? 'ok' : 'warn', msg);
+    btnBootstrap.disabled = !!data.admin_exists || !data.registration_open;
+  }
+
+  async function bootstrapAdmin() {
+    setText(bootState, '...');
+    const username = (bootUser.value || '').trim();
+    const password = bootPass.value || '';
+    const { res, data } = await jsonFetch('/api/admin/bootstrap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    if (!res.ok) {
+      setText(bootState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      await refreshBootstrapStatus();
+      return;
+    }
+    setToken(data.token);
+    localStorage.setItem('evosim_username', data.username);
+    localStorage.setItem('evosim_is_admin', data.is_admin ? '1' : '0');
+    setText(bootState, `готово: ${data.username} (admin)`);
+    await refreshBootstrapStatus();
+    await refreshMe();
+    await loadUsers();
+    await loadNews();
+  }
+
+  async function login() {
+    setText(loginState, '...');
+    const username = (loginUser.value || '').trim();
+    const password = loginPass.value || '';
+    const { res, data } = await jsonFetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    if (!res.ok) {
+      setText(loginState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+    setToken(data.token);
+    localStorage.setItem('evosim_username', data.username);
+    localStorage.setItem('evosim_is_admin', data.is_admin ? '1' : '0');
+    setText(loginState, `вы вошли как ${data.username} (admin=${data.is_admin})`);
+    await refreshMe();
+    await loadUsers();
+    await loadNews();
+  }
+
+  function logout() {
+    clearToken();
+    setText(loginState, '');
+    usersList.innerHTML = '';
+    newsList.innerHTML = '';
+    refreshMe();
+  }
+
+  async function refreshMe() {
+    const token = getToken();
+    const loggedIn = !!token;
+
+    btnLogout.style.display = loggedIn ? '' : 'none';
+    btnLogin.style.display = loggedIn ? 'none' : '';
+
+    if (!token) {
+      setText(usersState, 'нужен admin token');
+      setText(newsState, 'нужен admin token');
+      btnCreateUser.disabled = true;
+      btnPostNews.disabled = true;
+      return;
+    }
+
+    const { res, data } = await jsonFetch('/api/auth/me?token=' + encodeURIComponent(token), { cache: 'no-store' });
+    if (!res.ok) {
+      setText(loginState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      btnCreateUser.disabled = true;
+      btnPostNews.disabled = true;
+      return;
+    }
+
+    if (!data.is_admin) {
+      setText(loginState, `вы вошли как ${data.username}, но вы не админ`);
+      btnCreateUser.disabled = true;
+      btnPostNews.disabled = true;
+      return;
+    }
+
+    setText(loginState, `вы вошли как ${data.username} > Администратор`);
+    btnCreateUser.disabled = false;
+    btnPostNews.disabled = false;
+  }
+
+  async function loadUsers() {
+    const token = getToken();
+    if (!token) return;
+
+    setText(usersState, '...');
+    const { res, data } = await jsonFetch('/api/admin/users?token=' + encodeURIComponent(token), { cache: 'no-store' });
+    if (!res.ok) {
+      setText(usersState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+
+    const items = data.items || [];
+    setText(usersState, `пользователей: ${items.length}`);
+    usersList.innerHTML = '';
+
+    for (const u of items) {
+      const div = document.createElement('div');
+      div.className = 'item';
+      const created = (u.created_at || '').replace('T', ' ').slice(0, 19);
+      div.innerHTML = `
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <b>${u.username}</b>
+            <span class="muted">#${u.id}</span>
+            ${u.is_admin ? '<span class="muted"> > Администратор</span>' : ''}
+            <div class="muted">создан: ${created}</div>
+          </div>
+          <div class="row">
+            <button class="secondary" data-act="toggle">${u.is_admin ? 'Снять admin' : 'Сделать admin'}</button>
+            <button class="danger" data-act="delete">Удалить</button>
+          </div>
+        </div>
+      `;
+
+      const btnToggle = div.querySelector('button[data-act="toggle"]');
+      const btnDel = div.querySelector('button[data-act="delete"]');
+
+      btnToggle.addEventListener('click', async () => {
+        try {
+          const makeAdmin = !u.is_admin;
+          const { res: r, data: d } = await jsonFetch('/api/admin/users/' + u.id + '/set_admin?token=' + encodeURIComponent(token), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_admin: makeAdmin })
+          });
+          if (!r.ok) {
+            setText(usersState, localizeDetail(d.detail) || `Ошибка ${r.status}`);
+            return;
+          }
+          await loadUsers();
+        } catch (e) {}
+      });
+
+      btnDel.addEventListener('click', async () => {
+        try {
+          const { res: r, data: d } = await jsonFetch('/api/admin/users/' + u.id + '?token=' + encodeURIComponent(token), {
+            method: 'DELETE'
+          });
+          if (!r.ok) {
+            setText(usersState, localizeDetail(d.detail) || `Ошибка ${r.status}`);
+            return;
+          }
+          await loadUsers();
+        } catch (e) {}
+      });
+
+      usersList.appendChild(div);
+    }
+  }
+
+  async function createUser() {
+    const token = getToken();
+    if (!token) return;
+
+    setText(createUserState, '...');
+    const username = (newUser.value || '').trim();
+    const password = newPass.value || '';
+    const is_admin = !!newIsAdmin.checked;
+
+    const { res, data } = await jsonFetch('/api/admin/users?token=' + encodeURIComponent(token), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, is_admin })
+    });
+
+    if (!res.ok) {
+      setText(createUserState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+
+    newUser.value = '';
+    newPass.value = '';
+    newIsAdmin.checked = false;
+    setText(createUserState, 'создано');
+    await loadUsers();
+  }
+
+  function renderNews(items) {
+    newsList.innerHTML = '';
+    const arr = items || [];
+    setText(newsState, `новостей: ${arr.length}`);
+
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const n = arr[i];
+      const div = document.createElement('div');
+      div.className = 'item';
+      const t = (n.created_at || '').replace('T', ' ').slice(0, 19);
+      div.innerHTML = `
+        <div style="display:flex; justify-content:space-between; gap:12px;">
+          <div style="flex:1;">
+            <div><b>${n.title}</b></div>
+            <div class="muted">${t} — ${n.author_username} — #${n.id}</div>
+            <div style="white-space:pre-wrap; margin-top:6px;">${escapeHtml(n.text)}</div>
+          </div>
+          <div>
+            <button class="danger" data-act="delete">Удалить</button>
+          </div>
+        </div>
+      `;
+      div.querySelector('button[data-act="delete"]').addEventListener('click', async () => {
+        const token = getToken();
+        if (!token) return;
+        const { res, data } = await jsonFetch('/api/admin/news/' + n.id + '?token=' + encodeURIComponent(token), { method: 'DELETE' });
+        if (!res.ok) {
+          setText(newsState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+          return;
+        }
+        await loadNews();
+      });
+      newsList.appendChild(div);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+  }
+
+  async function loadNews() {
+    setText(newsState, '...');
+    const { res, data } = await jsonFetch('/api/news?limit=50', { cache: 'no-store' });
+    if (!res.ok) {
+      setText(newsState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+    renderNews(data.items || []);
+  }
+
+  async function postNews() {
+    const token = getToken();
+    if (!token) return;
+
+    setText(postNewsState, '...');
+    const title = (newsTitle.value || '').trim();
+    const text = (newsText.value || '').trim();
+
+    const { res, data } = await jsonFetch('/api/admin/news?token=' + encodeURIComponent(token), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, text })
+    });
+
+    if (!res.ok) {
+      setText(postNewsState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+
+    newsTitle.value = '';
+    newsText.value = '';
+    setText(postNewsState, 'опубликовано');
+    await loadNews();
+  }
+
+  btnBootstrap.addEventListener('click', () => { bootstrapAdmin(); });
+  btnLogin.addEventListener('click', () => { login(); });
+  btnLogout.addEventListener('click', () => { logout(); });
+
+  btnReloadUsers.addEventListener('click', () => { loadUsers(); });
+  btnCreateUser.addEventListener('click', () => { createUser(); });
+
+  btnReloadNews.addEventListener('click', () => { loadNews(); });
+  btnPostNews.addEventListener('click', () => { postNews(); });
+
+  if (tabUsers) {
+    tabUsers.addEventListener('click', () => showTab('users'));
+  }
+  if (tabNews) {
+    tabNews.addEventListener('click', () => showTab('news'));
+  }
+  if (tabMap) {
+    tabMap.addEventListener('click', () => showTab('map'));
+  }
+  if (tabTools) {
+    tabTools.addEventListener('click', () => showTab('tools'));
+  }
+  if (tabSite) {
+    tabSite.addEventListener('click', () => showTab('site'));
+  }
+  if (tabPrivacy) {
+    tabPrivacy.addEventListener('click', () => showTab('privacy'));
+  }
+  if (tabChat) {
+    tabChat.addEventListener('click', () => showTab('chat'));
+  }
+
+  if (btnSiteLoad) btnSiteLoad.addEventListener('click', () => loadSiteSettings());
+  if (btnSiteSave) btnSiteSave.addEventListener('click', () => saveSiteSettings());
+
+  if (btnPrivacyLoad) btnPrivacyLoad.addEventListener('click', () => loadPrivacy());
+  if (btnPrivacySave) btnPrivacySave.addEventListener('click', () => savePrivacy());
+
+  if (btnChatAnnLoad) btnChatAnnLoad.addEventListener('click', () => loadChatAnnouncement());
+  if (btnChatAnnSave) btnChatAnnSave.addEventListener('click', () => saveChatAnnouncement());
+  if (btnChatReload) btnChatReload.addEventListener('click', () => loadChatMessages());
+  if (btnChatBan) btnChatBan.addEventListener('click', () => applyChatBan());
+
+  if (btnMapLoad) btnMapLoad.addEventListener('click', () => loadMap());
+  if (btnMapSave) btnMapSave.addEventListener('click', () => saveMap());
+  if (btnMapApply) btnMapApply.addEventListener('click', () => applyMapNow());
+
+  if (btnToolsReload) btnToolsReload.addEventListener('click', () => loadTools());
+  if (btnToolsSave) btnToolsSave.addEventListener('click', () => saveTools());
+  if (btnToolsAdd) btnToolsAdd.addEventListener('click', () => addToolRecipeFromForm());
+  if (btnToolsExport) btnToolsExport.addEventListener('click', () => openToolsJsonBox('export'));
+  if (btnToolsImport) btnToolsImport.addEventListener('click', () => openToolsJsonBox('import'));
+  if (btnToolsJsonApply) btnToolsJsonApply.addEventListener('click', () => applyToolsJson());
+  if (btnToolsJsonClose) btnToolsJsonClose.addEventListener('click', () => closeToolsJsonBox());
+
+  if (mapCanvas) {
+    mapCanvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const before = canvasToWorldPx(e);
+      const old = mapCam.zoom;
+      const step = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      mapCam.zoom = Math.max(0.35, Math.min(4.0, mapCam.zoom * step));
+      // keep cursor anchored
+      const pad = 10;
+      const cellOld = Math.max(4, Math.min(60, mapBaseCell * old));
+      const cellNew = Math.max(4, Math.min(60, mapBaseCell * mapCam.zoom));
+      const originOldX = pad + mapCam.x;
+      const originOldY = pad + mapCam.y;
+      const worldX = (before.x - originOldX) / cellOld;
+      const worldY = (before.y - originOldY) / cellOld;
+      const originNewX = before.x - worldX * cellNew;
+      const originNewY = before.y - worldY * cellNew;
+      mapCam.x = originNewX - pad;
+      mapCam.y = originNewY - pad;
+      drawMap();
+    }, { passive: false });
+
+    mapCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    mapCanvas.addEventListener('mousedown', (e) => {
+      // Left = paint, Right/Middle = pan
+      if (e.button === 1 || e.button === 2) {
+        mapIsPan = true;
+        panPrev = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      mapIsDown = true;
+      const { x, y } = canvasToCell(e);
+      setCell(x, y, mapBrush.value);
+      drawMap();
+    });
+    window.addEventListener('mouseup', () => { mapIsDown = false; mapIsPan = false; panPrev = null; });
+    mapCanvas.addEventListener('mousemove', (e) => {
+      if (mapIsPan && panPrev) {
+        const dx = e.clientX - panPrev.x;
+        const dy = e.clientY - panPrev.y;
+        panPrev = { x: e.clientX, y: e.clientY };
+        mapCam.x += dx;
+        mapCam.y += dy;
+        drawMap();
+        return;
+      }
+      if (!mapIsDown) return;
+      const { x, y } = canvasToCell(e);
+      setCell(x, y, mapBrush.value);
+      drawMap();
+    });
+  }
+
+  if (mapMini) {
+    mapMini.addEventListener('click', (e) => {
+      const w = mapData.width || 100;
+      const h = mapData.height || 100;
+      const rect = mapMini.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      const cell = Math.max(4, Math.min(60, mapBaseCell * mapCam.zoom));
+      const pad = 10;
+      const cw = mapCanvas.width;
+      const ch = mapCanvas.height;
+      const targetX = x * w;
+      const targetY = y * h;
+      mapCam.x = (cw / 2) - pad - targetX * cell;
+      mapCam.y = (ch / 2) - pad - targetY * cell;
+      drawMap();
+    });
+  }
+
+  (async () => {
+    showTab('users');
+    await refreshBootstrapStatus();
+    await refreshMe();
+    await loadNews();
+    await loadMap();
+    await loadTools();
+    await loadSiteSettings();
+    await loadPrivacy();
+    await loadChatAnnouncement();
+  })();
+</script>
+</body>
+</html>
