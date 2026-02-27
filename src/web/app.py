@@ -4,20 +4,534 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sqlite3
 import time
+import random
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, Set
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import jwt
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import status
+from fastapi.responses import JSONResponse
+from passlib.context import CryptContext
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from html import escape
 
 from ..utils.config_loader import load_config
 from ..core.simulation import Simulation
 from ..core.agent import AgentFactory
+from ..core.objects import ObjectFactory
+from ..core.tools import ToolFactory
 
 
 app = FastAPI(title="Evolution Simulation")
+
+
+_CHAT_DB_PATH = os.environ.get(
+    "EVOSIM_CHAT_DB",
+    str((Path(__file__).resolve().parents[2] / "data" / "chat.sqlite3").resolve()),
+)
+_JWT_SECRET = os.environ.get("EVOSIM_JWT_SECRET", "dev-insecure-secret")
+_JWT_ALG = "HS256"
+_JWT_TTL_HOURS = int(os.environ.get("EVOSIM_JWT_TTL_HOURS", "168"))
+
+_WORLD_MAP_PATH = str((Path(__file__).resolve().parents[2] / "data" / "world_map.json").resolve())
+_TOOL_RECIPES_PATH = str((Path(__file__).resolve().parents[2] / "data" / "tool_recipes.json").resolve())
+
+_pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+
+
+def _db_connect() -> sqlite3.Connection:
+    Path(_CHAT_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_CHAT_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _db_init() -> None:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS news (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                author_username TEXT NOT NULL
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_agents (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                sex TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+
+        # Lightweight migrations for existing DBs
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cur.execute("ALTER TABLE chat_messages ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+
+        cur.execute(
+            "INSERT OR IGNORE INTO settings(key, value) VALUES('registration_open', '1')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_privacy_policy_text() -> str:
+    default = (
+        "Политика конфиденциальности\n\n"
+        "1. Общие положения\n"
+        "Настоящая Политика описывает, какие данные могут обрабатываться при использовании сайта, "
+        "а также цели и способы такой обработки.\n\n"
+        "2. Какие данные могут обрабатываться\n"
+        "2.1. Технические данные: IP-адрес, данные о браузере/устройстве, cookies, время доступа, "
+        "а также технические идентификаторы, необходимые для работы сайта и авторизации.\n"
+        "2.2. Данные аккаунта: имя пользователя (логин), а также иные данные, которые вы сами вводите "
+        "при регистрации/авторизации и использовании функционала сайта (например, имя агента).\n\n"
+        "3. Цели обработки\n"
+        "3.1. Обеспечение работоспособности сайта и его функций (в т.ч. авторизация/сессия).\n"
+        "3.2. Улучшение качества сервиса и анализ использования (при наличии соответствующих механизмов).\n"
+        "3.3. Обеспечение безопасности и предотвращение злоупотреблений.\n\n"
+        "4. Cookies\n"
+        "Cookies используются для корректной работы сайта, сохранения настроек и авторизации. "
+        "Вы можете ограничить/запретить cookies в настройках браузера.\n\n"
+        "5. Передача третьим лицам\n"
+        "При подключении сторонних сервисов (например, сетей баннеров/аналитики) такие сервисы "
+        "могут собирать данные и устанавливать cookies согласно их собственным политикам.\n\n"
+        "6. Сроки хранения\n"
+        "Технические данные и данные аккаунта хранятся в объёме и сроках, необходимых для работы сайта "
+        "и достижения указанных целей.\n\n"
+        "7. Контакты\n"
+        "По вопросам обработки данных вы можете обратиться к администратору сайта.\n"
+    )
+    return _get_setting("privacy_policy_text", default)
+
+
+def _set_privacy_policy_text(text: str) -> None:
+    _set_setting("privacy_policy_text", str(text or "").strip())
+
+
+def _get_site_settings() -> Dict[str, str]:
+    project_name = _get_setting("project_name", "WorldSE")
+    seo_title = _get_setting("seo_title", project_name or "WorldSE")
+    seo_description = _get_setting(
+        "seo_description",
+        "WorldSE — интерактивная симуляция поведения агентов: выживание, общение и создание инструментов.",
+    )
+    seo_keywords = _get_setting(
+        "seo_keywords",
+        "симуляция, агенты, эволюция, инструменты, искусственная жизнь, worldse",
+    )
+    og_image = _get_setting("seo_og_image", "")
+    banner_html = _get_setting("banner_iframe_html", "")
+    return {
+        "project_name": str(project_name or "WorldSE"),
+        "seo_title": str(seo_title or project_name or "WorldSE"),
+        "seo_description": str(seo_description or ""),
+        "seo_keywords": str(seo_keywords or ""),
+        "seo_og_image": str(og_image or ""),
+        "banner_html": str(banner_html or ""),
+    }
+
+
+def _set_site_settings(payload: Dict[str, Any]) -> None:
+    if not isinstance(payload, dict):
+        return
+    if "project_name" in payload:
+        _set_setting("project_name", str(payload.get("project_name") or "").strip())
+    if "seo_title" in payload:
+        _set_setting("seo_title", str(payload.get("seo_title") or "").strip())
+    if "seo_description" in payload:
+        _set_setting("seo_description", str(payload.get("seo_description") or "").strip())
+    if "seo_keywords" in payload:
+        _set_setting("seo_keywords", str(payload.get("seo_keywords") or "").strip())
+    if "seo_og_image" in payload:
+        _set_setting("seo_og_image", str(payload.get("seo_og_image") or "").strip())
+    if "banner_html" in payload:
+        _set_setting("banner_iframe_html", str(payload.get("banner_html") or ""))
+
+
+def _is_chat_banned(uid: int) -> bool:
+    try:
+        v = _get_setting(f"chat_ban_uid_{int(uid)}", "0")
+        return str(v) == "1"
+    except Exception:
+        return False
+
+
+def _set_chat_ban(uid: int, banned: bool) -> None:
+    try:
+        _set_setting(f"chat_ban_uid_{int(uid)}", "1" if banned else "0")
+    except Exception:
+        pass
+
+
+def _get_chat_announcement() -> str:
+    return _get_setting("chat_announcement", "")
+
+
+def _set_chat_announcement(text: str) -> None:
+    _set_setting("chat_announcement", str(text or "").strip())
+
+
+def _read_world_map() -> Optional[Dict[str, Any]]:
+    p = Path(_WORLD_MAP_PATH)
+    if not p.exists():
+        return None
+    try:
+        raw = p.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _write_world_map(data: Dict[str, Any]) -> None:
+    p = Path(_WORLD_MAP_PATH)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def _read_tool_recipes() -> Dict[str, Any]:
+    p = Path(_TOOL_RECIPES_PATH)
+    if not p.exists():
+        return {"version": 1, "recipes": []}
+    try:
+        raw = p.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return {"version": 1, "recipes": []}
+        if "recipes" not in data:
+            data["recipes"] = []
+        return data
+    except Exception:
+        return {"version": 1, "recipes": []}
+
+
+def _write_tool_recipes(data: Dict[str, Any]) -> None:
+    p = Path(_TOOL_RECIPES_PATH)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def _normalize_tool_recipes(payload: Dict[str, Any]) -> Dict[str, Any]:
+    recipes_in = payload.get("recipes")
+    if recipes_in is None and isinstance(payload, dict):
+        # allow sending list directly
+        recipes_in = payload.get("items")
+    if recipes_in is None and isinstance(payload, list):
+        recipes_in = payload
+
+    recipes_in = recipes_in or []
+    out_by_kind: Dict[str, Dict[str, Any]] = {}
+    allowed_obj = {"stone", "wood", "plant", "berry", "bone", "fiber"}
+    allowed_actions = {"gather", "attack", "break", "craft", "move", "rest"}
+
+    for r in recipes_in:
+        if not isinstance(r, dict):
+            continue
+        kind = str(r.get("kind") or "").strip()
+        comps = r.get("components") or []
+        if not kind or not isinstance(comps, list) or len(comps) < 2:
+            continue
+
+        # Normalize components into tokens:
+        # - 'wood' -> 'obj:wood'
+        # - 'obj:wood' stays
+        # - 'tool:wooden_axe' stays (no validation of kind here)
+        norm_comps: list[str] = []
+        ok = True
+        for c in comps:
+            cs = str(c).strip()
+            if not cs:
+                ok = False
+                break
+            if cs.startswith('obj:'):
+                t = cs.split(':', 1)[1]
+                if t not in allowed_obj:
+                    ok = False
+                    break
+                norm_comps.append(cs)
+            elif cs.startswith('tool:'):
+                # allow any kind string
+                k = cs.split(':', 1)[1].strip()
+                if not k:
+                    ok = False
+                    break
+                norm_comps.append(f"tool:{k}")
+            else:
+                # backward compatible object type
+                if cs not in allowed_obj:
+                    ok = False
+                    break
+                norm_comps.append(f"obj:{cs}")
+        if not ok:
+            continue
+
+        eff_in = r.get("effectiveness") or {}
+        if not isinstance(eff_in, dict):
+            eff_in = {}
+        eff = {}
+        for k, v in eff_in.items():
+            ak = str(k)
+            if ak not in allowed_actions:
+                continue
+            try:
+                eff[ak] = float(v)
+            except Exception:
+                continue
+        if not eff:
+            continue
+
+        dur = 60.0
+        try:
+            dur = float(r.get("durability_left") or 60.0)
+        except Exception:
+            dur = 60.0
+        dur = float(max(5.0, min(100.0, dur)))
+
+        props_in = r.get("properties") or {}
+        if not isinstance(props_in, dict):
+            props_in = {}
+        props = {}
+        for pk in ("sharpness", "effectiveness", "durability"):
+            if pk in props_in:
+                try:
+                    props[pk] = float(props_in.get(pk))
+                except Exception:
+                    pass
+
+        # kind must be unique: last one wins
+        out_by_kind[kind] = {
+            "kind": kind,
+            "components": norm_comps,
+            "effectiveness": eff,
+            "durability_left": dur,
+            "properties": props,
+        }
+
+    return {"version": 1, "recipes": list(out_by_kind.values())}
+
+
+def _apply_tool_recipes_to_factory() -> None:
+    try:
+        data = _read_tool_recipes()
+        recipes = data.get("recipes") or []
+        if not isinstance(recipes, list):
+            recipes = []
+        ToolFactory.set_custom_recipes(recipes)
+    except Exception:
+        ToolFactory.set_custom_recipes([])
+
+
+def _normalize_world_map(payload: Dict[str, Any]) -> Dict[str, Any]:
+    width = int(payload.get("width") or 0)
+    height = int(payload.get("height") or 0)
+    width = max(10, min(300, width))
+    height = max(10, min(300, height))
+
+    terrain = payload.get("terrain") or {}
+    water = []
+    try:
+        water = list((terrain.get("water") or []))
+    except Exception:
+        water = []
+
+    water_cells = []
+    for cell in water:
+        try:
+            x, y = int(cell[0]), int(cell[1])
+            if 0 <= x < width and 0 <= y < height:
+                water_cells.append([x, y])
+        except Exception:
+            continue
+
+    objects_in = payload.get("objects") or []
+    objects_out = []
+    allowed_types = {"stone", "wood", "plant", "berry", "bone", "fiber"}
+    for it in objects_in:
+        try:
+            t = str(it.get("type") or "")
+            if t not in allowed_types:
+                continue
+            x = int(it.get("x"))
+            y = int(it.get("y"))
+            if not (0 <= x < width and 0 <= y < height):
+                continue
+            q = int(it.get("quantity") or 1)
+            q = max(1, min(20, q))
+            objects_out.append({"type": t, "x": x, "y": y, "quantity": q})
+        except Exception:
+            continue
+
+    settings = payload.get("settings") or {}
+    out = {
+        "version": 1,
+        "width": width,
+        "height": height,
+        "terrain": {"water": water_cells},
+        "objects": objects_out,
+        "settings": {
+            "disable_random_water_lakes": bool(settings.get("disable_random_water_lakes", True)),
+            "disable_random_initial_resources": bool(settings.get("disable_random_initial_resources", True)),
+        },
+    }
+    return out
+
+
+def _user_has_agent(user_id: int) -> bool:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM user_agents WHERE user_id = ? LIMIT 1", (int(user_id),))
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def _load_custom_agents_from_db() -> list[dict[str, Any]]:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT user_id, username, display_name, sex FROM user_agents ORDER BY created_at ASC"
+        )
+        rows = cur.fetchall() or []
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            out.append(
+                {
+                    "uid": int(r["user_id"]),
+                    "username": str(r["username"]),
+                    "display_name": str(r["display_name"]),
+                    "sex": str(r["sex"]),
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+def _get_setting(key: str, default: str) -> str:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cur.fetchone()
+        if row is None:
+            return default
+        return str(row["value"])
+    finally:
+        conn.close()
+
+
+def _set_setting(key: str, value: str) -> None:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _any_admin_exists() -> bool:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1")
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def _registration_open() -> bool:
+    if _any_admin_exists():
+        return False
+    return _get_setting("registration_open", "1") == "1"
+
+
+def _jwt_encode(payload: Dict[str, Any]) -> str:
+    return jwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALG)
+
+
+def _jwt_decode(token: str) -> Dict[str, Any]:
+    try:
+        return jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALG])
+    except jwt.ExpiredSignatureError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token_expired") from e
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token") from e
+
+
+def _auth_from_token(token: str) -> Dict[str, Any]:
+    data = _jwt_decode(token)
+    uid = data.get("uid")
+    username = data.get("username")
+    is_admin = bool(data.get("is_admin", False))
+    if not uid or not username:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
+    return {"uid": int(uid), "username": str(username), "is_admin": is_admin}
 
 # Serve static files (sprites, js, css)
 app.mount(
@@ -36,10 +550,17 @@ class SimulationController:
         self._clients: Set[WebSocket] = set()
         self._config_path: str = "config/experiment_configs/basic_experiment.yaml"
 
+        # Custom agents created by registered users (persist across runs)
+        self._custom_agents: list[dict[str, Any]] = []
+
         # Run bookkeeping
         self.run_number: int = 0
         self.run_started_wall: float = 0.0
         self.history: list[dict[str, Any]] = []
+
+        # WS diff state (objects)
+        self._last_sent_run_number: Optional[int] = None
+        self._last_sent_objects: Dict[str, Dict[str, Any]] = {}
 
     async def ensure_simulation(self):
         async with self._lock:
@@ -47,7 +568,7 @@ class SimulationController:
                 return
             self._start_new_run_locked(reason=None)
 
-    def _start_new_run_locked(self, reason: Optional[str]):
+    def _start_new_run_locked(self, reason: Optional[str], reason_details: Optional[Dict[str, Any]] = None):
         """Start a new run. Must be called under _lock."""
         # Finalize previous run history entry
         if self.simulation is not None and self.simulation.state is not None and reason:
@@ -61,7 +582,7 @@ class SimulationController:
                     detail = e
                     break
 
-            reason_details = None
+            derived_details = None
             if detail:
                 cause = detail.get('cause', 'unknown')
                 hunger = detail.get('hunger')
@@ -79,7 +600,7 @@ class SimulationController:
                     'health_collapse': 'умер от потери здоровья',
                     'unknown': 'причина неизвестна',
                 }
-                reason_details = {
+                derived_details = {
                     'agent_id': detail.get('agent_id'),
                     'cause': cause,
                     'cause_ru': ru.get(cause, cause),
@@ -90,11 +611,20 @@ class SimulationController:
                     'health': health,
                     'age': age,
                 }
+
+            final_details = None
+            if isinstance(reason_details, dict) and reason_details:
+                final_details = dict(reason_details)
+                if derived_details and not final_details.get('cause_ru'):
+                    final_details['last_death'] = derived_details
+            else:
+                final_details = derived_details
+
             self.history.append(
                 {
                     "run": int(self.run_number),
                     "reason": reason,
-                    "reason_details": reason_details,
+                    "reason_details": final_details,
                     "ended_at_timestep": int(prev_state.timestep),
                     "ended_at_day": int(getattr(env, "day_count", 0)),
                     "ended_at_time": f"{int(getattr(env, 'hour', 0)):02d}:{int(getattr(env, 'minute', 0)):02d}",
@@ -103,15 +633,99 @@ class SimulationController:
             )
 
         config = load_config(self._config_path)
+
+        # Custom tool recipes affect crafting logic globally
+        try:
+            _apply_tool_recipes_to_factory()
+        except Exception:
+            pass
+
+        wm = _read_world_map()
+        if wm and isinstance(wm, dict):
+            try:
+                w = int(wm.get("width") or 0)
+                h = int(wm.get("height") or 0)
+                if w > 0 and h > 0:
+                    config["simulation"]["world"]["width"] = w
+                    config["simulation"]["world"]["height"] = h
+                s = wm.get("settings") or {}
+                config["simulation"]["world"]["disable_random_water_lakes"] = bool(
+                    s.get("disable_random_water_lakes", True)
+                )
+                config["simulation"]["world"]["disable_random_initial_resources"] = bool(
+                    s.get("disable_random_initial_resources", True)
+                )
+            except Exception:
+                pass
         self.simulation = Simulation(config)
         self.simulation.initialize()
         if self.simulation.state is not None:
             self.simulation.state.max_steps = None
 
+        if wm and self.simulation is not None and self.simulation.state is not None:
+            try:
+                self._apply_world_map_locked(wm)
+            except Exception:
+                pass
+
         self.run_number += 1
         self.run_started_wall = time.time()
 
         self._force_two_agents()
+        self._spawn_custom_agents_locked()
+
+    def _apply_world_map_locked(self, wm: Dict[str, Any]) -> None:
+        if self.simulation is None or self.simulation.state is None:
+            return
+        env = self.simulation.state.environment
+
+        try:
+            env.grid.clear()
+            env.objects.clear()
+            env.tools.clear()
+        except Exception:
+            pass
+
+        try:
+            env.terrain[:, :] = 0
+        except Exception:
+            pass
+
+        terrain = wm.get("terrain") or {}
+        water = terrain.get("water") or []
+        ts = int(getattr(env, "timestep", 0) or 0)
+        season = int(getattr(env, "season", 0) or 0)
+
+        for cell in water:
+            try:
+                x, y = int(cell[0]), int(cell[1])
+                if 0 <= x < int(env.width) and 0 <= y < int(env.height):
+                    env.terrain[x, y] = 1
+                    obj_id = f"water_{ts}_{env.random.randint(1000, 9999)}"
+                    obj = ObjectFactory.create_object("water", (x, y), obj_id, ts, season)
+                    env.add_object(obj)
+            except Exception:
+                continue
+
+        objects = wm.get("objects") or []
+        for it in objects:
+            try:
+                t = str(it.get("type") or "")
+                x, y = int(it.get("x")), int(it.get("y"))
+                q = int(it.get("quantity") or 1)
+                if not (0 <= x < int(env.width) and 0 <= y < int(env.height)):
+                    continue
+                if int(env.terrain[x, y]) == 1:
+                    continue
+                obj_id = f"map_{t}_{ts}_{env.random.randint(1000, 9999)}"
+                obj = ObjectFactory.create_object(t, (x, y), obj_id, ts, season)
+                try:
+                    obj.quantity = max(1, int(q))
+                except Exception:
+                    pass
+                env.add_object(obj)
+            except Exception:
+                continue
 
     def _force_two_agents(self):
         if self.simulation is None or self.simulation.state is None:
@@ -146,9 +760,137 @@ class SimulationController:
         state.learning_manager.register_agent(male)
         state.learning_manager.register_agent(female)
 
-    async def reset(self):
+    def _spawn_custom_agents_locked(self):
+        if self.simulation is None or self.simulation.state is None:
+            return
+
+        state = self.simulation.state
+        env = state.environment
+        if self._custom_agents:
+            try:
+                print(f"[evosim] spawning custom agents: {len(self._custom_agents)}")
+            except Exception:
+                pass
+        for spec in list(self._custom_agents):
+            try:
+                uid = int(spec.get('uid'))
+                username = str(spec.get('username') or '')
+                display_name = str(spec.get('display_name') or '').strip()
+                sex = str(spec.get('sex') or 'unknown')
+                if not username or not display_name or sex not in {'male', 'female'}:
+                    continue
+
+                # Randomize spawn position every time.
+                empty_positions = env.get_empty_positions(50)
+                if empty_positions:
+                    pos = random.choice(empty_positions)
+                else:
+                    pos = (
+                        random.randint(0, max(0, int(env.width) - 1)),
+                        random.randint(0, max(0, int(env.height) - 1)),
+                    )
+
+                agent_id = f"u{uid}_{int(time.time())}_{random.randint(1000, 9999)}"
+                if agent_id in state.agents:
+                    agent_id = f"{agent_id}_{random.randint(1000, 9999)}"
+
+                a = AgentFactory.create_random_agent(agent_id, pos, birth_time=int(state.timestep))
+                setattr(a, 'sex', sex)
+                setattr(a, 'display_name', display_name)
+                setattr(a, 'owner_username', username)
+                try:
+                    a.age = 600
+                except Exception:
+                    pass
+
+                state.agents[a.id] = a
+                state.learning_manager.register_agent(a)
+            except Exception:
+                continue
+
+    async def create_custom_agent(self, user: Dict[str, Any], display_name: str, sex: str) -> Dict[str, Any]:
+        # Important: do NOT call ensure_simulation() while holding self._lock
+        # to avoid deadlock (ensure_simulation also takes the same lock).
+        await self.ensure_simulation()
         async with self._lock:
-            self._start_new_run_locked(reason="ручной перезапуск")
+            if self.simulation is None or self.simulation.state is None:
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="simulation_not_ready")
+
+            name = (display_name or '').strip()
+            if not name or len(name) > 24:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_agent_name")
+            if sex not in {'male', 'female'}:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_agent_sex")
+
+            uid = int(user.get('uid'))
+            username = str(user.get('username'))
+
+            if _user_has_agent(uid):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="agent_already_created")
+
+            # Remember spec so it will exist in future runs as well.
+            self._custom_agents.append({
+                'uid': uid,
+                'username': username,
+                'display_name': name,
+                'sex': sex,
+            })
+
+            conn = _db_connect()
+            try:
+                cur = conn.cursor()
+                now = datetime.now(timezone.utc).isoformat()
+                cur.execute(
+                    "INSERT INTO user_agents(user_id, username, display_name, sex, created_at) VALUES(?,?,?,?,?)",
+                    (int(uid), str(username), str(name), str(sex), now),
+                )
+                conn.commit()
+                try:
+                    print(f"[evosim] user_agent persisted: uid={uid} username={username} name={name} sex={sex}")
+                except Exception:
+                    pass
+            finally:
+                conn.close()
+
+            state = self.simulation.state
+            env = state.environment
+
+            # Randomize spawn position.
+            empty_positions = env.get_empty_positions(50)
+            if empty_positions:
+                pos = random.choice(empty_positions)
+            else:
+                pos = (
+                    random.randint(0, max(0, int(env.width) - 1)),
+                    random.randint(0, max(0, int(env.height) - 1)),
+                )
+
+            agent_id = f"u{uid}_{int(time.time())}_{random.randint(1000, 9999)}"
+            if agent_id in state.agents:
+                agent_id = f"{agent_id}_{random.randint(1000, 9999)}"
+
+            a = AgentFactory.create_random_agent(agent_id, pos, birth_time=int(state.timestep))
+            setattr(a, 'sex', sex)
+            setattr(a, 'display_name', name)
+            setattr(a, 'owner_username', username)
+            try:
+                a.age = 600
+            except Exception:
+                pass
+
+            state.agents[a.id] = a
+            state.learning_manager.register_agent(a)
+            return {
+                'id': a.id,
+                'name': getattr(a, 'display_name', a.id),
+                'sex': getattr(a, 'sex', 'unknown'),
+                'x': int(a.position[0]),
+                'y': int(a.position[1]),
+            }
+
+    async def reset(self, reason: str = "перезапуск", reason_details: Optional[Dict[str, Any]] = None):
+        async with self._lock:
+            self._start_new_run_locked(reason=str(reason or "перезапуск"), reason_details=reason_details)
 
     async def step_once(self):
         async with self._lock:
@@ -160,10 +902,12 @@ class SimulationController:
             if len(self.simulation.state.agents) == 0:
                 self._start_new_run_locked(reason="смерть Адама и Евы")
 
-    async def get_snapshot(self) -> Dict[str, Any]:
+    async def get_snapshot(self, full_sync: bool = False) -> Dict[str, Any]:
         async with self._lock:
             if self.simulation is None or self.simulation.state is None:
                 return {"initialized": False}
+
+            online_viewers = int(len(self._clients))
 
             state = self.simulation.state
             env = state.environment
@@ -239,6 +983,7 @@ class SimulationController:
                         "id": agent.id,
                         "name": getattr(agent, "display_name", agent.id),
                         "sex": getattr(agent, "sex", "unknown"),
+                        "owner_username": getattr(agent, "owner_username", None),
                         "x": int(agent.position[0]),
                         "y": int(agent.position[1]),
                         "health": float(agent.health),
@@ -270,30 +1015,60 @@ class SimulationController:
                     }
                 )
 
-            # Objects can be large; send a capped sample for UI.
-            objects_payload = []
-            max_objects = 500
-            for i, obj in enumerate(env.objects.values()):
-                if i >= max_objects:
-                    break
-                # Skip objects not present on the map (e.g., carried in inventory)
+            # Objects: RTS-style full sync + deltas.
+            current_objects: Dict[str, Dict[str, Any]] = {}
+            for obj in env.objects.values():
+                if getattr(obj, 'type', None) == 'water':
+                    continue
                 if obj.position[0] < 0 or obj.position[1] < 0:
                     continue
                 if obj.position[0] >= env.width or obj.position[1] >= env.height:
                     continue
-                objects_payload.append(
-                    {
-                        "id": obj.id,
-                        "type": obj.type,
-                        "x": int(obj.position[0]),
-                        "y": int(obj.position[1]),
-                        "quantity": int(getattr(obj, 'quantity', 1) or 1),
-                        "nutrition": float(getattr(obj, 'nutrition', 0.0) or 0.0),
-                        "toxicity": float(getattr(obj, 'toxicity', 0.0) or 0.0),
-                        "hardness": float(getattr(obj, 'hardness', 0.0) or 0.0),
-                        "durability": float(getattr(obj, 'durability', 0.0) or 0.0),
-                    }
-                )
+                current_objects[obj.id] = {
+                    "id": obj.id,
+                    "type": obj.type,
+                    "x": int(obj.position[0]),
+                    "y": int(obj.position[1]),
+                    "quantity": int(getattr(obj, 'quantity', 1) or 1),
+                    "nutrition": float(getattr(obj, 'nutrition', 0.0) or 0.0),
+                    "toxicity": float(getattr(obj, 'toxicity', 0.0) or 0.0),
+                    "hardness": float(getattr(obj, 'hardness', 0.0) or 0.0),
+                    "durability": float(getattr(obj, 'durability', 0.0) or 0.0),
+                }
+
+            run_no = int(self.run_number)
+            need_full = bool(full_sync) or (self._last_sent_run_number is None) or (int(self._last_sent_run_number) != run_no)
+
+            objects_full: Optional[list[Dict[str, Any]]] = None
+            objects_add: list[Dict[str, Any]] = []
+            objects_update: list[Dict[str, Any]] = []
+            objects_remove: list[str] = []
+
+            if need_full:
+                objects_full = list(current_objects.values())
+                self._last_sent_objects = dict(current_objects)
+                self._last_sent_run_number = run_no
+            else:
+                prev = self._last_sent_objects
+
+                for oid, o in current_objects.items():
+                    po = prev.get(oid)
+                    if po is None:
+                        objects_add.append(o)
+                    else:
+                        if (
+                            po.get('x') != o.get('x')
+                            or po.get('y') != o.get('y')
+                            or po.get('quantity') != o.get('quantity')
+                            or po.get('type') != o.get('type')
+                        ):
+                            objects_update.append(o)
+
+                for oid in list(prev.keys()):
+                    if oid not in current_objects:
+                        objects_remove.append(oid)
+
+                self._last_sent_objects = dict(current_objects)
 
             events_tail = state.events_log[-200:]
 
@@ -349,6 +1124,11 @@ class SimulationController:
             return {
                 "initialized": True,
                 "timestep": int(state.timestep),
+                "run_number": run_no,
+                "full_sync": bool(need_full),
+                "online": {
+                    "viewers": online_viewers,
+                },
                 "world": {
                     "width": int(env.width),
                     "height": int(env.height),
@@ -360,12 +1140,16 @@ class SimulationController:
                     "is_daytime": bool(getattr(env, 'is_daytime', True)),
                 },
                 "agents": agents_payload,
-                "objects": objects_payload,
+                "objects": (objects_full if objects_full is not None else []),
+                "objects_full": objects_full,
+                "objects_add": objects_add,
+                "objects_update": objects_update,
+                "objects_remove": objects_remove,
                 "events": events_tail,
                 "stats": state.get_statistics(),
                 "language": language_metrics,
                 "progress": progress_metrics,
-                "run": {
+                "run_info": {
                     "number": int(self.run_number),
                     "started_wall": float(self.run_started_wall),
                 },
@@ -473,11 +1257,23 @@ class SimulationController:
             # advance simulation
             try:
                 await self.step_once()
-            except Exception:
-                # If something went wrong, reset and continue.
-                await self.reset()
+            except Exception as e:
+                # If something went wrong, restart and continue but log details.
+                try:
+                    import traceback
+                    tb = traceback.format_exc()
+                except Exception:
+                    tb = None
+                await self.reset(
+                    reason="ошибка симуляции",
+                    reason_details={
+                        "message": str(e),
+                        "where": "run_forever.step_once",
+                        "traceback": tb,
+                    },
+                )
 
-            snapshot = await self.get_snapshot()
+            snapshot = await self.get_snapshot(full_sync=False)
             await self._broadcast(snapshot)
             await asyncio.sleep(self.step_delay_sec)
 
@@ -485,8 +1281,66 @@ class SimulationController:
 controller = SimulationController()
 
 
+class ChatController:
+    def __init__(self):
+        self._clients: Set[WebSocket] = set()
+        self._lock = asyncio.Lock()
+
+    async def add_client(self, ws: WebSocket):
+        async with self._lock:
+            self._clients.add(ws)
+
+    async def remove_client(self, ws: WebSocket):
+        async with self._lock:
+            self._clients.discard(ws)
+
+    async def broadcast(self, payload: Dict[str, Any]):
+        msg = json.dumps(payload, ensure_ascii=False)
+        async with self._lock:
+            clients = list(self._clients)
+
+        to_remove = []
+        for ws in clients:
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                to_remove.append(ws)
+
+        if to_remove:
+            async with self._lock:
+                for ws in to_remove:
+                    self._clients.discard(ws)
+
+
+chat_controller = ChatController()
+
+
 @app.on_event("startup")
 async def _startup():
+    _db_init()
+    try:
+        print(f"[evosim] chat db: {_CHAT_DB_PATH}")
+    except Exception:
+        pass
+    try:
+        controller._custom_agents = _load_custom_agents_from_db()
+        try:
+            print(f"[evosim] loaded user_agents: {len(controller._custom_agents)}")
+        except Exception:
+            pass
+    except Exception:
+        try:
+            import traceback
+            print("[evosim] failed to load user_agents")
+            traceback.print_exc()
+        except Exception:
+            pass
+        controller._custom_agents = []
+
+    try:
+        _apply_tool_recipes_to_factory()
+    except Exception:
+        pass
     await controller.ensure_simulation()
     controller._task = asyncio.create_task(controller.run_forever())
 
@@ -494,7 +1348,493 @@ async def _startup():
 @app.get("/")
 async def index():
     html_path = Path(__file__).parent / "static" / "index.html"
+    template = html_path.read_text(encoding="utf-8")
+    s = _get_site_settings()
+
+    # Banner HTML is injected as-is (admin-controlled).
+    banner_html = (s.get("banner_html") or "").strip()
+    if not banner_html:
+        banner_html = "место для баннера 728×90"
+
+    rendered = template
+    rendered = rendered.replace("{{PROJECT_NAME}}", escape(s.get("project_name") or "WorldSE"))
+    rendered = rendered.replace("{{SEO_TITLE}}", escape(s.get("seo_title") or "WorldSE"))
+    rendered = rendered.replace("{{SEO_DESCRIPTION}}", escape(s.get("seo_description") or ""))
+    rendered = rendered.replace("{{SEO_KEYWORDS}}", escape(s.get("seo_keywords") or ""))
+    rendered = rendered.replace("{{SEO_OG_IMAGE}}", escape(s.get("seo_og_image") or ""))
+    rendered = rendered.replace("{{BANNER_HTML}}", banner_html)
+    return HTMLResponse(rendered)
+
+
+@app.get("/privacy")
+async def privacy_page():
+    txt = _get_privacy_policy_text()
+    safe = escape(txt or "")
+    html = f"""<!doctype html>
+<html lang=\"ru\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>Политика конфиденциальности</title>
+  <style>
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 0; background: #0b1020; color: #e7e9ee; }}
+    header {{ padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.10); display:flex; align-items:center; justify-content:space-between; gap:12px; }}
+    a {{ color:#cbd2ff; text-decoration:none; }}
+    a:hover {{ text-decoration: underline; }}
+    .wrap {{ max-width: 980px; margin: 0 auto; padding: 18px 16px; }}
+    .card {{ background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; }}
+    pre {{ white-space: pre-wrap; line-height: 1.45; margin: 0; font-size: 14px; color: #d4d8e6; }}
+  </style>
+</head>
+<body>
+  <header>
+    <div><b>Политика конфиденциальности</b></div>
+    <div><a href=\"/\">← назад</a></div>
+  </header>
+  <div class=\"wrap\">
+    <div class=\"card\"><pre>{safe}</pre></div>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(html)
+
+
+@app.get("/adminkins")
+async def adminkins():
+    html_path = Path(__file__).parent / "static" / "adminkins.html"
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
+@app.post("/api/auth/register")
+async def api_register(payload: Dict[str, Any]):
+    if not _registration_open():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="registration_closed")
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+    if len(username) < 3 or len(password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_username_or_password")
+
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        password_hash = _pwd_context.hash(password)
+        now = datetime.now(timezone.utc).isoformat()
+
+        is_admin = 0
+        try:
+            cur.execute(
+                "INSERT INTO users(username, password_hash, is_admin, created_at) VALUES(?,?,?,?)",
+                (username, password_hash, int(is_admin), now),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError as e:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username_taken") from e
+
+        user_id = int(cur.lastrowid)
+        exp = datetime.now(timezone.utc) + timedelta(hours=_JWT_TTL_HOURS)
+        token = _jwt_encode({"uid": user_id, "username": username, "is_admin": bool(is_admin), "exp": exp})
+        return JSONResponse({"token": token, "username": username, "is_admin": bool(is_admin)})
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/bootstrap/status")
+async def api_bootstrap_status():
+    return JSONResponse({"admin_exists": _any_admin_exists(), "registration_open": _registration_open()})
+
+
+@app.post("/api/admin/bootstrap")
+async def api_bootstrap_admin(payload: Dict[str, Any]):
+    if _any_admin_exists():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="admin_already_exists")
+    if _get_setting("registration_open", "1") != "1":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="registration_closed")
+
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+    if len(username) < 3 or len(password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_username_or_password")
+
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        password_hash = _pwd_context.hash(password)
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            cur.execute(
+                "INSERT INTO users(username, password_hash, is_admin, created_at) VALUES(?,?,?,?)",
+                (username, password_hash, 1, now),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError as e:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username_taken") from e
+
+        _set_setting("registration_open", "0")
+
+        user_id = int(cur.lastrowid)
+        exp = datetime.now(timezone.utc) + timedelta(hours=_JWT_TTL_HOURS)
+        token = _jwt_encode({"uid": user_id, "username": username, "is_admin": True, "exp": exp})
+        return JSONResponse({"token": token, "username": username, "is_admin": True})
+    finally:
+        conn.close()
+
+
+@app.post("/api/auth/login")
+async def api_login(payload: Dict[str, Any]):
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+    if not username or not password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_username_or_password")
+
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, password_hash, is_admin FROM users WHERE username = ?", (username,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+        if not _pwd_context.verify(password, row["password_hash"]):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+
+        exp = datetime.now(timezone.utc) + timedelta(hours=_JWT_TTL_HOURS)
+        is_admin = bool(int(row["is_admin"] or 0))
+        token = _jwt_encode({"uid": int(row["id"]), "username": str(row["username"]), "is_admin": is_admin, "exp": exp})
+        return JSONResponse({"token": token, "username": str(row["username"]), "is_admin": is_admin})
+    finally:
+        conn.close()
+
+
+@app.get("/api/auth/me")
+async def api_auth_me(token: str):
+    user = _auth_from_token(token)
+    has_agent = False
+    try:
+        has_agent = _user_has_agent(int(user.get("uid")))
+    except Exception:
+        has_agent = False
+    return JSONResponse(
+        {
+            "username": user["username"],
+            "is_admin": bool(user.get("is_admin", False)),
+            "has_agent": bool(has_agent),
+        }
+    )
+
+
+@app.post("/api/agents/create")
+async def api_agents_create(token: str, payload: Dict[str, Any]):
+    user = _auth_from_token(token)
+    display_name = payload.get("display_name") or payload.get("name") or ""
+    sex = payload.get("sex") or ""
+    created = await controller.create_custom_agent(user=user, display_name=str(display_name), sex=str(sex))
+    return JSONResponse({"ok": True, "agent": created})
+
+
+@app.get("/api/chat/history")
+async def api_chat_history(token: str):
+    _auth_from_token(token)
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, username, is_admin, text, created_at FROM chat_messages ORDER BY id DESC LIMIT 50"
+        )
+        rows = cur.fetchall() or []
+        items = [
+            {
+                "id": int(r["id"]),
+                "username": str(r["username"]),
+                "is_admin": bool(int(r["is_admin"] or 0)),
+                "text": str(r["text"]),
+                "created_at": str(r["created_at"]),
+            }
+            for r in reversed(rows)
+        ]
+        return JSONResponse({"items": items, "announcement": _get_chat_announcement()})
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/chat/announcement")
+async def api_admin_chat_announcement_get(token: str):
+    _require_admin(token)
+    return JSONResponse({"text": _get_chat_announcement()})
+
+
+@app.put("/api/admin/chat/announcement")
+async def api_admin_chat_announcement_put(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    text = ""
+    try:
+        text = str((payload or {}).get("text") or "")
+    except Exception:
+        text = ""
+    _set_chat_announcement(text)
+    await chat_controller.broadcast({"type": "announcement", "text": _get_chat_announcement()})
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/admin/chat/ban")
+async def api_admin_chat_ban(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    try:
+        uid = int((payload or {}).get("user_id"))
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_user_id")
+    banned = bool((payload or {}).get("banned", True))
+    _set_chat_ban(uid, banned)
+    await chat_controller.broadcast({"type": "moderation", "event": "ban", "user_id": uid, "banned": banned})
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/admin/chat/messages/{msg_id}")
+async def api_admin_chat_delete_message(msg_id: int, token: str):
+    _require_admin(token)
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM chat_messages WHERE id = ?", (int(msg_id),))
+        conn.commit()
+    finally:
+        conn.close()
+    await chat_controller.broadcast({"type": "moderation", "event": "delete", "id": int(msg_id)})
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/news")
+async def api_news(limit: int = 20):
+    limit = max(1, min(50, int(limit)))
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, title, text, created_at, author_username FROM news ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        rows = cur.fetchall() or []
+        items = [
+            {
+                "id": int(r["id"]),
+                "title": str(r["title"]),
+                "text": str(r["text"]),
+                "created_at": str(r["created_at"]),
+                "author_username": str(r["author_username"]),
+            }
+            for r in reversed(rows)
+        ]
+        return JSONResponse({"items": items})
+    finally:
+        conn.close()
+
+
+def _require_admin(token: str) -> Dict[str, Any]:
+    user = _auth_from_token(token)
+    if not bool(user.get("is_admin", False)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin_only")
+    return user
+
+
+@app.get("/api/admin/map")
+async def api_admin_map_get(token: str):
+    _require_admin(token)
+    data = _read_world_map() or {"version": 1, "width": 100, "height": 100, "terrain": {"water": []}, "objects": [], "settings": {"disable_random_water_lakes": True, "disable_random_initial_resources": True}}
+    return JSONResponse({"map": data})
+
+
+@app.put("/api/admin/map")
+async def api_admin_map_put(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    wm = _normalize_world_map(payload or {})
+    _write_world_map(wm)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/admin/map/apply")
+async def api_admin_map_apply(token: str):
+    _require_admin(token)
+    await controller.reset(reason="применение карты")
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/admin/tools")
+async def api_admin_tools_get(token: str):
+    _require_admin(token)
+    data = _read_tool_recipes()
+    return JSONResponse({"tools": data})
+
+
+@app.get("/api/admin/privacy")
+async def api_admin_privacy_get(token: str):
+    _require_admin(token)
+    return JSONResponse({"privacy": {"text": _get_privacy_policy_text()}})
+
+
+@app.put("/api/admin/privacy")
+async def api_admin_privacy_put(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    text = ""
+    try:
+        text = str((payload or {}).get("text") or "")
+    except Exception:
+        text = ""
+    _set_privacy_policy_text(text)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/admin/site_settings")
+async def api_admin_site_settings_get(token: str):
+    _require_admin(token)
+    return JSONResponse({"site": _get_site_settings()})
+
+
+@app.put("/api/admin/site_settings")
+async def api_admin_site_settings_put(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    _set_site_settings(payload or {})
+    return JSONResponse({"ok": True})
+
+
+@app.put("/api/admin/tools")
+async def api_admin_tools_put(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    data = _normalize_tool_recipes(payload or {})
+    _write_tool_recipes(data)
+    try:
+        ToolFactory.set_custom_recipes(data.get("recipes") or [])
+    except Exception:
+        pass
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/map")
+async def api_map_get():
+    data = _read_world_map() or {
+        "version": 1,
+        "width": 100,
+        "height": 100,
+        "terrain": {"water": []},
+        "objects": [],
+        "settings": {"disable_random_water_lakes": False, "disable_random_initial_resources": False},
+    }
+    return JSONResponse({"map": data})
+
+
+@app.get("/api/admin/users")
+async def api_admin_users(token: str):
+    _require_admin(token)
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, is_admin, created_at FROM users ORDER BY id ASC")
+        rows = cur.fetchall() or []
+        items = [
+            {
+                "id": int(r["id"]),
+                "username": str(r["username"]),
+                "is_admin": bool(int(r["is_admin"] or 0)),
+                "created_at": str(r["created_at"]),
+            }
+            for r in rows
+        ]
+        return JSONResponse({"items": items})
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/users")
+async def api_admin_user_create(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+    is_admin = bool(payload.get("is_admin", False))
+    if len(username) < 3 or len(password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_username_or_password")
+
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        password_hash = _pwd_context.hash(password)
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            cur.execute(
+                "INSERT INTO users(username, password_hash, is_admin, created_at) VALUES(?,?,?,?)",
+                (username, password_hash, int(is_admin), now),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError as e:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username_taken") from e
+        return JSONResponse({"ok": True, "id": int(cur.lastrowid)})
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/users/{user_id}/set_admin")
+async def api_admin_user_set_admin(user_id: int, token: str, payload: Dict[str, Any]):
+    admin = _require_admin(token)
+    make_admin = bool(payload.get("is_admin", False))
+    if int(user_id) == int(admin.get("uid")) and not make_admin:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cannot_demote_self")
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET is_admin = ? WHERE id = ?", (int(make_admin), int(user_id)))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/users/{user_id}")
+async def api_admin_user_delete(user_id: int, token: str):
+    admin = _require_admin(token)
+    if int(user_id) == int(admin.get("uid")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cannot_delete_self")
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE id = ?", (int(user_id),))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/news")
+async def api_admin_news_create(token: str, payload: Dict[str, Any]):
+    user = _require_admin(token)
+    title = (payload.get("title") or "").strip()
+    text = (payload.get("text") or "").strip()
+    if not title or not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_news")
+    if len(title) > 120:
+        title = title[:120]
+    if len(text) > 4000:
+        text = text[:4000]
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        now = datetime.now(timezone.utc).isoformat()
+        cur.execute(
+            "INSERT INTO news(title, text, created_at, author_username) VALUES(?,?,?,?)",
+            (title, text, now, str(user["username"])),
+        )
+        conn.commit()
+        return JSONResponse({"ok": True, "id": int(cur.lastrowid)})
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/news/{news_id}")
+async def api_admin_news_delete(news_id: int, token: str):
+    _require_admin(token)
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM news WHERE id = ?", (int(news_id),))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
 
 
 @app.websocket("/ws")
@@ -504,7 +1844,7 @@ async def ws_endpoint(ws: WebSocket):
     await controller.add_client(ws)
     try:
         # Send one immediate snapshot on connect.
-        snapshot = await controller.get_snapshot()
+        snapshot = await controller.get_snapshot(full_sync=True)
         await ws.send_text(json.dumps(snapshot))
 
         # Keep connection open; server pushes updates.
@@ -512,4 +1852,107 @@ async def ws_endpoint(ws: WebSocket):
             await ws.receive_text()
     except WebSocketDisconnect:
         await controller.remove_client(ws)
+        return
+
+
+@app.websocket("/chat/ws")
+async def chat_ws(ws: WebSocket):
+    token = ws.query_params.get("token")
+    if not token:
+        await ws.close(code=1008)
+        return
+
+    user = None
+    try:
+        user = _auth_from_token(token)
+    except HTTPException:
+        await ws.close(code=1008)
+        return
+
+    await ws.accept()
+    await chat_controller.add_client(ws)
+
+    try:
+        if _is_chat_banned(int(user.get("uid"))):
+            await ws.send_text(json.dumps({"type": "banned"}, ensure_ascii=False))
+            await ws.close(code=1008)
+            await chat_controller.remove_client(ws)
+            return
+    except Exception:
+        pass
+
+    # Send last 50 messages on connect
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, username, is_admin, text, created_at FROM chat_messages ORDER BY id DESC LIMIT 50"
+        )
+        rows = cur.fetchall() or []
+        items = [
+            {
+                "id": int(r["id"]),
+                "username": str(r["username"]),
+                "is_admin": bool(int(r["is_admin"] or 0)),
+                "text": str(r["text"]),
+                "created_at": str(r["created_at"]),
+            }
+            for r in reversed(rows)
+        ]
+    finally:
+        conn.close()
+
+    await ws.send_text(
+        json.dumps(
+            {"type": "history", "items": items, "announcement": _get_chat_announcement()},
+            ensure_ascii=False,
+        )
+    )
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                continue
+
+            text = (msg.get("text") or "").strip()
+            if not text:
+                continue
+            try:
+                if _is_chat_banned(int(user.get("uid"))):
+                    await ws.send_text(json.dumps({"type": "error", "detail": "chat_banned"}, ensure_ascii=False))
+                    continue
+            except Exception:
+                pass
+            if len(text) > 500:
+                text = text[:500]
+
+            created_at = datetime.now(timezone.utc).isoformat()
+            conn = _db_connect()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO chat_messages(user_id, username, is_admin, text, created_at) VALUES(?,?,?,?,?)",
+                    (int(user["uid"]), str(user["username"]), int(bool(user.get("is_admin", False))), text, created_at),
+                )
+                conn.commit()
+                msg_id = int(cur.lastrowid)
+            finally:
+                conn.close()
+
+            payload = {
+                "type": "message",
+                "item": {
+                    "id": msg_id,
+                    "username": str(user["username"]),
+                    "is_admin": bool(user.get("is_admin", False)),
+                    "text": text,
+                    "created_at": created_at,
+                },
+            }
+            await chat_controller.broadcast(payload)
+    except WebSocketDisconnect:
+        await chat_controller.remove_client(ws)
         return

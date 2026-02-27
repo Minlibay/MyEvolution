@@ -31,6 +31,12 @@ class EnvironmentConfig:
     day_start_hour: int = 6
     night_start_hour: int = 18
 
+    # Если true — не генерировать озёра/воду автоматически (карту задаёт админка)
+    disable_random_water_lakes: bool = False
+
+    # Если true — не раскидывать стартовые ресурсы автоматически (карту задаёт админка)
+    disable_random_initial_resources: bool = False
+
 
 class Environment:
     """Моделирование 2D среды"""
@@ -74,8 +80,10 @@ class Environment:
         self.is_daytime: bool = True
         
         # Инициализация начальных ресурсов
-        self._initialize_water_sources()
-        self._initialize_resources()
+        if not bool(getattr(self.config, 'disable_random_water_lakes', False)):
+            self._initialize_water_sources()
+        if not bool(getattr(self.config, 'disable_random_initial_resources', False)):
+            self._initialize_resources()
 
     def _initialize_water_sources(self):
         """Создает несколько "озер" как постоянные источники воды."""

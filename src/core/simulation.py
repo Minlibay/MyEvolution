@@ -56,7 +56,9 @@ class SimulationState:
         env_config = EnvironmentConfig(
             width=world_config['width'],
             height=world_config['height'],
-            seed=world_config['seed']
+            seed=world_config['seed'],
+            disable_random_water_lakes=bool(world_config.get('disable_random_water_lakes', False)),
+            disable_random_initial_resources=bool(world_config.get('disable_random_initial_resources', False)),
         )
         
         self.environment = Environment(env_config)
@@ -136,6 +138,8 @@ class SimulationState:
         
         for agent_id in agent_ids:
             agent = self.agents[agent_id]
+
+            action = "rest"
             
             # Проверка жизнеспособности
             if not agent.is_alive():
@@ -308,6 +312,8 @@ class SimulationState:
                     # Не спим, если критический голод/жажда
                     if not (getattr(agent, 'hunger', 0.0) > 0.85 or getattr(agent, 'thirst', 0.0) > 0.85):
                         action = 'sleep'
+                    else:
+                        action = decision_maker.select_action(local_env, available_actions)
                 # Сбор материалов для инструментов
                 elif wants_tool_materials and tool_material_visible_here and 'gather' in available_actions:
                     action = 'gather'

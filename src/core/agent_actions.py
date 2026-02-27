@@ -438,7 +438,8 @@ class AgentActions:
     @staticmethod
     def execute_combine(agent: Agent, environment: Environment) -> ActionResult:
         """Выполняет комбинирование объектов"""
-        if len(agent.inventory) < 2:
+        # We can combine both objects (inventory) and existing tools (if tool.kind exists)
+        if (len(agent.inventory) + len(getattr(agent, 'tools', []) or [])) < 2:
             return ActionResult('combine', False, -0.1, 0.0, {'reason': 'insufficient_objects'})
         
         energy_cost = 0.2
@@ -447,20 +448,136 @@ class AgentActions:
         if agent.energy < energy_cost:
             return ActionResult('combine', False, -0.2, 0.0, {'reason': 'insufficient_energy'})
         
-        # Выбор двух случайных объектов для комбинирования
-        obj_ids = random.sample(agent.inventory, 2)
-        obj1 = environment.objects.get(obj_ids[0])
-        obj2 = environment.objects.get(obj_ids[1])
+        # First: try custom recipes by checking if agent has the required ingredients.
+        crafted_tool = None
+        crafted_components = None
+        try:
+            recipes = ToolFactory.get_custom_recipes()
+        except Exception:
+            recipes = []
+
+        if recipes:
+            try:
+                random.shuffle(recipes)
+            except Exception:
+                pass
+
+        if recipes:
+            for r in recipes:
+                try:
+                    comps = r.get('components') or []
+                    if not isinstance(comps, list) or len(comps) < 2:
+                        continue
+
+                    # Build available pools
+                    inv_ids = list(agent.inventory or [])
+                    tool_ids = list(getattr(agent, 'tools', []) or [])
+
+                    selected_items = []
+                    selected_obj_ids = []
+                    selected_tool_ids = []
+
+                    for c in comps:
+                        c = str(c)
+                        if c.startswith('obj:'):
+                            need = c.split(':', 1)[1]
+                            found = None
+                            for oid in inv_ids:
+                                o = environment.objects.get(oid)
+                                if o is None:
+                                    continue
+                                if getattr(o, 'type', None) == need:
+                                    found = oid
+                                    break
+                            if found is None:
+                                selected_items = None
+                                break
+                            inv_ids.remove(found)
+                            o = environment.objects.get(found)
+                            if o is None:
+                                selected_items = None
+                                break
+                            selected_items.append(o)
+                            selected_obj_ids.append(found)
+                        elif c.startswith('tool:'):
+                            need = c.split(':', 1)[1]
+                            found = None
+                            for tid in tool_ids:
+                                t = environment.tools.get(tid)
+                                if t is None:
+                                    continue
+                                if getattr(t, 'kind', None) == need:
+                                    found = tid
+                                    break
+                            if found is None:
+                                selected_items = None
+                                break
+                            tool_ids.remove(found)
+                            t = environment.tools.get(found)
+                            if t is None:
+                                selected_items = None
+                                break
+                            selected_items.append(t)
+                            selected_tool_ids.append(found)
+                        else:
+                            # Backward compatibility: plain object type
+                            need = c
+                            found = None
+                            for oid in inv_ids:
+                                o = environment.objects.get(oid)
+                                if o is None:
+                                    continue
+                                if getattr(o, 'type', None) == need:
+                                    found = oid
+                                    break
+                            if found is None:
+                                selected_items = None
+                                break
+                            inv_ids.remove(found)
+                            o = environment.objects.get(found)
+                            if o is None:
+                                selected_items = None
+                                break
+                            selected_items.append(o)
+                            selected_obj_ids.append(found)
+
+                    if not selected_items:
+                        continue
+
+                    tool = ToolFactory.create_tool_from_objects(
+                        selected_items,
+                        agent.id,
+                        f"tool_{environment.timestep}_{random.randint(1000, 9999)}",
+                        environment.timestep,
+                    )
+                    if tool is None:
+                        continue
+
+                    crafted_tool = tool
+                    crafted_components = {
+                        'objects': selected_obj_ids,
+                        'tools': selected_tool_ids,
+                    }
+                    break
+                except Exception:
+                    continue
+
+        tool = crafted_tool
         
-        if not obj1 or not obj2:
-            return ActionResult('combine', False, -0.1, 0.0, {'reason': 'objects_not_found'})
-        
-        # Попытка создания инструмента
-        tool = ToolFactory.create_tool_from_objects(
-            [obj1, obj2], agent.id, f"tool_{environment.timestep}_{random.randint(1000, 9999)}", 
-            environment.timestep
-        )
-        
+        if tool is None:
+            # Fallback: random 2 objects (legacy emergent tools)
+            obj_ids = random.sample(agent.inventory, 2)
+            obj1 = environment.objects.get(obj_ids[0])
+            obj2 = environment.objects.get(obj_ids[1])
+
+            if not obj1 or not obj2:
+                return ActionResult('combine', False, -0.1, 0.0, {'reason': 'objects_not_found'})
+
+            tool = ToolFactory.create_tool_from_objects(
+                [obj1, obj2], agent.id, f"tool_{environment.timestep}_{random.randint(1000, 9999)}",
+                environment.timestep
+            )
+
         if tool is None:
             # Неудачная комбинация
             agent.energy -= energy_cost * 0.5
@@ -473,8 +590,25 @@ class AgentActions:
             )
         
         # Успешное создание инструмента
-        agent.remove_from_inventory(obj_ids[0])
-        agent.remove_from_inventory(obj_ids[1])
+        if crafted_components is not None:
+            for oid in crafted_components.get('objects', []) or []:
+                try:
+                    agent.remove_from_inventory(oid)
+                except Exception:
+                    pass
+            for tid in crafted_components.get('tools', []) or []:
+                try:
+                    if tid in getattr(agent, 'tools', []) or []:
+                        agent.tools.remove(tid)
+                except Exception:
+                    pass
+                try:
+                    environment.remove_tool(tid)
+                except Exception:
+                    pass
+        else:
+            agent.remove_from_inventory(obj_ids[0])
+            agent.remove_from_inventory(obj_ids[1])
         agent.add_tool(tool.id)
         environment.add_tool(tool)
         
@@ -499,7 +633,7 @@ class AgentActions:
                 'tool_id': tool.id,
                 'tool_type': tool.get_tool_type(),
                 'discovery_type': discovery_type,
-                'components': obj_ids
+                'components': (crafted_components if crafted_components is not None else obj_ids)
             }
         )
     

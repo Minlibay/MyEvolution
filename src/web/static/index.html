@@ -3,14 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Evolution Simulation</title>
+  <title>{{SEO_TITLE}}</title>
+  <meta name="description" content="{{SEO_DESCRIPTION}}" />
+  <meta name="keywords" content="{{SEO_KEYWORDS}}" />
+  <meta property="og:title" content="{{SEO_TITLE}}" />
+  <meta property="og:description" content="{{SEO_DESCRIPTION}}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="{{SEO_OG_IMAGE}}" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <style>
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 0; background: #0b1020; color: #e7e9ee; }
     header { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:12px; }
     button { background:#243bff; color:#fff; border:0; padding:8px 10px; border-radius:8px; cursor:pointer; }
     button.secondary { background:#2a2f45; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .layout { display:grid; grid-template-columns: 1fr 420px; gap: 12px; padding: 12px; }
+    .layout { display:grid; grid-template-columns: 1fr 420px; gap: 12px; padding: 12px; min-height: calc(100vh - 64px); }
     .panel { background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow:hidden; }
     .panel h3 { margin:0; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 14px; color:#cbd2ff; }
     #canvasWrap { padding: 10px; position: relative; }
@@ -42,6 +49,110 @@
     #agentTooltip .title { font-weight: 700; margin-bottom: 6px; color: #cbd2ff; }
     #agentTooltip .muted { color: #aab0c0; }
     #agentTooltip .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    #camPad {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      z-index: 12;
+      display: grid;
+      grid-template-columns: 38px 38px 38px;
+      grid-template-rows: 38px 38px 38px 38px;
+      gap: 6px;
+      pointer-events: auto;
+    }
+    .camBtn {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(17, 22, 42, 0.80);
+      color: #e7e9ee;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor: pointer;
+      user-select: none;
+      font-size: 16px;
+    }
+    .camBtn:active { transform: translateY(1px); }
+    .camBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    #bannerSlot {
+      width: 728px;
+      height: 90px;
+      border-radius: 12px;
+      border: 1px dashed rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.03);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: rgba(231,233,238,0.65);
+      font-size: 12px;
+    }
+    @media (max-width: 1180px) {
+      #bannerSlot { display: none; }
+    }
+
+    #cookieBar {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 60;
+      background: rgba(17, 22, 42, 0.98);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 14px;
+      box-shadow: 0 16px 60px rgba(0,0,0,0.55);
+      padding: 12px 14px;
+      display: none;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #cookieText {
+      font-size: 12px;
+      color: #c9cedc;
+      line-height: 1.35;
+      max-width: 980px;
+    }
+    #cookieText b { color: #e7e9ee; }
+    #cookieText a { color: #cbd2ff; text-decoration: underline; }
+    #worldPanel {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 64px - 24px);
+    }
+    #chatSection {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 260px;
+    }
+    #chatBox {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 180px;
+    }
+    #chatMessages {
+      flex: 1;
+      min-height: 160px;
+      overflow: auto;
+    }
+    #chatAnnounce {
+      display:none;
+      margin-bottom: 8px;
+      padding: 10px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(17, 22, 42, 0.70);
+      color: #dbe0f3;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    #chatAnnounce b { color: #cbd2ff; }
   </style>
 </head>
 <body>
@@ -49,14 +160,72 @@
   <div class="row">
     <div class="kv" id="status"></div>
   </div>
+
+  <div style="flex:1"></div>
+  <div id="bannerSlot">
+    <div id="bannerContainer">{{BANNER_HTML}}</div>
+  </div>
 </header>
 
 <div class="layout">
-  <div class="panel">
+  <div class="panel" id="worldPanel">
     <h3>Мир (агенты/объекты)</h3>
+    <div id="worldControls" class="row" style="padding:10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); display:none;">
+      <button id="btnCreateAgent" class="secondary">Создать агента</button>
+      <div id="createAgentState" style="font-size:12px; color:#aab0c0;"></div>
+    </div>
     <div id="canvasWrap">
       <canvas id="cv" width="1000" height="720"></canvas>
       <div id="agentTooltip"></div>
+      <div id="camPad">
+        <button id="camZoomIn" class="camBtn" title="приблизить" type="button">+</button>
+        <div></div>
+        <button id="camZoomOut" class="camBtn" title="отдалить" type="button">−</button>
+
+        <div></div>
+        <button id="camUp" class="camBtn" title="вверх" type="button">↑</button>
+        <div></div>
+
+        <button id="camLeft" class="camBtn" title="влево" type="button">←</button>
+        <button id="camDown" class="camBtn" title="вниз" type="button">↓</button>
+        <button id="camRight" class="camBtn" title="вправо" type="button">→</button>
+
+        <button id="camReset" class="camBtn" title="сброс (R)" type="button">R</button>
+        <div></div>
+        <div></div>
+      </div>
+    </div>
+    <h3>Чат</h3>
+    <div id="chatSection" style="padding:10px 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+      <div id="chatAuth" class="row" style="gap:10px; align-items:flex-end;">
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="font-size:12px; color:#aab0c0;">Логин</div>
+          <input id="authUser" type="text" placeholder="username" style="width:140px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="font-size:12px; color:#aab0c0;">Пароль</div>
+          <input id="authPass" type="password" placeholder="password" style="width:140px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        </div>
+        <button id="btnLogin">Войти</button>
+        <button id="btnRegister" class="secondary">Регистрация</button>
+        <button id="btnLogout" class="secondary" style="display:none;">Выйти</button>
+        <div id="authState" style="font-size:12px; color:#aab0c0;"></div>
+      </div>
+
+      <div id="accountBar" class="row" style="display:none; gap:10px; align-items:center; margin-top:10px;">
+        <div id="accountText" style="font-size:12px; color:#aab0c0;"></div>
+        <a id="adminLink" href="/adminkins" style="display:none; font-size:12px; color:#cbd2ff;">админка</a>
+        <button id="btnLogout2" class="secondary">Выйти</button>
+      </div>
+
+      <div id="chatBox" style="margin-top:10px; display:none;">
+        <div id="chatAnnounce"><b>Анонс:</b> <span id="chatAnnounceText"></span></div>
+        <div id="chatMessages" style="border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:8px; background:rgba(0,0,0,0.18);"></div>
+        <div class="row" style="margin-top:8px;">
+          <input id="chatInput" type="text" placeholder="сообщение..." style="flex:1; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+          <button id="btnSend" disabled>Отправить</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="panel">
@@ -64,6 +233,83 @@
     <div id="history" style="max-height:220px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;"></div>
     <h3>События (хвост)</h3>
     <div id="events"></div>
+    <h3>Новости</h3>
+    <div style="padding:10px 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+      <div id="newsAdmin" style="display:none; margin-bottom:10px;">
+        <div style="font-size:12px; color:#aab0c0; margin-bottom:6px;">Админка: добавить новость</div>
+        <input id="newsTitle" type="text" placeholder="заголовок" style="width:100%; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        <textarea id="newsText" placeholder="текст" style="width:100%; margin-top:6px; height:80px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;"></textarea>
+        <div class="row" style="margin-top:6px;">
+          <button id="btnPostNews">Опубликовать</button>
+          <div id="newsAdminState" style="font-size:12px; color:#aab0c0;"></div>
+        </div>
+      </div>
+      <div id="newsList"></div>
+    </div>
+  </div>
+</div>
+
+<div id="agentModal" style="display:none; position:fixed; inset:0; background: rgba(0,0,0,0.55); z-index: 50; align-items:center; justify-content:center;">
+  <div style="width:min(520px, calc(100vw - 24px)); background: rgba(17, 22, 42, 0.98); border:1px solid rgba(255,255,255,0.18); border-radius: 14px; box-shadow: 0 16px 60px rgba(0,0,0,0.55); overflow:hidden;">
+    <div class="row" style="justify-content:space-between; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.10);">
+      <div>
+        <b>Создать агента</b>
+        <div style="font-size:12px; color:#aab0c0; margin-top:4px;">Агент появится в мире и будет участвовать в эксперименте</div>
+      </div>
+      <button id="btnCloseAgentModal" class="secondary">Закрыть</button>
+    </div>
+    <div style="padding: 14px;">
+      <div style="font-size:12px; color:#aab0c0; margin-bottom:6px;">Имя</div>
+      <input id="agentName" type="text" placeholder="например: Кин" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+
+      <div style="font-size:12px; color:#aab0c0; margin-top:12px; margin-bottom:6px;">Пол</div>
+      <div class="row">
+        <label class="row" style="gap:8px; font-size:12px; color:#aab0c0;"><input type="radio" name="agentSex" value="male" checked /> мужской</label>
+        <label class="row" style="gap:8px; font-size:12px; color:#aab0c0;"><input type="radio" name="agentSex" value="female" /> женский</label>
+      </div>
+
+      <div class="row" style="margin-top:14px; justify-content:space-between;">
+        <div id="agentModalState" style="font-size:12px; color:#aab0c0;"></div>
+        <div class="row">
+          <button id="btnSubmitAgent">Создать</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="welcomeModal" style="display:none; position:fixed; inset:0; background: rgba(0,0,0,0.55); z-index: 55; align-items:center; justify-content:center;">
+  <div style="width:min(640px, calc(100vw - 24px)); background: rgba(17, 22, 42, 0.98); border:1px solid rgba(255,255,255,0.18); border-radius: 14px; box-shadow: 0 16px 60px rgba(0,0,0,0.55); overflow:hidden;">
+    <div class="row" style="justify-content:space-between; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.10);">
+      <div>
+        <b>О проекте</b>
+        <div style="font-size:12px; color:#aab0c0; margin-top:4px;">Коротко: это интерактивная симуляция эволюции поведения агентов и появления инструментов</div>
+      </div>
+      <button id="btnCloseWelcome" class="secondary">Закрыть</button>
+    </div>
+    <div style="padding: 14px; font-size: 13px; color: #d4d8e6; line-height: 1.4;">
+      <div style="margin-bottom:10px;">
+        Здесь можно наблюдать за жизнью агентов в 2D-мире: они перемещаются, собирают ресурсы, общаются, пытаются выжить, а также могут открывать и использовать инструменты.
+      </div>
+      <div style="margin-bottom:10px;">
+        Если ты зарегистрируешься и войдёшь, ты сможешь <b>создать собственного агента</b> — он появится в мире, и ты сможешь следить за его состоянием, действиями и судьбой.
+      </div>
+      <div class="row" style="justify-content:flex-end; gap:10px;">
+        <button id="btnWelcomeOk">Понятно</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="cookieBar" class="row">
+  <div id="cookieText">
+    <b>Файлы cookie</b>. Мы используем cookie и похожие технологии для обеспечения работы сайта, безопасности, авторизации/сессии, сохранения настроек интерфейса и аналитики.
+    Cookie могут содержать технические идентификаторы и информацию о действиях на сайте. Нажимая «Принять» и продолжая пользоваться сайтом, ты даёшь согласие на обработку таких данных и установку cookie.
+    Согласие можно отозвать, удалив cookie в браузере и/или запретив их в настройках браузера (при этом часть функций может работать некорректно).
+    Если используются сторонние сервисы (например, сети баннеров/аналитики), они могут устанавливать свои cookie согласно своим политикам. Подробнее: <a href="/privacy" target="_blank" rel="noopener noreferrer">Политика cookie/конфиденциальности</a>.
+  </div>
+  <div class="row" style="gap:8px; flex-wrap:nowrap;">
+    <button id="btnCookieAccept">Принять</button>
   </div>
 </div>
 
@@ -75,6 +321,13 @@
 
   const agentTooltip = document.getElementById('agentTooltip');
 
+  const welcomeModal = document.getElementById('welcomeModal');
+  const btnCloseWelcome = document.getElementById('btnCloseWelcome');
+  const btnWelcomeOk = document.getElementById('btnWelcomeOk');
+
+  const cookieBar = document.getElementById('cookieBar');
+  const btnCookieAccept = document.getElementById('btnCookieAccept');
+
   const sprites = {
     male: new Image(),
     female: new Image(),
@@ -85,6 +338,53 @@
 
   const agentRenderState = new Map();
 
+  let worldMapCache = {
+    w: null,
+    h: null,
+    water: [],
+    off: null,
+  };
+
+  let worldMapLoading = false;
+
+  async function loadWorldMap() {
+    if (worldMapLoading) return;
+    worldMapLoading = true;
+    try {
+      const res = await fetch('/api/map', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      const m = data.map || null;
+      if (!m) return;
+      const w = parseInt(m.width || 0, 10);
+      const h = parseInt(m.height || 0, 10);
+      const water = (m.terrain && Array.isArray(m.terrain.water)) ? m.terrain.water : [];
+      worldMapCache = { w, h, water, off: null };
+    } catch (e) {}
+    finally { worldMapLoading = false; }
+  }
+
+  function buildWaterOffscreen(w, h, water) {
+    try {
+      const off = document.createElement('canvas');
+      off.width = Math.max(1, w);
+      off.height = Math.max(1, h);
+      const octx = off.getContext('2d');
+      octx.clearRect(0, 0, off.width, off.height);
+      octx.fillStyle = 'rgba(46, 107, 255, 0.35)';
+      for (const c of (water || [])) {
+        try {
+          const x = c[0] | 0;
+          const y = c[1] | 0;
+          if (x >= 0 && y >= 0 && x < w && y < h) octx.fillRect(x, y, 1, 1);
+        } catch (e) {}
+      }
+      return off;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // Camera (pan/zoom)
   const camera = { x: 0, y: 0, zoom: 1, _initialized: true };
   const cameraLimits = { minZoom: 0.75, maxZoom: 6 };
@@ -94,9 +394,9 @@
 
   function computeCameraLimits(snapshot) {
     if (!snapshot) return;
-    // World is drawn to fit the canvas at zoom=1. Allow zooming out a bit and in a lot.
-    cameraLimits.minZoom = 0.6;
-    cameraLimits.maxZoom = 6;
+    // Let's enforce strict zoom limits.
+    cameraLimits.minZoom = 0.5;
+    cameraLimits.maxZoom = 15;
   }
 
   function clampCamera(snapshot) {
@@ -108,22 +408,25 @@
     const worldW = cv.width * camera.zoom;
     const worldH = cv.height * camera.zoom;
 
-    // Bounds so that the world stays within the viewport.
-    let minX = cv.width - worldW;
-    let maxX = 0;
-    let minY = cv.height - worldH;
-    let maxY = 0;
+    // Allow panning, but don't let the map completely leave the screen.
+    // Let's keep at least 100px of the map visible.
+    const padding = 100;
+    const minX = cv.width - worldW - padding;
+    const maxX = padding;
+    const minY = cv.height - worldH - padding;
+    const maxY = padding;
 
-    // If world is smaller than viewport, center it.
-    if (minX > maxX) {
-      minX = maxX = (cv.width - worldW) / 2;
-    }
-    if (minY > maxY) {
-      minY = maxY = (cv.height - worldH) / 2;
+    if (worldW < cv.width) {
+      camera.x = (cv.width - worldW) / 2;
+    } else {
+      camera.x = Math.max(minX, Math.min(maxX, camera.x));
     }
 
-    camera.x = Math.max(minX, Math.min(maxX, camera.x));
-    camera.y = Math.max(minY, Math.min(maxY, camera.y));
+    if (worldH < cv.height) {
+      camera.y = (cv.height - worldH) / 2;
+    } else {
+      camera.y = Math.max(minY, Math.min(maxY, camera.y));
+    }
   }
 
   function centerOnAgents(snapshot) {
@@ -156,27 +459,122 @@
     clampCamera(snapshot);
   }
 
-  cv.addEventListener('wheel', (e) => {
-    e.preventDefault();
+  function zoomAtCanvasPoint(canvasX, canvasY, factor) {
     if (!lastSnapshot) return;
-    const rect = cv.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    // Fixed 5% per wheel "notch" (quantize for trackpads)
-    const steps = Math.max(1, Math.min(10, Math.round(Math.abs(e.deltaY) / 100)));
-    const stepFactor = 1.05;
-    const zoomFactor = (e.deltaY < 0) ? Math.pow(stepFactor, steps) : Math.pow(1 / stepFactor, steps);
+    computeCameraLimits(lastSnapshot);
     const oldZoom = camera.zoom;
-    const newZoom = Math.max(cameraLimits.minZoom, Math.min(cameraLimits.maxZoom, oldZoom * zoomFactor));
-
-    // Zoom to cursor
-    camera.x = mx - (mx - camera.x) * (newZoom / oldZoom);
-    camera.y = my - (my - camera.y) * (newZoom / oldZoom);
+    let newZoom = oldZoom * factor;
+    newZoom = Math.max(cameraLimits.minZoom, Math.min(cameraLimits.maxZoom, newZoom));
+    if (Math.abs(newZoom - oldZoom) < 1e-6) return;
+    camera.x = canvasX - (canvasX - camera.x) * (newZoom / oldZoom);
+    camera.y = canvasY - (canvasY - camera.y) * (newZoom / oldZoom);
     camera.zoom = newZoom;
     clampCamera(lastSnapshot);
+  }
+
+  function nudgeCamera(dx, dy) {
+    if (!lastSnapshot) return;
+    camera.x += dx;
+    camera.y += dy;
+    clampCamera(lastSnapshot);
+  }
+
+  function bindHold(btn, onStep) {
+    if (!btn) return;
+    let t = null;
+    let raf = null;
+    const step = () => {
+      try { onStep(); } catch (e) {}
+      raf = requestAnimationFrame(step);
+    };
+    const stop = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = null;
+      if (t) clearTimeout(t);
+      t = null;
+    };
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      onStep();
+      t = setTimeout(() => { raf = requestAnimationFrame(step); }, 180);
+    });
+    window.addEventListener('mouseup', stop);
+    btn.addEventListener('mouseleave', stop);
+  }
+
+  const centerX = () => cv.width / 2;
+  const centerY = () => cv.height / 2;
+
+  if (camZoomIn) {
+    camZoomIn.disabled = true;
+    camZoomIn.title = 'зум отключен';
+  }
+  if (camZoomOut) {
+    camZoomOut.disabled = true;
+    camZoomOut.title = 'зум отключен';
+  }
+  if (camUp) { camUp.disabled = true; camUp.style.display = 'none'; }
+  if (camDown) { camDown.disabled = true; camDown.style.display = 'none'; }
+  if (camLeft) { camLeft.disabled = true; camLeft.style.display = 'none'; }
+  if (camRight) { camRight.disabled = true; camRight.style.display = 'none'; }
+  if (camReset) camReset.addEventListener('click', () => resetCamera(lastSnapshot));
+
+  const basePan = () => 42;
+  const panStep = () => basePan() * Math.max(1.0, camera.zoom * 0.55);
+  if (camUp && !camUp.disabled) bindHold(camUp, () => nudgeCamera(0, panStep()));
+  if (camDown && !camDown.disabled) bindHold(camDown, () => nudgeCamera(0, -panStep()));
+  if (camLeft && !camLeft.disabled) bindHold(camLeft, () => nudgeCamera(panStep(), 0));
+  if (camRight && !camRight.disabled) bindHold(camRight, () => nudgeCamera(-panStep(), 0));
+
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    // zoom отключен
   }, { passive: false });
 
+  function showWelcomeOnce() {
+    try {
+      const k = 'evosim_welcome_shown';
+      if (localStorage.getItem(k) === '1') return;
+      localStorage.setItem(k, '1');
+      if (!welcomeModal) return;
+      welcomeModal.style.display = 'flex';
+    } catch (e) {}
+  }
+
+  function hideWelcome() {
+    try { if (welcomeModal) welcomeModal.style.display = 'none'; } catch (e) {}
+  }
+
+  if (btnCloseWelcome) btnCloseWelcome.addEventListener('click', hideWelcome);
+  if (btnWelcomeOk) btnWelcomeOk.addEventListener('click', hideWelcome);
+
+  function showCookieOnce() {
+    try {
+      const k = 'evosim_cookie_ok';
+      if (localStorage.getItem(k) === '1') return;
+      if (cookieBar) cookieBar.style.display = 'flex';
+    } catch (e) {}
+  }
+
+  function acceptCookies() {
+    try {
+      localStorage.setItem('evosim_cookie_ok', '1');
+      if (cookieBar) cookieBar.style.display = 'none';
+    } catch (e) {}
+  }
+
+  if (btnCookieAccept) btnCookieAccept.addEventListener('click', acceptCookies);
+
+  try {
+    showWelcomeOnce();
+    showCookieOnce();
+  } catch (e) {}
+
+  cv.addEventListener('contextmenu', (e) => e.preventDefault());
+
   cv.addEventListener('mousedown', (e) => {
+    // Like in admin editor: pan with RMB/MMB, keep LMB for selection/hover.
+    if (e.button !== 1 && e.button !== 2) return;
     dragging = true;
     dragStart = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y };
   });
@@ -240,7 +638,22 @@
         const eng = (d.energy === undefined || d.energy === null) ? '—' : d.energy.toFixed(2);
         const hlth = (d.health === undefined || d.health === null) ? '—' : d.health.toFixed(2);
         const age = (d.age === undefined || d.age === null) ? '—' : d.age;
-        extra = `; ${d.cause_ru}${agent}; голод=${hng} жажда=${thr} сон=${slp} энергия=${eng} здоровье=${hlth} возраст=${age}`;
+        if (d.cause_ru) {
+          extra = `; ${d.cause_ru}${agent}; голод=${hng} жажда=${thr} сон=${slp} энергия=${eng} здоровье=${hlth} возраст=${age}`;
+        } else if (d.message) {
+          const where = d.where ? ` (${d.where})` : '';
+          extra = `; ${d.message}${where}`;
+          if (d.traceback) {
+            try {
+              const lines = String(d.traceback).split('\n').map(s => s.trim()).filter(Boolean);
+              const tail = lines.slice(Math.max(0, lines.length - 6));
+              const hint = tail.join(' | ');
+              extra += `; tb: ${hint}`;
+            } catch (e) {}
+          }
+        } else if (d.note) {
+          extra = `; ${d.note}`;
+        }
       }
       div.textContent = `Симуляция №${h.run} завершена: ${h.reason}${extra} (t=${h.ended_at_timestep}, день=${h.ended_at_day} ${h.ended_at_time})`;
       el.appendChild(div);
@@ -425,8 +838,13 @@
     const invLine = invParts.length ? escapeHtml(invParts.join(', ')) : 'пусто';
     const toolLine = toolParts.length ? escapeHtml(toolParts.join(', ')) : 'нет';
 
+    const ownerLine = agent.owner_username
+      ? `<div class="muted">создатель: <span class="mono">${escapeHtml(agent.owner_username)}</span></div>`
+      : '';
+
     agentTooltip.innerHTML = `
       <div class="title">${title}</div>
+      ${ownerLine}
       <div class="muted">Инвентарь:</div>
       <div class="mono">${invLine}</div>
       <div style="height:6px"></div>
@@ -527,8 +945,22 @@
     const sx = cv.width / w;
     const sy = cv.height / h;
 
+    // Terrain (water) from saved map (cached as 1px-per-cell offscreen)
+    if (worldMapCache && worldMapCache.w === w && worldMapCache.h === h) {
+      if (!worldMapCache.off) {
+        worldMapCache.off = buildWaterOffscreen(w, h, worldMapCache.water);
+      }
+      if (worldMapCache.off) {
+        ctx.globalAlpha = 1.0;
+        ctx.drawImage(worldMapCache.off, 0, 0, w * sx, h * sy);
+      }
+    } else {
+      // Map/world size changed (e.g., admin applied a new map). Reload map.
+      loadWorldMap();
+    }
+
     // Objects
-    for (const o of snapshot.objects) {
+    for (const o of objectsState.values()) {
       ctx.fillStyle = colorForObject(o.type);
       ctx.globalAlpha = 0.7;
       ctx.fillRect(o.x * sx, o.y * sy, Math.max(1, sx*0.7), Math.max(1, sy*0.7));
@@ -652,12 +1084,20 @@
     const pct = (x) => (x === undefined || x === null) ? '—' : `${(x * 100).toFixed(0)}%`;
     const num = (x) => (x === undefined || x === null) ? '—' : `${x}`;
 
+    const viewers = (snapshot.online && snapshot.online.viewers !== undefined && snapshot.online.viewers !== null)
+      ? snapshot.online.viewers
+      : '—';
+
     const day = snapshot.world.day ?? 0;
     const hh = String(snapshot.world.hour ?? 0).padStart(2, '0');
     const mm = String(snapshot.world.minute ?? 0).padStart(2, '0');
     const isDay = snapshot.world.is_daytime ?? true;
     const dayNight = isDay ? 'день' : 'ночь';
-    const runNo = snapshot.run && snapshot.run.number ? snapshot.run.number : 1;
+    const runNo = (snapshot.run_number !== undefined && snapshot.run_number !== null)
+      ? snapshot.run_number
+      : ((snapshot.run_info && snapshot.run_info.number !== undefined && snapshot.run_info.number !== null)
+        ? snapshot.run_info.number
+        : 1);
 
     const prog = snapshot.progress || {};
     const needsLoad = (prog.needs_load_avg === undefined || prog.needs_load_avg === null) ? '—' : prog.needs_load_avg.toFixed(2);
@@ -687,6 +1127,7 @@
     const kindLine = kindParts.length ? kindParts.join(', ') : '—';
 
     status.innerHTML = `
+      <span title="Сколько людей сейчас открыли страницу и подключены по WebSocket"><b>онлайн</b>: ${viewers}</span>
       <span title="Номер текущего прогона симуляции (auto-restart при вымирании)"><b>симуляция</b>: №${runNo}</span>
       <span title="Текущий шаг симуляции (timestep)"><b>t</b>: ${snapshot.timestep}</span>
       <span title="Номер дня в симуляции (счётчик суток)"><b>день</b>: ${day}</span>
@@ -712,6 +1153,23 @@
   let lastPaintMs = 0;
   const targetFrameMs = 1000 / 30;
 
+  let renderLoopStarted = false;
+  function renderLoop(now) {
+    try {
+      if (lastSnapshot) {
+        if (now - lastPaintMs >= targetFrameMs) {
+          draw(lastSnapshot);
+          lastPaintMs = now;
+        }
+      }
+    } catch (e) {}
+    requestAnimationFrame(renderLoop);
+  }
+
+  // RTS-style object state (applied from deltas)
+  const objectsState = new Map();
+  let lastRunNumber = null;
+
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
 
   function ping() {
@@ -731,21 +1189,526 @@
       return;
     }
 
+    // Apply object sync/deltas
+    try {
+      const runNo = snapshot.run_number ?? (snapshot.run_info ? snapshot.run_info.number : null);
+      const isNewRun = (runNo !== null && runNo !== undefined && lastRunNumber !== runNo);
+      const full = Boolean(snapshot.full_sync) || Boolean(snapshot.objects_full) || isNewRun;
+
+      if (full) {
+        objectsState.clear();
+        const fullList = snapshot.objects_full || snapshot.objects || [];
+        for (const o of fullList) {
+          if (!o || !o.id) continue;
+          objectsState.set(o.id, o);
+        }
+        lastRunNumber = runNo;
+      } else {
+        for (const o of (snapshot.objects_add || [])) {
+          if (!o || !o.id) continue;
+          objectsState.set(o.id, o);
+        }
+        for (const o of (snapshot.objects_update || [])) {
+          if (!o || !o.id) continue;
+          objectsState.set(o.id, o);
+        }
+        for (const oid of (snapshot.objects_remove || [])) {
+          if (!oid) continue;
+          objectsState.delete(oid);
+        }
+      }
+    } catch (e) {}
+
     lastSnapshot = snapshot;
     renderStatus(snapshot);
     renderHistory(snapshot);
     renderEvents(snapshot);
 
-    const now = performance.now();
-    if (now - lastPaintMs > 33) {
-      draw(snapshot);
-      lastPaintMs = now;
+    if (!renderLoopStarted) {
+      renderLoopStarted = true;
+      lastPaintMs = performance.now();
+      requestAnimationFrame(renderLoop);
     }
   };
 
   ws.onclose = () => {
     status.innerHTML = '<b>WS disconnected</b>';
   };
+
+  const authUser = document.getElementById('authUser');
+  const authPass = document.getElementById('authPass');
+  const btnLogin = document.getElementById('btnLogin');
+  const btnRegister = document.getElementById('btnRegister');
+  const btnLogout = document.getElementById('btnLogout');
+  const authState = document.getElementById('authState');
+  const chatAuth = document.getElementById('chatAuth');
+  const chatBox = document.getElementById('chatBox');
+  const chatMessages = document.getElementById('chatMessages');
+  const chatInput = document.getElementById('chatInput');
+  const btnSend = document.getElementById('btnSend');
+  const chatAnnounce = document.getElementById('chatAnnounce');
+  const chatAnnounceText = document.getElementById('chatAnnounceText');
+
+  const worldControls = document.getElementById('worldControls');
+  const btnCreateAgent = document.getElementById('btnCreateAgent');
+  const createAgentState = document.getElementById('createAgentState');
+
+  const agentModal = document.getElementById('agentModal');
+  const btnCloseAgentModal = document.getElementById('btnCloseAgentModal');
+  const agentName = document.getElementById('agentName');
+  const btnSubmitAgent = document.getElementById('btnSubmitAgent');
+  const agentModalState = document.getElementById('agentModalState');
+
+  const accountBar = document.getElementById('accountBar');
+  const accountText = document.getElementById('accountText');
+  const adminLink = document.getElementById('adminLink');
+  const btnLogout2 = document.getElementById('btnLogout2');
+
+  const newsList = document.getElementById('newsList');
+  const newsAdmin = document.getElementById('newsAdmin');
+  const newsTitle = document.getElementById('newsTitle');
+  const newsText = document.getElementById('newsText');
+  const btnPostNews = document.getElementById('btnPostNews');
+  const newsAdminState = document.getElementById('newsAdminState');
+
+  let chatWs = null;
+
+  function setAuthState(stateText) {
+    authState.textContent = stateText || '';
+  }
+
+  function localizeDetail(detail) {
+    const d = (detail || '').toString();
+    if (!d) return '';
+    const map = {
+      invalid_username_or_password: 'Неверный логин или пароль',
+      invalid_token: 'Сессия недействительна. Войдите заново.',
+      not_authenticated: 'Нужно войти в аккаунт',
+      not_admin: 'Недостаточно прав (нужен администратор)',
+      registration_closed: 'Регистрация закрыта. Обратитесь к администратору.',
+      username_taken: 'Этот логин уже занят',
+      username_too_short: 'Логин слишком короткий',
+      password_too_short: 'Пароль слишком короткий',
+      invalid_agent_name: 'Некорректное имя агента',
+      invalid_agent_sex: 'Некорректный пол агента',
+      simulation_not_ready: 'Симуляция ещё не готова. Попробуйте чуть позже.',
+      agent_already_created: 'У вас уже есть агент. Можно только наблюдать за ним.',
+    };
+    return map[d] || d;
+  }
+
+  function setHasAgentFlag(hasAgent) {
+    localStorage.setItem('evosim_has_agent', hasAgent ? '1' : '0');
+  }
+
+  function hasAgent() {
+    return localStorage.getItem('evosim_has_agent') === '1';
+  }
+
+  function getToken() {
+    return localStorage.getItem('evosim_token');
+  }
+
+  function setToken(token, username) {
+    localStorage.setItem('evosim_token', token);
+    if (username) localStorage.setItem('evosim_username', username);
+  }
+
+  function setAdminFlag(isAdmin) {
+    localStorage.setItem('evosim_is_admin', isAdmin ? '1' : '0');
+  }
+
+  function isAdmin() {
+    return localStorage.getItem('evosim_is_admin') === '1';
+  }
+
+  function clearToken() {
+    localStorage.removeItem('evosim_token');
+    localStorage.removeItem('evosim_username');
+    localStorage.removeItem('evosim_is_admin');
+  }
+
+  function setChatAnnouncement(text) {
+    const t = String(text || '').trim();
+    if (!chatAnnounce || !chatAnnounceText) return;
+    if (!t) {
+      chatAnnounce.style.display = 'none';
+      chatAnnounceText.textContent = '';
+      return;
+    }
+    chatAnnounce.style.display = '';
+    chatAnnounceText.textContent = t;
+  }
+
+  function appendChatLine(item) {
+    const div = document.createElement('div');
+    div.dataset.msgId = String(item.id ?? '');
+    div.style.padding = '6px 6px';
+    div.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+    const ts = (item.created_at || '').replace('T', ' ').slice(0, 19);
+    const adminTag = item.is_admin ? ' > Администратор' : '';
+    div.textContent = `${ts} ${item.username}${adminTag}: ${item.text}`;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function deleteChatLineById(id) {
+    if (!chatMessages) return;
+    const q = `[data-msg-id="${CSS.escape(String(id))}"]`;
+    const el = chatMessages.querySelector(q);
+    if (el) el.remove();
+  }
+
+  function setLoggedInUI(username) {
+    // Hide login form and show account bar
+    authUser.value = '';
+    authPass.value = '';
+    authUser.disabled = true;
+    authPass.disabled = true;
+    btnLogin.style.display = 'none';
+    btnRegister.style.display = 'none';
+    btnLogout.style.display = 'none';
+    if (chatAuth) chatAuth.style.display = 'none';
+    accountBar.style.display = '';
+    chatBox.style.display = '';
+    btnSend.disabled = false;
+    const tag = isAdmin() ? ' > Администратор' : '';
+    accountText.textContent = username ? `вы вошли как ${username}${tag}` : `вы вошли${tag}`;
+    adminLink.style.display = isAdmin() ? '' : 'none';
+    setAuthState('');
+    newsAdmin.style.display = isAdmin() ? '' : 'none';
+    if (worldControls) worldControls.style.display = '';
+
+    if (btnCreateAgent) {
+      const locked = hasAgent();
+      btnCreateAgent.disabled = locked;
+      setCreateAgentState(locked ? 'агент уже создан' : '');
+    }
+  }
+
+  function setLoggedOutUI() {
+    accountBar.style.display = 'none';
+    adminLink.style.display = 'none';
+    btnLogout.style.display = 'none';
+    btnLogin.style.display = '';
+    btnRegister.style.display = '';
+    if (chatAuth) chatAuth.style.display = '';
+    authUser.disabled = false;
+    authPass.disabled = false;
+    chatBox.style.display = 'none';
+    btnSend.disabled = true;
+    setAuthState('');
+    newsAdmin.style.display = 'none';
+    if (worldControls) worldControls.style.display = 'none';
+    if (btnCreateAgent) btnCreateAgent.disabled = true;
+    setCreateAgentState('');
+  }
+
+  function setCreateAgentState(t) {
+    if (createAgentState) createAgentState.textContent = t || '';
+  }
+
+  function setAgentModalState(t) {
+    if (agentModalState) agentModalState.textContent = t || '';
+  }
+
+  function openAgentModal() {
+    if (!agentModal) return;
+    setAgentModalState('');
+    if (agentName) agentName.value = '';
+    agentModal.style.display = 'flex';
+    try { agentName && agentName.focus(); } catch (e) {}
+  }
+
+  function closeAgentModal() {
+    if (!agentModal) return;
+    agentModal.style.display = 'none';
+    setAgentModalState('');
+  }
+
+  function getAgentSex() {
+    const el = document.querySelector('input[name="agentSex"]:checked');
+    return el ? el.value : 'male';
+  }
+
+  async function submitAgent() {
+    const token = getToken();
+    if (!token) {
+      setCreateAgentState('нужно войти');
+      return;
+    }
+    const name = (agentName && agentName.value ? agentName.value : '').trim();
+    const sex = getAgentSex();
+    setAgentModalState('...');
+    try {
+      const res = await fetch('/api/agents/create?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: name, sex })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAgentModalState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+        return;
+      }
+      const a = data.agent || {};
+      setCreateAgentState(`создан: ${a.name || a.id}`);
+      setHasAgentFlag(true);
+      if (btnCreateAgent) btnCreateAgent.disabled = true;
+      closeAgentModal();
+    } catch (e) {
+      setAgentModalState('ошибка сети');
+    }
+  }
+
+  async function validateTokenAndSyncUI() {
+    const token = getToken();
+    if (!token) {
+      setLoggedOutUI();
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/me?token=' + encodeURIComponent(token), { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        clearToken();
+        setLoggedOutUI();
+        return;
+      }
+      localStorage.setItem('evosim_username', data.username);
+      setAdminFlag(!!data.is_admin);
+      setHasAgentFlag(!!data.has_agent);
+      setLoggedInUI(data.username);
+    } catch (e) {
+      // If network fails, fall back to stored info
+      const username = localStorage.getItem('evosim_username') || '';
+      setLoggedInUI(username);
+    }
+  }
+
+  function connectChat() {
+    const token = getToken();
+    if (!token) {
+      setLoggedOutUI();
+      return;
+    }
+
+    const username = localStorage.getItem('evosim_username') || '';
+    setLoggedInUI(username);
+    chatMessages.innerHTML = '';
+
+    if (chatWs) {
+      try { chatWs.close(); } catch (e) {}
+      chatWs = null;
+    }
+
+    const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/chat/ws?token=' + encodeURIComponent(token);
+    chatWs = new WebSocket(wsUrl);
+
+    chatWs.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'history') {
+        const items = msg.items || [];
+        chatMessages.innerHTML = '';
+        for (const it of items) appendChatLine(it);
+        setChatAnnouncement(msg.announcement || '');
+        return;
+      }
+      if (msg.type === 'message' && msg.item) {
+        appendChatLine(msg.item);
+        return;
+      }
+      if (msg.type === 'announcement') {
+        setChatAnnouncement(msg.text || '');
+        return;
+      }
+      if (msg.type === 'moderation' && msg.event === 'delete') {
+        deleteChatLineById(msg.id);
+        return;
+      }
+      if (msg.type === 'banned') {
+        setAuthState('вы заблокированы в чате');
+        try { if (chatBox) chatBox.style.display = 'none'; } catch (e) {}
+        return;
+      }
+      if (msg.type === 'error' && msg.detail === 'chat_banned') {
+        setAuthState('вы заблокированы в чате');
+        return;
+      }
+    };
+
+    chatWs.onclose = () => {
+      setAuthState('чат отключен');
+    };
+  }
+
+  async function authCall(path) {
+    const username = (authUser.value || '').trim();
+    const password = authPass.value || '';
+    setAuthState('...');
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setAuthState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+    setToken(data.token, data.username);
+    setAdminFlag(!!data.is_admin);
+    connectChat();
+    await loadNews();
+  }
+
+  btnLogin.addEventListener('click', async () => {
+    try { await authCall('/api/auth/login'); } catch (e) { setAuthState('ошибка сети'); }
+  });
+  btnRegister.addEventListener('click', async () => {
+    try { await authCall('/api/auth/register'); } catch (e) { setAuthState('ошибка сети'); }
+  });
+  btnLogout.addEventListener('click', () => {
+    clearToken();
+    if (chatWs) {
+      try { chatWs.close(); } catch (e) {}
+      chatWs = null;
+    }
+    setLoggedOutUI();
+    loadNews();
+  });
+
+  if (btnCreateAgent) btnCreateAgent.addEventListener('click', () => openAgentModal());
+  if (btnCloseAgentModal) btnCloseAgentModal.addEventListener('click', () => closeAgentModal());
+  if (agentModal) {
+    agentModal.addEventListener('click', (e) => {
+      if (e.target === agentModal) closeAgentModal();
+    });
+  }
+  if (btnSubmitAgent) btnSubmitAgent.addEventListener('click', () => submitAgent());
+
+  btnLogout2.addEventListener('click', () => {
+    clearToken();
+    if (chatWs) {
+      try { chatWs.close(); } catch (e) {}
+      chatWs = null;
+    }
+    setLoggedOutUI();
+    loadNews();
+  });
+
+  function setNewsAdminState(t) {
+    newsAdminState.textContent = t || '';
+  }
+
+  function renderNews(items) {
+    newsList.innerHTML = '';
+    const arr = items || [];
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const n = arr[i];
+      const wrap = document.createElement('div');
+      wrap.style.padding = '8px 10px';
+      wrap.style.border = '1px solid rgba(255,255,255,0.08)';
+      wrap.style.borderRadius = '10px';
+      wrap.style.marginBottom = '8px';
+      wrap.style.background = 'rgba(255,255,255,0.03)';
+
+      const t = (n.created_at || '').replace('T', ' ').slice(0, 19);
+      const title = document.createElement('div');
+      title.style.fontWeight = '700';
+      title.style.marginBottom = '4px';
+      title.textContent = n.title;
+      const meta = document.createElement('div');
+      meta.style.fontSize = '12px';
+      meta.style.color = '#aab0c0';
+      meta.style.marginBottom = '6px';
+      meta.textContent = `${t} — ${n.author_username}`;
+      const body = document.createElement('div');
+      body.style.whiteSpace = 'pre-wrap';
+      body.textContent = n.text;
+
+      wrap.appendChild(title);
+      wrap.appendChild(meta);
+      wrap.appendChild(body);
+
+      if (isAdmin() && getToken()) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.marginTop = '8px';
+        const btnDel = document.createElement('button');
+        btnDel.className = 'secondary';
+        btnDel.textContent = 'Удалить';
+        btnDel.addEventListener('click', async () => {
+          try {
+            const res = await fetch('/api/admin/news/' + n.id + '?token=' + encodeURIComponent(getToken()), { method: 'DELETE' });
+            if (!res.ok) return;
+            await loadNews();
+          } catch (e) {}
+        });
+        row.appendChild(btnDel);
+        wrap.appendChild(row);
+      }
+
+      newsList.appendChild(wrap);
+    }
+  }
+
+  async function loadNews() {
+    try {
+      const res = await fetch('/api/news?limit=20', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      renderNews(data.items || []);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  btnPostNews.addEventListener('click', async () => {
+    if (!getToken()) return;
+    setNewsAdminState('...');
+    try {
+      const title = (newsTitle.value || '').trim();
+      const text = (newsText.value || '').trim();
+      const res = await fetch('/api/admin/news?token=' + encodeURIComponent(getToken()), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNewsAdminState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+        return;
+      }
+      newsTitle.value = '';
+      newsText.value = '';
+      setNewsAdminState('опубликовано');
+      await loadNews();
+    } catch (e) {
+      setNewsAdminState('ошибка сети');
+    }
+  });
+
+  function sendChat() {
+    const text = (chatInput.value || '').trim();
+    if (!text) return;
+    if (!chatWs || chatWs.readyState !== WebSocket.OPEN) {
+      setAuthState('чат не подключен');
+      return;
+    }
+    chatWs.send(JSON.stringify({ text }));
+    chatInput.value = '';
+  }
+
+  btnSend.addEventListener('click', sendChat);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendChat();
+  });
+
+  validateTokenAndSyncUI();
+  connectChat();
+  loadNews();
+  loadWorldMap();
 </script>
 </body>
 </html>

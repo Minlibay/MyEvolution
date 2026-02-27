@@ -135,6 +135,35 @@ class Tool:
 
 class ToolFactory:
     """Фабрика для создания инструментов из объектов"""
+
+    _custom_recipes: List[Dict[str, Any]] = []
+
+    @classmethod
+    def set_custom_recipes(cls, recipes: List[Dict[str, Any]]):
+        try:
+            cls._custom_recipes = list(recipes or [])
+        except Exception:
+            cls._custom_recipes = []
+
+    @classmethod
+    def get_custom_recipes(cls) -> List[Dict[str, Any]]:
+        try:
+            return list(cls._custom_recipes or [])
+        except Exception:
+            return []
+
+    @staticmethod
+    def _item_token(item: Any) -> Optional[str]:
+        # Object ingredient
+        t = getattr(item, 'type', None)
+        if t is not None:
+            return f"obj:{str(t)}"
+
+        # Tool ingredient (only if it has a kind)
+        k = getattr(item, 'kind', None)
+        if k:
+            return f"tool:{str(k)}"
+        return None
     
     @staticmethod
     def create_tool_from_objects(component_objects: List, creator_id: str, 
@@ -144,8 +173,17 @@ class ToolFactory:
         if len(component_objects) < 2:
             return None
 
-        # Simple named recipes first (keep emergent tools as fallback)
+        # Admin-defined recipes first
         try:
+            recipe_tool = ToolFactory._try_create_custom_recipe_tool(component_objects, creator_id, tool_id, timestamp)
+            if recipe_tool is not None:
+                return recipe_tool
+        except Exception:
+            pass
+
+        # Simple named recipes next (keep emergent tools as fallback)
+        try:
+            # Named recipes only support pure object combinations.
             recipe_tool = ToolFactory._try_create_named_tool(component_objects, creator_id, tool_id, timestamp)
             if recipe_tool is not None:
                 return recipe_tool
@@ -255,6 +293,63 @@ class ToolFactory:
             durability_left=durability_left,
             properties=props,
         )
+
+    @staticmethod
+    def _try_create_custom_recipe_tool(component_objects: List, creator_id: str,
+                                       tool_id: str, timestamp: int) -> Optional[Tool]:
+        if len(component_objects) < 2:
+            return None
+
+        tokens = []
+        for it in component_objects:
+            tok = ToolFactory._item_token(it)
+            if tok is None:
+                return None
+            tokens.append(tok)
+        tokens.sort()
+
+        for r in (ToolFactory._custom_recipes or []):
+            try:
+                comps = r.get('components') or []
+                if not isinstance(comps, list) or len(comps) < 2:
+                    continue
+                rc = sorted([str(c) for c in comps])
+                if rc != tokens:
+                    continue
+
+                kind = str(r.get('kind') or '').strip()
+                if not kind:
+                    continue
+
+                eff = r.get('effectiveness') or {}
+                if not isinstance(eff, dict) or not eff:
+                    continue
+                effectiveness = {str(k): float(v) for k, v in eff.items()}
+
+                durability_left = float(r.get('durability_left') or 60.0)
+                durability_left = float(max(5.0, min(100.0, durability_left)))
+
+                props_in = r.get('properties') or {}
+                props = {
+                    'sharpness': float(props_in.get('sharpness', 0.0) or 0.0),
+                    'effectiveness': float(props_in.get('effectiveness', 1.0) or 1.0),
+                    'weight': float(sum(getattr(o, 'weight', 0.5) for o in component_objects) / max(1, len(component_objects))),
+                    'durability': float(props_in.get('durability', durability_left / 100.0) or (durability_left / 100.0)),
+                }
+
+                return Tool(
+                    id=tool_id,
+                    components=[obj.id for obj in component_objects],
+                    creator_id=creator_id,
+                    created_at=timestamp,
+                    kind=kind,
+                    effectiveness=effectiveness,
+                    durability_left=durability_left,
+                    properties=props,
+                )
+            except Exception:
+                continue
+        return None
     
     @staticmethod
     def _calculate_combined_properties(objects: List) -> Dict[str, float]:
@@ -263,7 +358,19 @@ class ToolFactory:
             return {}
         
         # Взвешенная сумма свойств
-        total_weight = sum(obj.weight for obj in objects)
+        weights: List[float] = []
+        for obj in objects:
+            try:
+                w = float(getattr(obj, 'weight', 0.0) or 0.0)
+            except Exception:
+                w = 0.0
+            weights.append(w)
+
+        total_weight = float(sum(weights))
+        if total_weight <= 0.0:
+            # Fallback: treat all objects equally to avoid division by zero.
+            weights = [1.0 for _ in objects]
+            total_weight = float(len(objects))
         
         combined = {}
         property_names = [
@@ -272,11 +379,14 @@ class ToolFactory:
         ]
         
         for prop_name in property_names:
-            weighted_sum = sum(
-                getattr(obj, prop_name) * obj.weight / total_weight 
-                for obj in objects
-            )
-            combined[prop_name] = weighted_sum
+            weighted_sum = 0.0
+            for obj, w in zip(objects, weights):
+                try:
+                    v = float(getattr(obj, prop_name, 0.0) or 0.0)
+                except Exception:
+                    v = 0.0
+                weighted_sum += v * w / total_weight
+            combined[prop_name] = float(weighted_sum)
         
         # Эмерджентные свойства
         combined['sharpness'] = ToolFactory._calculate_sharpness(objects)
