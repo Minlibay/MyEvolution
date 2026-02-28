@@ -2,7 +2,7 @@
 Q-learning module - implements reinforcement learning for agents
 """
 
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 import random
 import numpy as np
 
@@ -344,18 +344,70 @@ class LearningManager:
             'total_rewards': 0.0,
             'active_learners': 0
         }
+
+        self._bootstrap_q_table: Dict[Tuple[str, str], float] = {}
+        self._bootstrap_epsilon: Optional[float] = None
+
+    def set_bootstrap(self, q_table: Optional[Dict[Tuple[str, str], float]] = None, epsilon: Optional[float] = None):
+        if q_table is None:
+            self._bootstrap_q_table = {}
+        else:
+            self._bootstrap_q_table = dict(q_table)
+        self._bootstrap_epsilon = None if epsilon is None else float(epsilon)
     
     def register_agent(self, agent: Agent):
         """Регистрирует агента в системе обучения"""
+        epsilon = agent.exploration_rate
+        if self._bootstrap_epsilon is not None:
+            epsilon = float(self._bootstrap_epsilon)
+
         learner = QLearningAgent(
             learning_rate=agent.learning_rate,
             discount_factor=agent.discount_factor,
-            epsilon=agent.exploration_rate
+            epsilon=epsilon
         )
+
+        if self._bootstrap_q_table:
+            learner.q_table = dict(self._bootstrap_q_table)
+            agent.exploration_rate = float(learner.epsilon)
         
         decision_maker = DecisionMaker(agent, learner)
         self.learners[agent.id] = decision_maker
         self.global_stats['active_learners'] += 1
+
+    def export_global_learning_state(self) -> Dict[str, Any]:
+        merged: Dict[Tuple[str, str], list[float]] = {}
+        eps: list[float] = []
+        episodes = 0
+
+        for dm in self.learners.values():
+            try:
+                q = getattr(dm.learner, 'q_table', {}) or {}
+                for (state, action), val in q.items():
+                    key = (str(state), str(action))
+                    if key not in merged:
+                        merged[key] = []
+                    merged[key].append(float(val))
+                eps.append(float(getattr(dm.learner, 'epsilon', 0.1) or 0.1))
+                episodes += int(getattr(dm.learner, 'learning_episodes', 0) or 0)
+            except Exception:
+                continue
+
+        out_q: Dict[Tuple[str, str], float] = {}
+        for k, vals in merged.items():
+            if not vals:
+                continue
+            out_q[k] = float(sum(vals) / len(vals))
+
+        out_eps = float(sum(eps) / len(eps)) if eps else None
+
+        items = [[s, a, float(v)] for (s, a), v in out_q.items()]
+        return {
+            'version': 1,
+            'epsilon': out_eps,
+            'episodes': int(episodes),
+            'q_table': items,
+        }
     
     def unregister_agent(self, agent_id: str):
         """Удаляет агента из системы обучения"""

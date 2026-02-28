@@ -272,6 +272,18 @@
         </div>
 
         <div id="usersList" class="list"></div>
+
+        <div class="item" style="margin-top:12px;">
+          <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+            <div>
+              <b>Агенты пользователей</b>
+              <div class="muted">Удаление снимает блокировку «1 агент навсегда» — пользователь сможет создать агента снова</div>
+            </div>
+            <button id="btnReloadUserAgents" class="secondary">Обновить</button>
+          </div>
+          <div id="userAgentsState" class="muted" style="margin-bottom:8px;"></div>
+          <div id="userAgentsList" class="list"></div>
+        </div>
       </div>
     </div>
 
@@ -455,6 +467,8 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
           <input id="siteSeoKeywords" placeholder="симуляция, агенты, эволюция..." style="width:100%;" />
           <div class="muted" style="margin-top:10px; margin-bottom:6px;">OG image URL (опционально)</div>
           <input id="siteOgImage" placeholder="https://.../image.png" style="width:100%;" />
+          <div class="muted" style="margin-top:10px; margin-bottom:6px;">Favicon URL (svg/png/ico)</div>
+          <input id="siteFaviconUrl" placeholder="https://.../favicon.svg" style="width:100%;" />
         </div>
 
         <div class="item" style="margin-bottom:10px;">
@@ -556,6 +570,10 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   const btnReloadUsers = document.getElementById('btnReloadUsers');
   const usersState = document.getElementById('usersState');
   const usersList = document.getElementById('usersList');
+
+  const btnReloadUserAgents = document.getElementById('btnReloadUserAgents');
+  const userAgentsState = document.getElementById('userAgentsState');
+  const userAgentsList = document.getElementById('userAgentsList');
   const newUser = document.getElementById('newUser');
   const newPass = document.getElementById('newPass');
   const newIsAdmin = document.getElementById('newIsAdmin');
@@ -620,6 +638,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   const siteSeoKeywords = document.getElementById('siteSeoKeywords');
   const siteOgImage = document.getElementById('siteOgImage');
   const siteBannerHtml = document.getElementById('siteBannerHtml');
+  const siteFaviconUrl = document.getElementById('siteFaviconUrl');
 
   const btnChatAnnLoad = document.getElementById('btnChatAnnLoad');
   const btnChatAnnSave = document.getElementById('btnChatAnnSave');
@@ -665,15 +684,69 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     if (!d) return '';
     const map = {
       invalid_username_or_password: 'Неверный логин или пароль',
+      invalid_credentials: 'Неверный логин или пароль',
       invalid_token: 'Сессия недействительна. Войдите заново.',
       not_authenticated: 'Нужно войти в аккаунт',
       not_admin: 'Недостаточно прав (нужен администратор)',
       registration_closed: 'Регистрация закрыта. Пользователей создаёт администратор.',
+      admin_only: 'Недостаточно прав (нужен администратор)',
       username_taken: 'Этот логин уже занят',
       username_too_short: 'Логин слишком короткий',
       password_too_short: 'Пароль слишком короткий',
+      invalid_user_id: 'Некорректный user_id',
     };
     return map[d] || d;
+  }
+
+  async function loadUserAgents() {
+    const token = getToken();
+    if (!token) return;
+    setText(userAgentsState, '...');
+    const { res, data } = await jsonFetch('/api/admin/user_agents?token=' + encodeURIComponent(token), { cache: 'no-store' });
+    if (!res.ok) {
+      setText(userAgentsState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      return;
+    }
+
+    const items = data.items || [];
+    setText(userAgentsState, `агентов: ${items.length}`);
+    userAgentsList.innerHTML = '';
+
+    for (const a of items) {
+      const div = document.createElement('div');
+      div.className = 'item';
+      const created = (a.created_at || '').replace('T', ' ').slice(0, 19);
+      let statsLine = '';
+      try {
+        const st = JSON.parse(a.stats_json || '{}');
+        statsLine = `сил=${st.strength ?? 0}, инт=${st.intelligence ?? 0}, соц=${st.social ?? 0}, вын=${st.endurance ?? 0}`;
+      } catch (e) {}
+      div.innerHTML = `
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <b>${escapeHtml(a.display_name || '')}</b>
+            <span class="muted">(${escapeHtml(a.sex || '')})</span>
+            <div class="muted">user: <span class="mono">${escapeHtml(a.username || '')}</span> · uid=${escapeHtml(a.uid)}</div>
+            <div class="muted">создан: ${escapeHtml(created)}${statsLine ? ' · ' + escapeHtml(statsLine) : ''}</div>
+          </div>
+          <div class="row">
+            <button class="danger" data-act="delete">Удалить агента</button>
+          </div>
+        </div>
+      `;
+      const btnDel = div.querySelector('button[data-act="delete"]');
+      btnDel.addEventListener('click', async () => {
+        try {
+          const { res: r, data: d } = await jsonFetch('/api/admin/user_agents/' + a.uid + '?token=' + encodeURIComponent(token), { method: 'DELETE' });
+          if (!r.ok) {
+            setText(userAgentsState, localizeDetail(d.detail) || `Ошибка ${r.status}`);
+            return;
+          }
+          await loadUserAgents();
+        } catch (e) {}
+      });
+      userAgentsList.appendChild(div);
+    }
   }
 
   function setPill(el, kind, text) {
@@ -735,6 +808,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       if (siteSeoKeywords) siteSeoKeywords.value = String(s.seo_keywords || '');
       if (siteOgImage) siteOgImage.value = String(s.seo_og_image || '');
       if (siteBannerHtml) siteBannerHtml.value = String(s.banner_html || '');
+      if (siteFaviconUrl) siteFaviconUrl.value = String(s.favicon_url || '');
       setSiteState('ok');
     } catch (e) {
       setSiteState(String(e && e.message ? e.message : e));
@@ -756,6 +830,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
         seo_keywords: (siteSeoKeywords ? siteSeoKeywords.value : ''),
         seo_og_image: (siteOgImage ? siteOgImage.value : ''),
         banner_html: (siteBannerHtml ? siteBannerHtml.value : ''),
+        favicon_url: (siteFaviconUrl ? siteFaviconUrl.value : ''),
       };
       const res = await fetch(`/api/admin/site_settings?token=${encodeURIComponent(token)}`, {
         method: 'PUT',
@@ -1455,6 +1530,8 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
 
       usersList.appendChild(div);
     }
+
+    await loadUserAgents();
   }
 
   async function createUser() {
@@ -1562,12 +1639,75 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     await loadNews();
   }
 
+  async function loadChatMessages() {
+    const token = getToken();
+    if (!token) return;
+    setText(chatModState, '...');
+    try {
+      const { res, data } = await jsonFetch('/api/admin/chat/messages?token=' + encodeURIComponent(token), { cache: 'no-store' });
+      if (!res.ok) throw new Error(localizeDetail(data && data.detail));
+      const items = data.items || [];
+      chatMessagesAdmin.innerHTML = '';
+      for (const m of items) {
+        const div = document.createElement('div');
+        div.className = 'item';
+        const created = (m.created_at || '').replace('T', ' ').slice(0, 19);
+        div.innerHTML = `
+          <div class="row" style="justify-content:space-between;">
+            <div>
+              <b>${m.username}</b>
+              <span class="muted">#${m.id}</span>
+              <div class="muted">создан: ${created}</div>
+            </div>
+            <div class="row">
+              <button class="danger" data-act="delete">Удалить</button>
+            </div>
+          </div>
+        `;
+        div.querySelector('button[data-act="delete"]').addEventListener('click', async () => {
+          const token = getToken();
+          if (!token) return;
+          const { res, data } = await jsonFetch('/api/admin/chat/messages/' + m.id + '?token=' + encodeURIComponent(token), { method: 'DELETE' });
+          if (!res.ok) {
+            setText(chatModState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
+            return;
+          }
+          await loadChatMessages();
+        });
+        chatMessagesAdmin.appendChild(div);
+      }
+    } catch (e) {
+      setText(chatModState, String(e && e.message ? e.message : e));
+    }
+  }
+
+  async function applyChatBan() {
+    const token = getToken();
+    if (!token) return;
+    setText(chatModState, '...');
+    try {
+      const uid = parseInt(chatBanUserId.value || '0', 10);
+      const banned = chatBanMode.value === 'ban';
+      const { res, data } = await jsonFetch('/api/admin/chat/ban?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: uid, banned })
+      });
+      if (!res.ok) throw new Error(localizeDetail(data && data.detail));
+      setText(chatModState, banned ? 'забанен' : 'разбанен');
+    } catch (e) {
+      setText(chatModState, String(e && e.message ? e.message : e));
+    }
+  }
+
   btnBootstrap.addEventListener('click', () => { bootstrapAdmin(); });
   btnLogin.addEventListener('click', () => { login(); });
   btnLogout.addEventListener('click', () => { logout(); });
 
   btnReloadUsers.addEventListener('click', () => { loadUsers(); });
   btnCreateUser.addEventListener('click', () => { createUser(); });
+
+  if (btnReloadUserAgents) btnReloadUserAgents.addEventListener('click', () => { loadUserAgents(); });
 
   btnReloadNews.addEventListener('click', () => { loadNews(); });
   btnPostNews.addEventListener('click', () => { postNews(); });

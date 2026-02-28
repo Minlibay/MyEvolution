@@ -41,6 +41,7 @@ _JWT_TTL_HOURS = int(os.environ.get("EVOSIM_JWT_TTL_HOURS", "168"))
 
 _WORLD_MAP_PATH = str((Path(__file__).resolve().parents[2] / "data" / "world_map.json").resolve())
 _TOOL_RECIPES_PATH = str((Path(__file__).resolve().parents[2] / "data" / "tool_recipes.json").resolve())
+_LEARNING_STATE_PATH = str((Path(__file__).resolve().parents[2] / "data" / "learning_state.json").resolve())
 
 _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
@@ -80,6 +81,36 @@ def _db_init() -> None:
             )
             """
         )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sim_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_number INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                reason TEXT,
+                reason_details_json TEXT,
+                duration_sec_wall REAL,
+                ended_at_timestep INTEGER,
+                ended_at_day INTEGER,
+                ended_at_time TEXT
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sim_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                t INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                payload_json TEXT,
+                FOREIGN KEY(run_id) REFERENCES sim_runs(id)
+            )
+            """
+        )
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS news (
@@ -108,6 +139,7 @@ def _db_init() -> None:
                 username TEXT NOT NULL,
                 display_name TEXT NOT NULL,
                 sex TEXT NOT NULL,
+                stats_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
@@ -124,12 +156,265 @@ def _db_init() -> None:
         except sqlite3.OperationalError:
             pass
 
+        try:
+            cur.execute("ALTER TABLE user_agents ADD COLUMN stats_json TEXT NOT NULL DEFAULT '{}' ")
+        except sqlite3.OperationalError:
+            pass
+
         cur.execute(
             "INSERT OR IGNORE INTO settings(key, value) VALUES('registration_open', '1')"
+        )
+
+        cur.execute(
+            "INSERT OR REPLACE INTO settings(key, value) VALUES('registration_open', '1')"
         )
         conn.commit()
     finally:
         conn.close()
+
+
+@app.get("/api/runs/history")
+async def api_runs_history(limit: int = 50):
+    limit = max(1, min(200, int(limit)))
+    items = _load_run_history_from_db(limit=limit)
+    return JSONResponse({"items": items})
+
+
+def _get_last_run_number_from_db() -> int:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(run_number) as rn FROM sim_runs")
+        row = cur.fetchone()
+        if row and row["rn"] is not None:
+            return int(row["rn"])
+        return 0
+    finally:
+        conn.close()
+
+
+def _insert_run_start(run_number: int) -> int:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO sim_runs(run_number, started_at) VALUES(?, ?)",
+            (int(run_number), datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def _update_run_end(run_id: int, reason: str, reason_details: Optional[Dict[str, Any]], prev_state, run_started_wall: Optional[float]) -> None:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        ended_at = datetime.now(timezone.utc)
+        duration = None
+        try:
+            if run_started_wall is not None:
+                duration = max(0.0, float(time.time()) - float(run_started_wall))
+        except Exception:
+            duration = None
+        details_json = json.dumps(reason_details or {}, ensure_ascii=False)
+        cur.execute(
+            """
+            UPDATE sim_runs
+            SET ended_at = ?,
+                reason = ?,
+                reason_details_json = ?,
+                duration_sec_wall = ?,
+                ended_at_timestep = ?,
+                ended_at_day = ?,
+                ended_at_time = ?
+            WHERE id = ?
+            """,
+            (
+                ended_at.isoformat(),
+                str(reason or ""),
+                details_json,
+                duration,
+                int(getattr(prev_state, "timestep", 0) or 0),
+                int(getattr(prev_state.world, "day", 0) if prev_state and prev_state.world else 0),
+                str(getattr(prev_state.world, "time_of_day", "") if prev_state and prev_state.world else ""),
+                int(run_id),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _log_sim_event(run_id: int, t: int, etype: str, payload: Optional[Dict[str, Any]]) -> None:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO sim_events(run_id, t, type, payload_json) VALUES(?,?,?,?)",
+            (int(run_id), int(t), str(etype or "event"), json.dumps(payload or {}, ensure_ascii=False)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_run_history_from_db(limit: int = 50) -> list[dict[str, Any]]:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, run_number, started_at, ended_at, reason, reason_details_json, duration_sec_wall, ended_at_timestep, ended_at_day, ended_at_time FROM sim_runs ORDER BY run_number DESC LIMIT ?",
+            (int(limit),),
+        )
+        rows = cur.fetchall() or []
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                rd = json.loads(r["reason_details_json"] or "{}")
+            except Exception:
+                rd = {}
+            out.append(
+                {
+                    "id": int(r["id"]),
+                    "run": int(r["run_number"]),
+                    "reason": r["reason"],
+                    "reason_details": rd,
+                    "ended_at_timestep": int(r["ended_at_timestep"] or 0),
+                    "ended_at_day": int(r["ended_at_day"] or 0),
+                    "ended_at_time": str(r["ended_at_time"] or ""),
+                    "duration_sec_wall": float(r["duration_sec_wall"] or 0.0) if r["duration_sec_wall"] is not None else None,
+                    "started_at": str(r["started_at"] or ""),
+                    "ended_at": str(r["ended_at"] or ""),
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+def _list_user_agents_from_db() -> list[dict[str, Any]]:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT user_id, username, display_name, sex, stats_json, created_at FROM user_agents ORDER BY created_at DESC"
+        )
+        rows = cur.fetchall() or []
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            out.append(
+                {
+                    "uid": int(r["user_id"]),
+                    "username": str(r["username"]),
+                    "display_name": str(r["display_name"]),
+                    "sex": str(r["sex"]),
+                    "stats_json": str(r["stats_json"] or "{}"),
+                    "created_at": str(r["created_at"]),
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+def _delete_user_agent_from_db(uid: int) -> bool:
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM user_agents WHERE user_id = ?", (int(uid),))
+        conn.commit()
+        return int(cur.rowcount or 0) > 0
+    finally:
+        conn.close()
+
+
+def _clamp01(x: float) -> float:
+    try:
+        x = float(x)
+    except Exception:
+        return 0.0
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
+
+
+def _normalize_agent_stats(payload: Any) -> Dict[str, int]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_agent_stats")
+
+    def get_int(k: str) -> int:
+        try:
+            return int(payload.get(k) or 0)
+        except Exception:
+            return 0
+
+    out = {
+        'strength': get_int('strength'),
+        'intelligence': get_int('intelligence'),
+        'social': get_int('social'),
+        'endurance': get_int('endurance'),
+    }
+
+    for k, v in out.items():
+        if v < 0 or v > 3:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_agent_stats")
+
+    if sum(out.values()) != 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_agent_stats")
+
+    return out
+
+
+def _apply_user_stats_to_agent(agent, stats_points: Dict[str, int]) -> None:
+    sp = int(stats_points.get('strength', 0) or 0)
+    ip = int(stats_points.get('intelligence', 0) or 0)
+    so = int(stats_points.get('social', 0) or 0)
+    ep = int(stats_points.get('endurance', 0) or 0)
+
+    try:
+        agent.user_stats_points = dict(stats_points)
+    except Exception:
+        pass
+
+    try:
+        g = agent.genes
+        g.strength = _clamp01(0.5 + 0.10 * sp)
+        g.intelligence = _clamp01(0.5 + 0.10 * ip)
+        g.social_tendency = _clamp01(0.5 + 0.10 * so)
+        g.metabolism_speed = _clamp01(0.5 - 0.08 * ep)
+        g.exploration_bias = _clamp01(0.45 + 0.07 * ip + 0.03 * sp)
+
+        try:
+            agent.exploration_rate = float(g.exploration_bias)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    try:
+        agent.max_age = int(getattr(agent, 'max_age', 5000) or 5000) + 250 * ep
+    except Exception:
+        pass
+
+    try:
+        agent.learning_rate = float(getattr(agent, 'learning_rate', 0.1) or 0.1) * (1.0 + 0.20 * float(ip))
+    except Exception:
+        pass
+
+    try:
+        base_r = int(getattr(agent, 'perception_radius', 2) or 2)
+        agent.perception_radius = int(max(1, base_r + (1 if ip >= 3 else 0)))
+    except Exception:
+        pass
+
+    try:
+        agent.inventory_capacity = int(max(3, min(8, int(getattr(agent, 'inventory_capacity', 5) or 5) + (1 if sp >= 2 else 0))))
+    except Exception:
+        pass
 
 
 def _get_privacy_policy_text() -> str:
@@ -179,6 +464,7 @@ def _get_site_settings() -> Dict[str, str]:
     )
     og_image = _get_setting("seo_og_image", "")
     banner_html = _get_setting("banner_iframe_html", "")
+    favicon_url = _get_setting("favicon_url", "/static/favicon.svg")
     return {
         "project_name": str(project_name or "WorldSE"),
         "seo_title": str(seo_title or project_name or "WorldSE"),
@@ -186,6 +472,7 @@ def _get_site_settings() -> Dict[str, str]:
         "seo_keywords": str(seo_keywords or ""),
         "seo_og_image": str(og_image or ""),
         "banner_html": str(banner_html or ""),
+        "favicon_url": str(favicon_url or ""),
     }
 
 
@@ -204,6 +491,8 @@ def _set_site_settings(payload: Dict[str, Any]) -> None:
         _set_setting("seo_og_image", str(payload.get("seo_og_image") or "").strip())
     if "banner_html" in payload:
         _set_setting("banner_iframe_html", str(payload.get("banner_html") or ""))
+    if "favicon_url" in payload:
+        _set_setting("favicon_url", str(payload.get("favicon_url") or "").strip())
 
 
 def _is_chat_banned(uid: int) -> bool:
@@ -247,6 +536,50 @@ def _write_world_map(data: Dict[str, Any]) -> None:
     p = Path(_WORLD_MAP_PATH)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def _read_learning_state() -> Optional[Dict[str, Any]]:
+    p = Path(_LEARNING_STATE_PATH)
+    if not p.exists():
+        return None
+    try:
+        raw = p.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _write_learning_state(data: Dict[str, Any]) -> None:
+    p = Path(_LEARNING_STATE_PATH)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def _parse_learning_bootstrap(data: Optional[Dict[str, Any]]) -> tuple[Dict[tuple[str, str], float], Optional[float]]:
+    if not data or not isinstance(data, dict):
+        return {}, None
+    q: Dict[tuple[str, str], float] = {}
+    try:
+        for it in (data.get('q_table') or []):
+            try:
+                state = str(it[0])
+                action = str(it[1])
+                val = float(it[2])
+                q[(state, action)] = val
+            except Exception:
+                continue
+    except Exception:
+        q = {}
+
+    eps = data.get('epsilon', None)
+    try:
+        eps_out = None if eps is None else float(eps)
+    except Exception:
+        eps_out = None
+    return q, eps_out
 
 
 def _read_tool_recipes() -> Dict[str, Any]:
@@ -451,17 +784,23 @@ def _load_custom_agents_from_db() -> list[dict[str, Any]]:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT user_id, username, display_name, sex FROM user_agents ORDER BY created_at ASC"
+            "SELECT user_id, username, display_name, sex, stats_json FROM user_agents ORDER BY created_at ASC"
         )
         rows = cur.fetchall() or []
         out: list[dict[str, Any]] = []
         for r in rows:
+            sj = None
+            try:
+                sj = str(r["stats_json"])
+            except Exception:
+                sj = None
             out.append(
                 {
                     "uid": int(r["user_id"]),
                     "username": str(r["username"]),
                     "display_name": str(r["display_name"]),
                     "sex": str(r["sex"]),
+                    "stats_json": sj,
                 }
             )
         return out
@@ -506,8 +845,6 @@ def _any_admin_exists() -> bool:
 
 
 def _registration_open() -> bool:
-    if _any_admin_exists():
-        return False
     return _get_setting("registration_open", "1") == "1"
 
 
@@ -556,81 +893,109 @@ class SimulationController:
         # Run bookkeeping
         self.run_number: int = 0
         self.run_started_wall: float = 0.0
-        self.history: list[dict[str, Any]] = []
+        self.current_run_id: Optional[int] = None
+        self.history: list[dict[str, Any]] = _load_run_history_from_db(limit=50)
 
         # WS diff state (objects)
         self._last_sent_run_number: Optional[int] = None
         self._last_sent_objects: Dict[str, Dict[str, Any]] = {}
 
+        self._learning_bootstrap_q: Dict[tuple[str, str], float] = {}
+        self._learning_bootstrap_eps: Optional[float] = None
+        self._last_learning_save_timestep: int = 0
+        self._load_learning_bootstrap_from_disk()
+
+    def _load_learning_bootstrap_from_disk(self) -> None:
+        try:
+            data = _read_learning_state()
+            q, eps = _parse_learning_bootstrap(data)
+            self._learning_bootstrap_q = q
+            self._learning_bootstrap_eps = eps
+        except Exception:
+            self._learning_bootstrap_q = {}
+            self._learning_bootstrap_eps = None
+
+    def _apply_learning_bootstrap_locked(self) -> None:
+        if self.simulation is None or self.simulation.state is None:
+            return
+        try:
+            lm = getattr(self.simulation.state, 'learning_manager', None)
+            if lm is None:
+                return
+            if hasattr(lm, 'set_bootstrap'):
+                lm.set_bootstrap(q_table=self._learning_bootstrap_q, epsilon=self._learning_bootstrap_eps)
+        except Exception:
+            return
+
+    def _save_learning_state_locked(self) -> None:
+        if self.simulation is None or self.simulation.state is None:
+            return
+        try:
+            lm = getattr(self.simulation.state, 'learning_manager', None)
+            if lm is None or not hasattr(lm, 'export_global_learning_state'):
+                return
+            data = lm.export_global_learning_state()
+            if not isinstance(data, dict):
+                return
+            _write_learning_state(data)
+            q, eps = _parse_learning_bootstrap(data)
+            self._learning_bootstrap_q = q
+            self._learning_bootstrap_eps = eps
+        except Exception:
+            return
+
     async def ensure_simulation(self):
+        # Double-checked locking pattern to avoid races
+        if self.simulation is not None:
+            return
         async with self._lock:
             if self.simulation is not None:
                 return
+            # Restore last run_number from DB to keep continuity between restarts
+            try:
+                self.run_number = _get_last_run_number_from_db()
+            except Exception:
+                self.run_number = 0
             self._start_new_run_locked(reason=None)
 
     def _start_new_run_locked(self, reason: Optional[str], reason_details: Optional[Dict[str, Any]] = None):
         """Start a new run. Must be called under _lock."""
-        # Finalize previous run history entry
+        try:
+            self._save_learning_state_locked()
+        except Exception:
+            pass
+
+        # Finalize previous run history entry (persisted in DB only)
         if self.simulation is not None and self.simulation.state is not None and reason:
             prev_state = self.simulation.state
             env = prev_state.environment
 
-            # Try to enrich reason with last death details.
-            detail = None
-            for e in reversed(getattr(prev_state, 'events_log', []) or []):
-                if e.get('type') == 'agent_death':
-                    detail = e
-                    break
+            final_details: Dict[str, Any] = reason_details or {}
+            try:
+                final_details.setdefault("remaining_food", int(env.count_objects_by_type("berry") + env.count_objects_by_type("plant")))
+            except Exception:
+                pass
+            try:
+                final_details.setdefault("remaining_water", int(env.count_water_cells()))
+            except Exception:
+                pass
+            try:
+                final_details.setdefault("agents_alive", len(prev_state.agents))
+            except Exception:
+                pass
 
-            derived_details = None
-            if detail:
-                cause = detail.get('cause', 'unknown')
-                hunger = detail.get('hunger')
-                thirst = detail.get('thirst')
-                sleepiness = detail.get('sleepiness')
-                energy = detail.get('energy')
-                health = detail.get('health')
-                age = detail.get('age')
+            try:
+                if self.current_run_id is not None:
+                    _update_run_end(self.current_run_id, reason, final_details, prev_state, self.run_started_wall)
+            except Exception:
+                pass
 
-                ru = {
-                    'starvation': 'умер от голода',
-                    'dehydration': 'умер от жажды',
-                    'exhaustion': 'умер от истощения',
-                    'old_age': 'умер от старости',
-                    'health_collapse': 'умер от потери здоровья',
-                    'unknown': 'причина неизвестна',
-                }
-                derived_details = {
-                    'agent_id': detail.get('agent_id'),
-                    'cause': cause,
-                    'cause_ru': ru.get(cause, cause),
-                    'hunger': hunger,
-                    'thirst': thirst,
-                    'sleepiness': sleepiness,
-                    'energy': energy,
-                    'health': health,
-                    'age': age,
-                }
-
-            final_details = None
-            if isinstance(reason_details, dict) and reason_details:
-                final_details = dict(reason_details)
-                if derived_details and not final_details.get('cause_ru'):
-                    final_details['last_death'] = derived_details
-            else:
-                final_details = derived_details
-
-            self.history.append(
-                {
-                    "run": int(self.run_number),
-                    "reason": reason,
-                    "reason_details": final_details,
-                    "ended_at_timestep": int(prev_state.timestep),
-                    "ended_at_day": int(getattr(env, "day_count", 0)),
-                    "ended_at_time": f"{int(getattr(env, 'hour', 0)):02d}:{int(getattr(env, 'minute', 0)):02d}",
-                    "duration_sec_wall": float(max(0.0, time.time() - self.run_started_wall)),
-                }
-            )
+        # Stop old simulation
+        if self.simulation is not None:
+            try:
+                self.simulation.stop()
+            except Exception:
+                pass
 
         config = load_config(self._config_path)
 
@@ -662,6 +1027,8 @@ class SimulationController:
         if self.simulation.state is not None:
             self.simulation.state.max_steps = None
 
+        self._apply_learning_bootstrap_locked()
+
         if wm and self.simulation is not None and self.simulation.state is not None:
             try:
                 self._apply_world_map_locked(wm)
@@ -670,6 +1037,15 @@ class SimulationController:
 
         self.run_number += 1
         self.run_started_wall = time.time()
+        try:
+            self.current_run_id = _insert_run_start(self.run_number)
+        except Exception:
+            self.current_run_id = None
+        try:
+            # Refresh history from DB including the just-started run (max 50)
+            self.history = _load_run_history_from_db(limit=50)
+        except Exception:
+            pass
 
         self._force_two_agents()
         self._spawn_custom_agents_locked()
@@ -777,8 +1153,17 @@ class SimulationController:
                 username = str(spec.get('username') or '')
                 display_name = str(spec.get('display_name') or '').strip()
                 sex = str(spec.get('sex') or 'unknown')
+                stats_json = spec.get('stats_json')
                 if not username or not display_name or sex not in {'male', 'female'}:
                     continue
+
+                stats_points: Optional[Dict[str, int]] = None
+                try:
+                    if stats_json:
+                        raw = json.loads(str(stats_json))
+                        stats_points = _normalize_agent_stats(raw)
+                except Exception:
+                    stats_points = None
 
                 # Randomize spawn position every time.
                 empty_positions = env.get_empty_positions(50)
@@ -798,6 +1183,9 @@ class SimulationController:
                 setattr(a, 'sex', sex)
                 setattr(a, 'display_name', display_name)
                 setattr(a, 'owner_username', username)
+                setattr(a, 'owner_uid', int(uid))
+                if stats_points:
+                    _apply_user_stats_to_agent(a, stats_points)
                 try:
                     a.age = 600
                 except Exception:
@@ -808,7 +1196,7 @@ class SimulationController:
             except Exception:
                 continue
 
-    async def create_custom_agent(self, user: Dict[str, Any], display_name: str, sex: str) -> Dict[str, Any]:
+    async def create_custom_agent(self, user: Dict[str, Any], display_name: str, sex: str, stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         # Important: do NOT call ensure_simulation() while holding self._lock
         # to avoid deadlock (ensure_simulation also takes the same lock).
         await self.ensure_simulation()
@@ -822,6 +1210,9 @@ class SimulationController:
             if sex not in {'male', 'female'}:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_agent_sex")
 
+            stats_points = _normalize_agent_stats(stats or {})
+            stats_json = json.dumps(stats_points, ensure_ascii=False)
+
             uid = int(user.get('uid'))
             username = str(user.get('username'))
 
@@ -834,6 +1225,7 @@ class SimulationController:
                 'username': username,
                 'display_name': name,
                 'sex': sex,
+                'stats_json': stats_json,
             })
 
             conn = _db_connect()
@@ -841,8 +1233,8 @@ class SimulationController:
                 cur = conn.cursor()
                 now = datetime.now(timezone.utc).isoformat()
                 cur.execute(
-                    "INSERT INTO user_agents(user_id, username, display_name, sex, created_at) VALUES(?,?,?,?,?)",
-                    (int(uid), str(username), str(name), str(sex), now),
+                    "INSERT INTO user_agents(user_id, username, display_name, sex, stats_json, created_at) VALUES(?,?,?,?,?,?)",
+                    (int(uid), str(username), str(name), str(sex), str(stats_json), now),
                 )
                 conn.commit()
                 try:
@@ -873,6 +1265,8 @@ class SimulationController:
             setattr(a, 'sex', sex)
             setattr(a, 'display_name', name)
             setattr(a, 'owner_username', username)
+            setattr(a, 'owner_uid', int(uid))
+            _apply_user_stats_to_agent(a, stats_points)
             try:
                 a.age = 600
             except Exception:
@@ -886,7 +1280,40 @@ class SimulationController:
                 'sex': getattr(a, 'sex', 'unknown'),
                 'x': int(a.position[0]),
                 'y': int(a.position[1]),
+                'stats': stats_points,
             }
+
+    def delete_custom_agent_locked(self, uid: int) -> Dict[str, Any]:
+        if self.simulation is None or self.simulation.state is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="simulation_not_ready")
+
+        deleted = _delete_user_agent_from_db(int(uid))
+
+        try:
+            self._custom_agents = [a for a in (self._custom_agents or []) if int(a.get('uid') or 0) != int(uid)]
+        except Exception:
+            pass
+
+        state = self.simulation.state
+        to_remove = []
+        for aid, a in list(state.agents.items()):
+            try:
+                if int(getattr(a, 'owner_uid', 0) or 0) == int(uid):
+                    to_remove.append(aid)
+            except Exception:
+                continue
+
+        for aid in to_remove:
+            try:
+                state.learning_manager.unregister_agent(aid)
+            except Exception:
+                pass
+            try:
+                del state.agents[aid]
+            except Exception:
+                pass
+
+        return {"ok": True, "deleted": bool(deleted), "removed_from_world": int(len(to_remove))}
 
     async def reset(self, reason: str = "перезапуск", reason_details: Optional[Dict[str, Any]] = None):
         async with self._lock:
@@ -897,6 +1324,14 @@ class SimulationController:
             if self.simulation is None or self.simulation.state is None:
                 raise RuntimeError("Simulation is not initialized")
             self.simulation.state.step()
+
+            try:
+                ts = int(getattr(self.simulation.state, 'timestep', 0) or 0)
+                if ts - int(self._last_learning_save_timestep or 0) >= 300:
+                    self._save_learning_state_locked()
+                    self._last_learning_save_timestep = ts
+            except Exception:
+                pass
 
             # Auto-restart when population is extinct
             if len(self.simulation.state.agents) == 0:
@@ -991,6 +1426,8 @@ class SimulationController:
                         "hunger": float(agent.hunger),
                         "thirst": float(getattr(agent, 'thirst', 0.0)),
                         "sleepiness": float(getattr(agent, 'sleepiness', 0.0)),
+                        "is_swimming": bool(getattr(agent, 'is_swimming', False)),
+                        "water_ticks": int(getattr(agent, 'water_ticks', 0) or 0),
                         "age": int(agent.age),
                         "is_child": bool(getattr(agent, 'is_child', lambda: False)()),
                         "pregnant": bool(getattr(agent, 'pregnant', False)),
@@ -1362,6 +1799,7 @@ async def index():
     rendered = rendered.replace("{{SEO_DESCRIPTION}}", escape(s.get("seo_description") or ""))
     rendered = rendered.replace("{{SEO_KEYWORDS}}", escape(s.get("seo_keywords") or ""))
     rendered = rendered.replace("{{SEO_OG_IMAGE}}", escape(s.get("seo_og_image") or ""))
+    rendered = rendered.replace("{{FAVICON_URL}}", escape(s.get("favicon_url") or "/static/favicon.svg"))
     rendered = rendered.replace("{{BANNER_HTML}}", banner_html)
     return HTMLResponse(rendered)
 
@@ -1469,8 +1907,6 @@ async def api_bootstrap_admin(payload: Dict[str, Any]):
         except sqlite3.IntegrityError as e:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username_taken") from e
 
-        _set_setting("registration_open", "0")
-
         user_id = int(cur.lastrowid)
         exp = datetime.now(timezone.utc) + timedelta(hours=_JWT_TTL_HOURS)
         token = _jwt_encode({"uid": user_id, "username": username, "is_admin": True, "exp": exp})
@@ -1526,7 +1962,8 @@ async def api_agents_create(token: str, payload: Dict[str, Any]):
     user = _auth_from_token(token)
     display_name = payload.get("display_name") or payload.get("name") or ""
     sex = payload.get("sex") or ""
-    created = await controller.create_custom_agent(user=user, display_name=str(display_name), sex=str(sex))
+    stats = payload.get("stats")
+    created = await controller.create_custom_agent(user=user, display_name=str(display_name), sex=str(sex), stats=stats)
     return JSONResponse({"ok": True, "agent": created})
 
 
@@ -1564,7 +2001,6 @@ async def api_admin_chat_announcement_get(token: str):
 @app.put("/api/admin/chat/announcement")
 async def api_admin_chat_announcement_put(token: str, payload: Dict[str, Any]):
     _require_admin(token)
-    text = ""
     try:
         text = str((payload or {}).get("text") or "")
     except Exception:
@@ -1632,6 +2068,22 @@ def _require_admin(token: str) -> Dict[str, Any]:
     if not bool(user.get("is_admin", False)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin_only")
     return user
+
+
+@app.get("/api/admin/user_agents")
+async def api_admin_user_agents(token: str):
+    _require_admin(token)
+    items = _list_user_agents_from_db()
+    return JSONResponse({"items": items})
+
+
+@app.delete("/api/admin/user_agents/{uid}")
+async def api_admin_user_agents_delete(uid: int, token: str):
+    _require_admin(token)
+    await controller.ensure_simulation()
+    async with controller._lock:
+        out = controller.delete_custom_agent_locked(int(uid))
+        return JSONResponse(out)
 
 
 @app.get("/api/admin/map")

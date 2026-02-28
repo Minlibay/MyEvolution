@@ -10,7 +10,7 @@
   <meta property="og:description" content="{{SEO_DESCRIPTION}}" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="{{SEO_OG_IMAGE}}" />
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="{{FAVICON_URL}}" type="image/svg+xml" />
   <style>
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 0; background: #0b1020; color: #e7e9ee; }
     header { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:12px; }
@@ -20,7 +20,7 @@
     .layout { display:grid; grid-template-columns: 1fr 420px; gap: 12px; padding: 12px; min-height: calc(100vh - 64px); }
     .panel { background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow:hidden; }
     .panel h3 { margin:0; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 14px; color:#cbd2ff; }
-    #canvasWrap { padding: 10px; position: relative; }
+    #canvasWrap { padding: 10px; position: relative; overflow: visible; }
     canvas { background: #070a14; border-radius: 10px; width: 100%; height: 720px; }
     #events { height: 720px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
     .event { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
@@ -35,7 +35,7 @@
       top: 0;
       display: none;
       pointer-events: none;
-      z-index: 10;
+      z-index: 40;
       background: rgba(17, 22, 42, 0.95);
       border: 1px solid rgba(255,255,255,0.18);
       border-radius: 10px;
@@ -123,6 +123,7 @@
       display: flex;
       flex-direction: column;
       min-height: calc(100vh - 64px - 24px);
+      overflow: visible;
     }
     #chatSection {
       display: flex;
@@ -246,6 +247,22 @@
       </div>
       <div id="newsList"></div>
     </div>
+    <div class="panel">
+      <h3>Твой агент</h3>
+      <div id="myAgent" style="padding:10px 12px; min-height:160px;">
+        <div id="myAgentState" class="muted">Войдите и создайте агента, чтобы следить за ним.</div>
+        <div id="myAgentBody" style="display:none;">
+          <div style="font-weight:700; margin-bottom:6px;" id="myAgentName"></div>
+          <div class="muted" id="myAgentOwner" style="margin-bottom:6px;"></div>
+          <div style="font-size:12px; color:#aab0c0;">Статус</div>
+          <div id="myAgentStatus" style="margin-bottom:8px; font-size:13px;"></div>
+          <div class="muted" style="font-size:12px;">Нужды</div>
+          <div id="myAgentNeeds" style="font-size:13px; margin-bottom:8px;"></div>
+          <div class="muted" style="font-size:12px;">Возраст / здоровье / энергия</div>
+          <div id="myAgentVitals" style="font-size:13px;"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -266,6 +283,35 @@
       <div class="row">
         <label class="row" style="gap:8px; font-size:12px; color:#aab0c0;"><input type="radio" name="agentSex" value="male" checked /> мужской</label>
         <label class="row" style="gap:8px; font-size:12px; color:#aab0c0;"><input type="radio" name="agentSex" value="female" /> женский</label>
+      </div>
+
+      <div style="font-size:12px; color:#aab0c0; margin-top:12px; margin-bottom:6px;">Характеристики (5 очков)</div>
+      <div class="row" style="gap:10px; flex-wrap:wrap; align-items:flex-end;">
+        <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
+          <div style="font-size:12px; color:#aab0c0;">Сила</div>
+          <input id="agentStatsStrength" type="number" min="0" max="3" value="0" style="width:120px; padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
+          <div style="font-size:12px; color:#aab0c0;">Интеллект</div>
+          <input id="agentStatsIntelligence" type="number" min="0" max="3" value="0" style="width:120px; padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
+          <div style="font-size:12px; color:#aab0c0;">Социальность</div>
+          <input id="agentStatsSocial" type="number" min="0" max="3" value="0" style="width:120px; padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
+          <div style="font-size:12px; color:#aab0c0;">Выносливость</div>
+          <input id="agentStatsEndurance" type="number" min="0" max="3" value="0" style="width:120px; padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+        <div id="agentStatsLeft" style="font-size:12px; color:#aab0c0;"></div>
+        <div class="row" style="gap:8px; flex-wrap:wrap;">
+          <button id="btnPresetInventor" class="secondary">Изобретатель</button>
+          <button id="btnPresetSurvivor" class="secondary">Выживальщик</button>
+          <button id="btnPresetLeader" class="secondary">Вождь</button>
+        </div>
       </div>
 
       <div class="row" style="margin-top:14px; justify-content:space-between;">
@@ -600,15 +646,15 @@
   });
 
   const ruAction = {
-    move: 'идет',
+    move: 'идёт',
     gather: 'собирает',
     consume: 'ест',
-    drink: 'пьет',
+    drink: 'пьёт',
     sleep: 'спит',
-    communicate: 'говорит',
+    communicate: 'общается',
     mate: 'спаривается',
-    care: 'ухаживает',
-    combine: 'комбинирует',
+    care: 'заботится о ребёнке',
+    combine: 'крафтит',
     break: 'ломает',
     attack: 'охотится',
     rest: 'отдыхает',
@@ -616,7 +662,7 @@
 
   function actionToRu(action) {
     if (!action) return '...';
-    return ruAction[action] || action;
+    return ruAction[action] || 'действует';
   }
 
   function renderHistory(snapshot) {
@@ -624,6 +670,23 @@
     if (!el) return;
     const items = snapshot.history || [];
     el.innerHTML = '';
+
+    const reasonRu = {
+      'смерть Адама и Евы': 'все агенты погибли',
+      'перезапуск': 'перезапуск',
+      'ошибка симуляции': 'ошибка симуляции',
+      'применение карты': 'применение карты',
+      'перезапуск сервера': 'перезапуск сервера',
+    };
+
+    if (!items.length) {
+      const div = document.createElement('div');
+      div.className = 'event';
+      div.textContent = 'История перезапусков пустая.';
+      el.appendChild(div);
+      return;
+    }
+
     for (let i = items.length - 1; i >= 0; i--) {
       const h = items[i];
       const div = document.createElement('div');
@@ -655,13 +718,9 @@
           extra = `; ${d.note}`;
         }
       }
-      div.textContent = `Симуляция №${h.run} завершена: ${h.reason}${extra} (t=${h.ended_at_timestep}, день=${h.ended_at_day} ${h.ended_at_time})`;
-      el.appendChild(div);
-    }
-    if (items.length === 0) {
-      const div = document.createElement('div');
-      div.className = 'event';
-      div.textContent = 'История пока пуста';
+      const rru = reasonRu[h.reason] || h.reason || 'завершён';
+      const dur = h.duration_sec_wall ? ` · длительность ${h.duration_sec_wall.toFixed(1)}s` : '';
+      div.textContent = `run #${h.run}: ${rru}; t=${h.ended_at_timestep} день=${h.ended_at_day} время=${h.ended_at_time}${dur}${extra}`;
       el.appendChild(div);
     }
   }
@@ -736,6 +795,14 @@
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;');
+  }
+
+  function getHoverSnapshot() {
+    const base = lastSnapshot || {};
+    const agents = Array.isArray(lastAgents) ? lastAgents : (base.agents || []);
+    const objects = Array.from(objectsState.values());
+    const world = base.world || { width: 100, height: 100 };
+    return { ...base, world, agents, objects };
   }
 
   function findAgentUnderCursor(snapshot, mx, my) {
@@ -842,9 +909,14 @@
       ? `<div class="muted">создатель: <span class="mono">${escapeHtml(agent.owner_username)}</span></div>`
       : '';
 
+    const swimLine = agent.is_swimming
+      ? `<div class="muted">статус: <span class="mono">плавает</span> (${escapeHtml(agent.water_ticks ?? 0)})</div>`
+      : '';
+
     agentTooltip.innerHTML = `
       <div class="title">${title}</div>
       ${ownerLine}
+      ${swimLine}
       <div class="muted">Инвентарь:</div>
       <div class="mono">${invLine}</div>
       <div style="height:6px"></div>
@@ -909,14 +981,15 @@
     const mx = mxCss * scaleX;
     const my = myCss * scaleY;
 
-    const a = findAgentUnderCursor(lastSnapshot, mx, my);
+    const hs = getHoverSnapshot();
+    const a = findAgentUnderCursor(hs, mx, my);
     if (a) {
       renderAgentTooltip(a);
       positionAgentTooltip(mxCss, myCss);
       return;
     }
 
-    const o = findObjectUnderCursor(lastSnapshot, mx, my);
+    const o = findObjectUnderCursor(hs, mx, my);
     if (o) {
       renderObjectTooltip(o);
       positionAgentTooltip(mxCss, myCss);
@@ -1007,6 +1080,17 @@
         ctx.fill();
       }
 
+      if (a.is_swimming) {
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = 'rgba(70,160,255,0.95)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(px, py - 2, 9, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // Speech bubble (placeholder: last action)
       const who = a.name || a.id;
       let bubbleText = `${who}`;
@@ -1019,6 +1103,8 @@
       }
       if (a.speech) {
         bubbleText = `${who}: ${a.speech}`;
+      } else if (a.is_swimming) {
+        bubbleText = `${who}: плавает`;
       } else if (a.last_action) {
         bubbleText = `${who}: ${actionToRu(a.last_action)}`;
       }
@@ -1150,6 +1236,7 @@
   }
 
   let lastSnapshot = null;
+  let lastAgents = [];
   let lastPaintMs = 0;
   const targetFrameMs = 1000 / 30;
 
@@ -1189,6 +1276,13 @@
       return;
     }
 
+    // Agents may be omitted in delta snapshots; keep the last known list for hover.
+    try {
+      if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, 'agents') && Array.isArray(snapshot.agents)) {
+        lastAgents = snapshot.agents;
+      }
+    } catch (e) {}
+
     // Apply object sync/deltas
     try {
       const runNo = snapshot.run_number ?? (snapshot.run_info ? snapshot.run_info.number : null);
@@ -1223,6 +1317,7 @@
     renderStatus(snapshot);
     renderHistory(snapshot);
     renderEvents(snapshot);
+    renderMyAgent(snapshot);
 
     if (!renderLoopStarted) {
       renderLoopStarted = true;
@@ -1256,6 +1351,14 @@
   const agentModal = document.getElementById('agentModal');
   const btnCloseAgentModal = document.getElementById('btnCloseAgentModal');
   const agentName = document.getElementById('agentName');
+  const agentStatsStrength = document.getElementById('agentStatsStrength');
+  const agentStatsIntelligence = document.getElementById('agentStatsIntelligence');
+  const agentStatsSocial = document.getElementById('agentStatsSocial');
+  const agentStatsEndurance = document.getElementById('agentStatsEndurance');
+  const agentStatsLeft = document.getElementById('agentStatsLeft');
+  const btnPresetInventor = document.getElementById('btnPresetInventor');
+  const btnPresetSurvivor = document.getElementById('btnPresetSurvivor');
+  const btnPresetLeader = document.getElementById('btnPresetLeader');
   const btnSubmitAgent = document.getElementById('btnSubmitAgent');
   const agentModalState = document.getElementById('agentModalState');
 
@@ -1282,15 +1385,18 @@
     if (!d) return '';
     const map = {
       invalid_username_or_password: 'Неверный логин или пароль',
+      invalid_credentials: 'Неверный логин или пароль',
       invalid_token: 'Сессия недействительна. Войдите заново.',
       not_authenticated: 'Нужно войти в аккаунт',
       not_admin: 'Недостаточно прав (нужен администратор)',
       registration_closed: 'Регистрация закрыта. Обратитесь к администратору.',
+      admin_already_exists: 'Администратор уже создан',
       username_taken: 'Этот логин уже занят',
       username_too_short: 'Логин слишком короткий',
       password_too_short: 'Пароль слишком короткий',
       invalid_agent_name: 'Некорректное имя агента',
       invalid_agent_sex: 'Некорректный пол агента',
+      invalid_agent_stats: 'Некорректные характеристики агента',
       simulation_not_ready: 'Симуляция ещё не готова. Попробуйте чуть позже.',
       agent_already_created: 'У вас уже есть агент. Можно только наблюдать за ним.',
     };
@@ -1299,6 +1405,46 @@
 
   function setHasAgentFlag(hasAgent) {
     localStorage.setItem('evosim_has_agent', hasAgent ? '1' : '0');
+  }
+
+  function findMyAgent(snapshot) {
+    const u = localStorage.getItem('evosim_username') || '';
+    if (!u || !snapshot || !snapshot.agents) return null;
+    return snapshot.agents.find(a => a.owner_username === u) || null;
+  }
+
+  function fmtPct01(x) {
+    if (x === undefined || x === null) return '—';
+    return `${Math.round(x * 100)}%`;
+  }
+
+  function renderMyAgent(snapshot) {
+    if (!myAgentState || !myAgentBody) return;
+    const agent = findMyAgent(snapshot);
+    if (!agent) {
+      myAgentBody.style.display = 'none';
+      myAgentState.style.display = '';
+      myAgentState.textContent = localStorage.getItem('evosim_has_agent') === '1'
+        ? 'Ваш агент сейчас не найден в мире (возможно, ещё не заспавнился или погиб).'
+        : 'Войдите и создайте своего агента, чтобы следить за ним.';
+      return;
+    }
+
+    myAgentBody.style.display = '';
+    myAgentState.style.display = 'none';
+
+    myAgentName.textContent = agent.name || agent.id;
+    myAgentOwner.textContent = `user: ${agent.owner_username || '—'}`;
+
+    const swim = agent.is_swimming ? ' · плавает' : '';
+    const lastAct = agent.last_action ? ` · ${actionToRu(agent.last_action)}` : '';
+    myAgentStatus.textContent = `t=${snapshot.timestep} · (${agent.x},${agent.y})${swim}${lastAct}`;
+
+    const needs = `голод ${fmtPct01(agent.hunger)} · жажда ${fmtPct01(agent.thirst)} · сонливость ${fmtPct01(agent.sleepiness)}`;
+    myAgentNeeds.textContent = needs;
+
+    const vitals = `здоровье ${fmtPct01(agent.health)} · энергия ${fmtPct01(agent.energy)} · возраст ${agent.age}/${agent.max_age}`;
+    myAgentVitals.textContent = vitals;
   }
 
   function hasAgent() {
@@ -1412,10 +1558,74 @@
     if (agentModalState) agentModalState.textContent = t || '';
   }
 
+  function readStat(el) {
+    try {
+      const v = parseInt(el.value || '0', 10);
+      if (Number.isNaN(v)) return 0;
+      return Math.max(0, Math.min(3, v));
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function writeStat(el, v) {
+    try {
+      el.value = String(Math.max(0, Math.min(3, parseInt(v || 0, 10) || 0)));
+    } catch (e) {}
+  }
+
+  function getStatsPoints() {
+    return {
+      strength: readStat(agentStatsStrength),
+      intelligence: readStat(agentStatsIntelligence),
+      social: readStat(agentStatsSocial),
+      endurance: readStat(agentStatsEndurance),
+    };
+  }
+
+  function sumStats(s) {
+    return (s.strength || 0) + (s.intelligence || 0) + (s.social || 0) + (s.endurance || 0);
+  }
+
+  function updateStatsLeft() {
+    const s = getStatsPoints();
+    const left = 5 - sumStats(s);
+    if (agentStatsLeft) {
+      agentStatsLeft.textContent = left >= 0 ? `осталось очков: ${left}` : `лишние очки: ${-left}`;
+      agentStatsLeft.style.color = left === 0 ? '#41d67e' : (left > 0 ? '#aab0c0' : '#ff4d6d');
+    }
+    if (btnSubmitAgent) btnSubmitAgent.disabled = (left !== 0);
+  }
+
+  function applyPreset(name) {
+    if (name === 'inventor') {
+      writeStat(agentStatsStrength, 1);
+      writeStat(agentStatsIntelligence, 3);
+      writeStat(agentStatsSocial, 0);
+      writeStat(agentStatsEndurance, 1);
+    } else if (name === 'survivor') {
+      writeStat(agentStatsStrength, 3);
+      writeStat(agentStatsIntelligence, 0);
+      writeStat(agentStatsSocial, 0);
+      writeStat(agentStatsEndurance, 2);
+    } else if (name === 'leader') {
+      writeStat(agentStatsStrength, 1);
+      writeStat(agentStatsIntelligence, 1);
+      writeStat(agentStatsSocial, 3);
+      writeStat(agentStatsEndurance, 0);
+    }
+    updateStatsLeft();
+  }
+
   function openAgentModal() {
     if (!agentModal) return;
     setAgentModalState('');
     if (agentName) agentName.value = '';
+    writeStat(agentStatsStrength, 0);
+    writeStat(agentStatsIntelligence, 0);
+    writeStat(agentStatsSocial, 0);
+    writeStat(agentStatsEndurance, 0);
+    updateStatsLeft();
     agentModal.style.display = 'flex';
     try { agentName && agentName.focus(); } catch (e) {}
   }
@@ -1439,12 +1649,17 @@
     }
     const name = (agentName && agentName.value ? agentName.value : '').trim();
     const sex = getAgentSex();
+    const stats = getStatsPoints();
+    if (sumStats(stats) !== 5) {
+      setAgentModalState('нужно распределить ровно 5 очков');
+      return;
+    }
     setAgentModalState('...');
     try {
       const res = await fetch('/api/agents/create?token=' + encodeURIComponent(token), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: name, sex })
+        body: JSON.stringify({ display_name: name, sex, stats })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1587,6 +1802,16 @@
     });
   }
   if (btnSubmitAgent) btnSubmitAgent.addEventListener('click', () => submitAgent());
+
+  if (agentStatsStrength) agentStatsStrength.addEventListener('input', () => updateStatsLeft());
+  if (agentStatsIntelligence) agentStatsIntelligence.addEventListener('input', () => updateStatsLeft());
+  if (agentStatsSocial) agentStatsSocial.addEventListener('input', () => updateStatsLeft());
+  if (agentStatsEndurance) agentStatsEndurance.addEventListener('input', () => updateStatsLeft());
+  if (btnPresetInventor) btnPresetInventor.addEventListener('click', () => applyPreset('inventor'));
+  if (btnPresetSurvivor) btnPresetSurvivor.addEventListener('click', () => applyPreset('survivor'));
+  if (btnPresetLeader) btnPresetLeader.addEventListener('click', () => applyPreset('leader'));
+
+  updateStatsLeft();
 
   btnLogout2.addEventListener('click', () => {
     clearToken();

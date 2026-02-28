@@ -21,6 +21,12 @@ class SimulationState:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.timestep = 0
+
+        water_cfg = (self.config.get('simulation', {}).get('world', {}) or {})
+        self.drowning_grace_steps = int(water_cfg.get('drowning_grace_steps', 90) or 90)
+        self.drowning_base_risk = float(water_cfg.get('drowning_base_risk', 0.0015) or 0.0015)
+        self.drowning_risk_gain = float(water_cfg.get('drowning_risk_gain', 0.00035) or 0.00035)
+        self.drowning_risk_cap = float(water_cfg.get('drowning_risk_cap', 0.04) or 0.04)
         duration = None
         try:
             duration = self.config.get('experiment', {}).get('duration', None)
@@ -363,6 +369,31 @@ class SimulationState:
             # Передаем агенту информацию о времени суток для физиологии
             setattr(agent, 'is_daytime', getattr(self.environment, 'is_daytime', True))
             agent.update_physiology()
+
+            try:
+                in_water = bool(self.environment.is_water(agent.position))
+            except Exception:
+                in_water = False
+
+            if in_water:
+                prev_ticks = int(getattr(agent, 'water_ticks', 0) or 0)
+                ticks = prev_ticks + 1
+                setattr(agent, 'water_ticks', ticks)
+                setattr(agent, 'is_swimming', True)
+
+                if ticks > self.drowning_grace_steps:
+                    extra = ticks - self.drowning_grace_steps
+                    risk = self.drowning_base_risk + self.drowning_risk_gain * float(extra)
+                    if risk > self.drowning_risk_cap:
+                        risk = self.drowning_risk_cap
+
+                    if random.random() < risk:
+                        agent.health = 0.0
+                        setattr(agent, 'drowned', True)
+            else:
+                setattr(agent, 'water_ticks', 0)
+                setattr(agent, 'is_swimming', False)
+
             agent.last_action_time = self.timestep
 
             # Беременность: отсчёт и роды
@@ -449,7 +480,9 @@ class SimulationState:
     def _handle_agent_death(self, agent: Agent):
         """Обрабатывает смерть агента"""
         cause = 'unknown'
-        if agent.hunger >= 1.0:
+        if bool(getattr(agent, 'drowned', False)):
+            cause = 'drowning'
+        elif agent.hunger >= 1.0:
             cause = 'starvation'
         elif getattr(agent, 'thirst', 0.0) >= 1.0:
             cause = 'dehydration'

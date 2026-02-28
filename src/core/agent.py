@@ -604,3 +604,18 @@ class AgentFactory:
         for (state, action), q_value in parent.q_table.items():
             if random.random() < 0.2:  # 20% вероятность передачи
                 child.q_table[(state, action)] = q_value * 0.7
+
+        # Передача части лексикона (выборочно, чтобы не перенасыщать)
+        try:
+            for meaning, token_map in list(parent.lexicon_out.items())[:10]:
+                if random.random() >= 0.25:  # 25% шанс на meaning
+                    continue
+                # Топ-1 токен по весу
+                if not token_map:
+                    continue
+                top_token = max(token_map.items(), key=lambda kv: kv[1])[0]
+                child.lexicon_out.setdefault(meaning, {})[top_token] = float(token_map.get(top_token, 0.0)) * 0.7
+                # Также усилим понимание в lexicon_in
+                child.lexicon_in.setdefault(top_token, {})[meaning] = float(token_map.get(top_token, 0.0)) * 0.7
+        except Exception:
+            pass
