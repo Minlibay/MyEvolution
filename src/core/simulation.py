@@ -381,6 +381,19 @@ class SimulationState:
             else:
                 action = "rest"
             
+            # Команда владельца — переопределяет выбранное действие
+            _pending = getattr(agent, 'pending_command', None)
+            _pending_ticks = int(getattr(agent, 'pending_command_ticks', 0))
+            if _pending and _pending_ticks > 0:
+                _new_ticks = _pending_ticks - 1
+                # Используем команду если действие доступно или всегда разрешено (rest/sleep/move)
+                if _pending in available_actions or _pending in ('rest', 'sleep', 'move'):
+                    action = _pending
+                setattr(agent, 'pending_command_ticks', _new_ticks)
+                if _new_ticks <= 0:
+                    setattr(agent, 'pending_command', None)
+                    setattr(agent, 'pending_command_ticks', 0)
+
             # Исполнение действия
             if action in ('communicate', 'mate', 'care'):
                 result = self.action_executor.execute_action(

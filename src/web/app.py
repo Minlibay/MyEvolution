@@ -161,24 +161,42 @@ def _clear_login_failures(ip: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Agent personal chat (in-memory, per owner_uid)
+# Agent personal chat (SQLite-backed)
 # ---------------------------------------------------------------------------
-_agent_chats: Dict[int, list] = collections.defaultdict(list)
-_agent_chats_lock = threading.Lock()
-_AGENT_CHAT_MAX = 60  # максимум сообщений в истории
+_AGENT_CHAT_MAX = 60  # максимум сообщений в истории на пользователя
 
 
 def _agent_chat_push(uid: int, role: str, text: str) -> None:
-    with _agent_chats_lock:
-        log = _agent_chats[uid]
-        log.append({"role": role, "text": text, "ts": time.time()})
-        if len(log) > _AGENT_CHAT_MAX:
-            del log[: len(log) - _AGENT_CHAT_MAX]
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO agent_chats(user_id, role, text, ts) VALUES(?, ?, ?, ?)",
+            (uid, role, text, time.time()),
+        )
+        # Удаляем лишние записи если превышен лимит
+        cur.execute(
+            """DELETE FROM agent_chats WHERE user_id = ? AND id NOT IN (
+                SELECT id FROM agent_chats WHERE user_id = ? ORDER BY id DESC LIMIT ?
+            )""",
+            (uid, uid, _AGENT_CHAT_MAX),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _agent_chat_get(uid: int) -> list:
-    with _agent_chats_lock:
-        return list(_agent_chats.get(uid, []))
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT role, text, ts FROM agent_chats WHERE user_id = ? ORDER BY id ASC",
+            (uid,),
+        ).fetchall()
+        return [{"role": r["role"], "text": r["text"], "ts": r["ts"]} for r in rows]
+    finally:
+        conn.close()
 
 
 def _find_agent_by_owner(uid: int):
@@ -301,7 +319,27 @@ def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
     # Команды / просьбы
     if any(w in u for w in ["иди", "пойди", "найди", "принеси", "сделай", "помоги", "возьми", "атакуй", "беги",
                              "отдохни", "восстановись", "попей", "поешь", "исследуй", "пообщайся", "поговори"]):
+        # Определяем какое действие симуляции соответствует команде
+        _cmd_action: Optional[str] = None
+        _cmd_ticks: int = 1
+        if any(w in u for w in ["еду", "поешь", "найди еду", "пропитание", "поест"]):
+            _cmd_action = "gather"; _cmd_ticks = 5
+        elif any(w in u for w in ["воды", "попей", "пить", "водоём"]):
+            _cmd_action = "drink"; _cmd_ticks = 5
+        elif any(w in u for w in ["отдохни", "восстановись", "поспи", "отдых"]):
+            _cmd_action = "rest"; _cmd_ticks = 4
+        elif any(w in u for w in ["исследуй", "изучи", "походи", "осмотрись"]):
+            _cmd_action = "move"; _cmd_ticks = 6
+        elif any(w in u for w in ["пообщайся", "поговори", "поболтай"]):
+            _cmd_action = "communicate"; _cmd_ticks = 3
+        elif any(w in u for w in ["иди", "пойди", "двигайся"]):
+            _cmd_action = "move"; _cmd_ticks = 4
+
         if agreeableness > 0.65:
+            # Выполняем команду
+            if _cmd_action:
+                setattr(agent, 'pending_command', _cmd_action)
+                setattr(agent, 'pending_command_ticks', _cmd_ticks)
             return random.choice([
                 "Попробую! Не обещаю, но постараюсь.",
                 "Хорошо, посмотрю что смогу.",
@@ -309,6 +347,10 @@ def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
                 "Хорошо! Сделаю что могу.",
             ])
         elif agreeableness > 0.35:
+            # Иногда выполняем, иногда нет
+            if _cmd_action and random.random() < 0.5:
+                setattr(agent, 'pending_command', _cmd_action)
+                setattr(agent, 'pending_command_ticks', max(1, _cmd_ticks - 2))
             return random.choice([
                 "Может быть.",
                 "Посмотрим.",
@@ -535,6 +577,19 @@ def _db_init() -> None:
                 sex TEXT NOT NULL,
                 stats_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_chats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                text TEXT NOT NULL,
+                ts REAL NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
             """
@@ -846,11 +901,11 @@ def _set_privacy_policy_text(text: str) -> None:
 
 
 def _get_site_settings() -> Dict[str, str]:
-    project_name = _get_setting("project_name", "WorldSE")
-    seo_title = _get_setting("seo_title", project_name or "WorldSE")
+    project_name = _get_setting("project_name", "WorldES")
+    seo_title = _get_setting("seo_title", project_name or "WorldES")
     seo_description = _get_setting(
         "seo_description",
-        "WorldSE — интерактивная симуляция поведения агентов: выживание, общение и создание инструментов.",
+        "WorldES — интерактивная симуляция поведения агентов: выживание, общение и создание инструментов.",
     )
     seo_keywords = _get_setting(
         "seo_keywords",
@@ -861,8 +916,8 @@ def _get_site_settings() -> Dict[str, str]:
     banner_link = _get_setting("banner_link", "")
     favicon_url = _get_setting("favicon_url", "/static/favicon.svg")
     return {
-        "project_name": str(project_name or "WorldSE"),
-        "seo_title": str(seo_title or project_name or "WorldSE"),
+        "project_name": str(project_name or "WorldES"),
+        "seo_title": str(seo_title or project_name or "WorldES"),
         "seo_description": str(seo_description or ""),
         "seo_keywords": str(seo_keywords or ""),
         "seo_og_image": str(og_image or ""),
@@ -1865,6 +1920,8 @@ class SimulationController:
                         "achievements": agent.achievements.to_list() if hasattr(agent, 'achievements') and hasattr(agent.achievements, 'to_list') else [],
                         "life_log": agent.life_log.to_list() if hasattr(agent, 'life_log') and hasattr(agent.life_log, 'to_list') else [],
                         "visited_cells": int(getattr(agent, 'visited_cells', 0)),
+                        "pending_command": getattr(agent, 'pending_command', None),
+                        "pending_command_ticks": int(getattr(agent, 'pending_command_ticks', 0)),
                     }
                 )
 
@@ -2222,8 +2279,8 @@ async def index():
         banner_html = (s.get("banner_html") or "").strip() or "место для баннера 728×90"
 
     rendered = template
-    rendered = rendered.replace("{{PROJECT_NAME}}", escape(s.get("project_name") or "WorldSE"))
-    rendered = rendered.replace("{{SEO_TITLE}}", escape(s.get("seo_title") or "WorldSE"))
+    rendered = rendered.replace("{{PROJECT_NAME}}", escape(s.get("project_name") or "WorldES"))
+    rendered = rendered.replace("{{SEO_TITLE}}", escape(s.get("seo_title") or "WorldES"))
     rendered = rendered.replace("{{SEO_DESCRIPTION}}", escape(s.get("seo_description") or ""))
     rendered = rendered.replace("{{SEO_KEYWORDS}}", escape(s.get("seo_keywords") or ""))
     rendered = rendered.replace("{{SEO_OG_IMAGE}}", escape(s.get("seo_og_image") or ""))

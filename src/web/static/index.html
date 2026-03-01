@@ -214,8 +214,9 @@
       <div class="sidebar-panel" id="tab-agent">
         <!-- Пустое состояние -->
         <div id="myAgentState" class="agp-empty">
-          <div class="agp-empty-icon">🌱</div>
+          <div class="agp-empty-icon" id="myAgentStateIcon">🌱</div>
           <div id="myAgentStateText" class="agp-empty-text">Войдите и создайте агента,<br>чтобы следить за ним.</div>
+          <button id="btnEmptyCreateAgent" class="btn btn-primary" style="display:none; margin-top:4px;">+ Создать агента</button>
         </div>
         <!-- Тело панели -->
         <div id="myAgentBody" style="display:none">
@@ -414,6 +415,39 @@
   </div>
 </div>
 
+<!-- ===== ONBOARDING OVERLAY ===== -->
+<div id="onboardingOverlay" class="onboarding-overlay" style="display:none">
+  <div class="onboarding-card">
+    <div class="onboarding-logo">🌍</div>
+    <h2 class="onboarding-title">Добро пожаловать в WorldES</h2>
+    <p class="onboarding-sub">Симуляция эволюции живых существ в реальном времени. Создайте своего агента и наблюдайте за его жизнью!</p>
+    <div class="onboarding-steps">
+      <div class="onboarding-step">
+        <span class="onboarding-step-num">1</span>
+        <div>
+          <div class="onboarding-step-title">Зарегистрируйтесь</div>
+          <div class="onboarding-step-sub">Создайте аккаунт — это займёт секунду</div>
+        </div>
+      </div>
+      <div class="onboarding-step">
+        <span class="onboarding-step-num">2</span>
+        <div>
+          <div class="onboarding-step-title">Создайте агента</div>
+          <div class="onboarding-step-sub">Настройте имя, пол и характеристики</div>
+        </div>
+      </div>
+      <div class="onboarding-step">
+        <span class="onboarding-step-num">3</span>
+        <div>
+          <div class="onboarding-step-title">Следите и общайтесь</div>
+          <div class="onboarding-step-sub">Наблюдайте за жизнью агента и давайте ему команды</div>
+        </div>
+      </div>
+    </div>
+    <button id="btnOnboardingStart" class="btn btn-primary" style="width:100%; padding:12px;">Начать →</button>
+  </div>
+</div>
+
 <script>
   // --- Sidebar tab switching ---
   document.querySelectorAll('.sidebar-tab').forEach(tab => {
@@ -609,9 +643,37 @@
 
   if (btnCookieAccept) btnCookieAccept.addEventListener('click', acceptCookies);
 
+  // Онбординг — показываем один раз новым пользователям
+  const onboardingOverlay = document.getElementById('onboardingOverlay');
+  const btnOnboardingStart = document.getElementById('btnOnboardingStart');
+
+  function showOnboardingOnce() {
+    try {
+      if (localStorage.getItem('evosim_onboarding_done') === '1') return;
+      if (localStorage.getItem('evosim_token')) return; // уже залогинен — не мешаем
+      if (onboardingOverlay) onboardingOverlay.style.display = 'flex';
+    } catch (e) {}
+  }
+
+  function closeOnboarding() {
+    try {
+      localStorage.setItem('evosim_onboarding_done', '1');
+      if (onboardingOverlay) {
+        onboardingOverlay.style.opacity = '0';
+        setTimeout(() => { onboardingOverlay.style.display = 'none'; }, 300);
+      }
+    } catch (e) {}
+  }
+
+  if (btnOnboardingStart) btnOnboardingStart.addEventListener('click', closeOnboarding);
+  if (onboardingOverlay) onboardingOverlay.addEventListener('click', (e) => {
+    if (e.target === onboardingOverlay) closeOnboarding();
+  });
+
   try {
     showWelcomeOnce();
     showCookieOnce();
+    showOnboardingOnce();
   } catch (e) {}
 
   cv.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1205,6 +1267,7 @@
     }
 
     // Agents
+    const _myUsername = localStorage.getItem('evosim_username') || '';
     for (const a of snapshot.agents) {
       const prev = agentRenderState.get(a.id) || { x: a.x, y: a.y, facing: 'right' };
       const dx = a.x - prev.x;
@@ -1215,6 +1278,35 @@
       const ready = img.complete && img.naturalWidth > 0;
       const px = a.x * sx;
       const py = a.y * sy;
+
+      // Подсветка своего агента
+      const isMyAgent = _myUsername && a.owner_username === _myUsername;
+      if (isMyAgent) {
+        const haloR = a.is_child ? 20 : 28;
+        const haloY = py - (a.is_child ? 15 : 22);
+        ctx.save();
+        ctx.shadowColor = '#6366f1';
+        ctx.shadowBlur = 18;
+        ctx.strokeStyle = 'rgba(99,102,241,0.9)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(px, haloY, haloR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        // Маркер "мой агент" — маленький треугольник сверху
+        ctx.save();
+        ctx.fillStyle = '#818cf8';
+        ctx.shadowColor = '#6366f1';
+        ctx.shadowBlur = 8;
+        const tx = px, ty = haloY - haloR - 7;
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx - 5, ty + 8);
+        ctx.lineTo(tx + 5, ty + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
 
       // Draw sprite (fallback to circle if sprite not loaded yet)
       if (ready) {
@@ -1484,6 +1576,7 @@
     renderEvents(snapshot);
     renderMyAgent(snapshot);
     updateInfoBar(snapshot);
+    _checkAgentDeathNotify(snapshot);
 
     if (!renderLoopStarted) {
       renderLoopStarted = true;
@@ -1641,10 +1734,24 @@
         return;
       }
       _show(false);
-      const txt = document.getElementById('myAgentStateText');
-      if (txt) txt.innerHTML = localStorage.getItem('evosim_has_agent') === '1'
-        ? 'Ваш агент сейчас не найден в мире.<br><span style="font-size:0.78rem;">Возможно, ещё не заспавнился или погиб.</span>'
-        : 'Войдите и создайте своего агента,<br>чтобы следить за ним.';
+      const txt  = document.getElementById('myAgentStateText');
+      const icon = document.getElementById('myAgentStateIcon');
+      const btn  = document.getElementById('btnEmptyCreateAgent');
+      const hasAgent  = localStorage.getItem('evosim_has_agent') === '1';
+      const hasToken  = !!localStorage.getItem('evosim_token');
+      if (hasAgent) {
+        if (icon) icon.textContent = '🔍';
+        if (txt)  txt.innerHTML = 'Ваш агент сейчас не найден.<br><span style="font-size:0.78rem;">Возможно, ещё не заспавнился или погиб.</span>';
+        if (btn)  btn.style.display = 'none';
+      } else if (hasToken) {
+        if (icon) icon.textContent = '🌱';
+        if (txt)  txt.innerHTML = 'У вас ещё нет агента.<br><span style="font-size:0.78rem;">Создайте своего первого агента!</span>';
+        if (btn)  btn.style.display = '';
+      } else {
+        if (icon) icon.textContent = '🌱';
+        if (txt)  txt.innerHTML = 'Войдите в аккаунт,<br>чтобы создать агента и следить за ним.';
+        if (btn)  btn.style.display = 'none';
+      }
       return;
     }
 
@@ -1659,7 +1766,10 @@
     const sb = document.getElementById('agpSub');
     const swim    = agent.is_swimming ? ' 🌊' : '';
     const lastAct = agent.last_action ? ` · ${actionToRu(agent.last_action)}` : '';
-    if (sb) sb.textContent = `(${agent.x}, ${agent.y}) · возраст ${agent.age}${swim}${lastAct}`;
+    const cmdMap  = {gather:'собирает еду',drink:'ищет воду',rest:'отдыхает',sleep:'спит',move:'исследует',communicate:'общается'};
+    const cmdHint = (agent.pending_command && agent.pending_command_ticks > 0)
+      ? ` · ⚡ ${cmdMap[agent.pending_command] || agent.pending_command}` : '';
+    if (sb) sb.textContent = `(${agent.x}, ${agent.y}) · возраст ${agent.age}${swim}${lastAct}${cmdHint}`;
 
     // Бейдж
     const bg = document.getElementById('agpBadge');
@@ -1673,6 +1783,10 @@
 
     // Блок дополнительной информации
     let extraHtml = '';
+    if (agent.pending_command && agent.pending_command_ticks > 0) {
+      const cmdRu = {gather:'собирает еду',drink:'ищет воду',rest:'отдыхает',sleep:'спит',move:'исследует',communicate:'общается'};
+      extraHtml += `<div style="margin-bottom:8px;padding:7px 10px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:var(--radius-sm);font-size:13px;">⚡ Выполняет команду: <b>${escapeHtml(cmdRu[agent.pending_command] || agent.pending_command)}</b> (ещё ${agent.pending_command_ticks} тик${agent.pending_command_ticks > 1 ? 'а' : ''})</div>`;
+    }
     if (agent.personality_ru) {
       extraHtml += `<div class="text-xs text-muted">Характер</div><div style="font-size:13px;margin:2px 0 8px;">${escapeHtml(agent.personality_ru)}</div>`;
     }
@@ -1869,6 +1983,55 @@
       sendAgentMessage();
     });
   });
+  // Автообновление чата пока открыт экран команды
+  let _chatPollTimer = null;
+  const _origAgpGoto = agpGoto;
+  function agpGotoWithPoll(screenId) {
+    _origAgpGoto(screenId);
+    clearInterval(_chatPollTimer);
+    if (screenId === 'agpChatScreen') {
+      _chatPollTimer = setInterval(() => {
+        const screen = document.getElementById('agpChatScreen');
+        if (screen && screen.classList.contains('active')) loadAgentChat();
+        else clearInterval(_chatPollTimer);
+      }, 8000);
+    }
+  }
+  // Перепривязываем пункты меню и кнопки назад на версию с поллингом
+  document.querySelectorAll('.agp-menu-item').forEach(item => {
+    item.onclick = () => agpGotoWithPoll(item.dataset.goto);
+  });
+  document.querySelectorAll('.agp-back').forEach(btn => {
+    btn.onclick = () => agpGotoWithPoll(btn.dataset.to);
+  });
+
+  // ─── Тост-уведомления ────────────────────────────────────────────────────
+  function showToast(msg, type = 'info') {
+    const t = document.createElement('div');
+    t.className = 'app-toast app-toast-' + type;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('app-toast-in'));
+    setTimeout(() => {
+      t.classList.remove('app-toast-in');
+      t.addEventListener('transitionend', () => t.remove(), { once: true });
+    }, 4500);
+  }
+
+  // Уведомление о смерти агента (срабатывает один раз)
+  let _notifiedDeadAgentId = null;
+  function _checkAgentDeathNotify(snapshot) {
+    const u = localStorage.getItem('evosim_username') || '';
+    if (!u) return;
+    if (!snapshot.dead_agents) return;
+    const dead = snapshot.dead_agents.find(d => d.owner_username === u);
+    if (dead && dead.id !== _notifiedDeadAgentId) {
+      _notifiedDeadAgentId = dead.id;
+      const name = dead.name || dead.id;
+      const cause = dead.cause_ru || dead.cause || '';
+      showToast(`☠ Ваш агент ${name} погиб${cause ? ': ' + cause : ''}`, 'danger');
+    }
+  }
   // ─────────────────────────────────────────────────────────────────────────
 
   function hasAgent() {
@@ -2264,6 +2427,8 @@
   });
 
   if (btnCreateAgent) btnCreateAgent.addEventListener('click', () => openAgentModal());
+  const btnEmptyCreateAgent = document.getElementById('btnEmptyCreateAgent');
+  if (btnEmptyCreateAgent) btnEmptyCreateAgent.addEventListener('click', () => openAgentModal());
   if (btnCloseAgentModal) btnCloseAgentModal.addEventListener('click', () => closeAgentModal());
   if (agentModal) {
     agentModal.addEventListener('click', (e) => {
