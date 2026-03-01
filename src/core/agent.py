@@ -11,6 +11,248 @@ from .objects import Object
 from .tools import Tool
 
 
+# ── Personality trait names (generated at birth, immutable) ────────────
+PERSONALITY_TRAITS = [
+    'bravery',        # храбрость (vs трусость)  — влияет на risk_tolerance, fight/flee
+    'sociability',    # общительность (vs замкнутость) — влияет на communicate/mate
+    'curiosity',      # любопытность (vs осторожность) — влияет на explore/combine
+    'industriousness', # трудолюбие (vs лень) — влияет на gather/break
+    'empathy',        # эмпатия (vs равнодушие) — влияет на care/share
+    'patience',       # терпеливость (vs импульсивность) — влияет на crafting/sleep
+]
+
+# ── Emotion names ─────────────────────────────────────────────────────
+EMOTION_NAMES = [
+    'happiness',   # счастье
+    'fear',        # страх
+    'anger',       # злость
+    'loneliness',  # одиночество
+    'curiosity',   # любопытство
+    'contentment', # удовлетворённость
+    'pride',       # гордость (после успешного действия)
+    'grief',       # горе (при потере близкого)
+]
+
+# Localised trait/emotion names for UI
+TRAIT_RU = {
+    'bravery': 'храбрость', 'sociability': 'общительность', 'curiosity': 'любопытность',
+    'industriousness': 'трудолюбие', 'empathy': 'эмпатия', 'patience': 'терпеливость',
+}
+EMOTION_RU = {
+    'happiness': 'счастье', 'fear': 'страх', 'anger': 'злость',
+    'loneliness': 'одиночество', 'curiosity': 'любопытство',
+    'contentment': 'удовлетворённость', 'pride': 'гордость', 'grief': 'горе',
+}
+
+
+@dataclass
+class Personality:
+    """Набор личностных черт агента (0..1). Генерируется при рождении, не меняется."""
+    bravery: float = 0.5
+    sociability: float = 0.5
+    curiosity: float = 0.5
+    industriousness: float = 0.5
+    empathy: float = 0.5
+    patience: float = 0.5
+
+    def to_dict(self) -> Dict[str, float]:
+        return {t: round(getattr(self, t), 3) for t in PERSONALITY_TRAITS}
+
+    @classmethod
+    def random(cls, genes: 'AgentGenes') -> 'Personality':
+        """Generate personality influenced by genes + randomness."""
+        def _g(gene_val: float) -> float:
+            return max(0.0, min(1.0, gene_val * 0.4 + random.gauss(0.5, 0.2) * 0.6))
+        return cls(
+            bravery=_g(genes.strength),
+            sociability=_g(genes.social_tendency),
+            curiosity=_g(genes.exploration_bias),
+            industriousness=_g(genes.intelligence),
+            empathy=_g(genes.social_tendency),
+            patience=_g(1.0 - genes.metabolism_speed),
+        )
+
+    @classmethod
+    def inherit(cls, p1: 'Personality', p2: 'Personality') -> 'Personality':
+        """Child personality from two parents with noise."""
+        d = {}
+        for t in PERSONALITY_TRAITS:
+            base = (getattr(p1, t) + getattr(p2, t)) / 2.0
+            d[t] = max(0.0, min(1.0, base + random.gauss(0, 0.12)))
+        return cls(**d)
+
+    def dominant_trait(self) -> str:
+        return max(PERSONALITY_TRAITS, key=lambda t: getattr(self, t))
+
+    def describe_ru(self) -> str:
+        """Short Russian description for UI."""
+        top = sorted(PERSONALITY_TRAITS, key=lambda t: getattr(self, t), reverse=True)[:2]
+        return ', '.join(TRAIT_RU.get(t, t) for t in top)
+
+
+class EmotionalState:
+    """Динамическое эмоциональное состояние агента."""
+
+    def __init__(self):
+        self.emotions: Dict[str, float] = {e: 0.0 for e in EMOTION_NAMES}
+        self._decay_rate = 0.92  # эмоции затухают каждый тик
+
+    def set(self, emotion: str, value: float):
+        if emotion in self.emotions:
+            self.emotions[emotion] = max(0.0, min(1.0, value))
+
+    def add(self, emotion: str, delta: float):
+        if emotion in self.emotions:
+            self.emotions[emotion] = max(0.0, min(1.0, self.emotions[emotion] + delta))
+
+    def get(self, emotion: str) -> float:
+        return self.emotions.get(emotion, 0.0)
+
+    def decay(self):
+        for e in self.emotions:
+            self.emotions[e] *= self._decay_rate
+
+    def dominant(self) -> Optional[str]:
+        """Return the strongest emotion above threshold, or None."""
+        best = max(self.emotions, key=self.emotions.get)
+        return best if self.emotions[best] > 0.15 else None
+
+    def mood_score(self) -> float:
+        """Overall mood: positive emotions minus negative, clamped -1..1."""
+        pos = self.emotions['happiness'] + self.emotions['contentment'] + self.emotions['pride'] + self.emotions['curiosity']
+        neg = self.emotions['fear'] + self.emotions['anger'] + self.emotions['loneliness'] + self.emotions['grief']
+        return max(-1.0, min(1.0, (pos - neg) / 2.0))
+
+    def mood_ru(self) -> str:
+        score = self.mood_score()
+        if score > 0.4:
+            return 'отлично'
+        elif score > 0.15:
+            return 'хорошо'
+        elif score > -0.15:
+            return 'нормально'
+        elif score > -0.4:
+            return 'плохо'
+        else:
+            return 'ужасно'
+
+    def to_dict(self) -> Dict[str, float]:
+        return {e: round(v, 3) for e, v in self.emotions.items() if v > 0.05}
+
+
+class SocialMemory:
+    """Отношения агента с другими агентами."""
+
+    def __init__(self):
+        # agent_id -> relationship score [-1..1] (negative = враждебность, positive = дружба)
+        self.relationships: Dict[str, float] = {}
+        # agent_id -> interaction count
+        self.interaction_count: Dict[str, int] = {}
+        # family bonds (permanent high-trust)
+        self.family: set = set()  # IDs of family members
+
+    def add_interaction(self, other_id: str, delta: float):
+        """Record an interaction with another agent."""
+        current = self.relationships.get(other_id, 0.0)
+        self.relationships[other_id] = max(-1.0, min(1.0, current + delta))
+        self.interaction_count[other_id] = self.interaction_count.get(other_id, 0) + 1
+
+    def get_trust(self, other_id: str) -> float:
+        base = self.relationships.get(other_id, 0.0)
+        if other_id in self.family:
+            base = max(base, 0.3)  # family always has minimum trust
+        return base
+
+    def add_family(self, other_id: str):
+        self.family.add(other_id)
+        if other_id not in self.relationships:
+            self.relationships[other_id] = 0.5
+
+    def best_friends(self, n: int = 3) -> List[Tuple[str, float]]:
+        """Top-n positive relationships."""
+        pos = [(aid, score) for aid, score in self.relationships.items() if score > 0]
+        pos.sort(key=lambda x: x[1], reverse=True)
+        return pos[:n]
+
+    def enemies(self, n: int = 3) -> List[Tuple[str, float]]:
+        neg = [(aid, score) for aid, score in self.relationships.items() if score < -0.1]
+        neg.sort(key=lambda x: x[1])
+        return neg[:n]
+
+    def decay(self):
+        """Slightly decay non-family relationships over time."""
+        for aid in list(self.relationships.keys()):
+            if aid not in self.family:
+                self.relationships[aid] *= 0.998
+
+    def to_dict(self) -> Dict[str, Any]:
+        top = self.best_friends(5)
+        fam = list(self.family)[:10]
+        return {'friends': [{"id": a, "trust": round(s, 2)} for a, s in top],
+                'family': fam}
+
+
+# ── Мысли/реакции (для UI) ────────────────────────────────────────────
+_THOUGHT_TEMPLATES = {
+    'hungry': ['хочу есть...', 'где бы найти еду?', 'живот урчит'],
+    'thirsty': ['хочу пить...', 'нужна вода', 'пересохло в горле'],
+    'sleepy': ['так хочется спать...', 'глаза закрываются', 'нужен отдых'],
+    'scared': ['мне страшно!', 'нужно быть осторожнее', 'опасно здесь'],
+    'happy': ['как хорошо!', 'жизнь прекрасна', 'чувствую себя отлично'],
+    'lonely': ['одиноко...', 'хочу поговорить', 'где все?'],
+    'curious': ['что это такое?', 'интересно...', 'надо исследовать'],
+    'proud': ['у меня получилось!', 'я молодец', 'вот это да!'],
+    'grief': ['мне грустно...', 'потеря...', 'тяжело на душе'],
+    'angry': ['это раздражает!', 'ну и ну!', 'что за невезение'],
+    'parent_love': ['мой малыш...', 'нужно позаботиться', 'ребёнок рядом'],
+    'craft_idea': ['а если попробовать...', 'может, скомбинировать?', 'есть идея!'],
+    'found_food': ['еда! наконец-то!', 'нашёл пропитание', 'повезло!'],
+    'found_water': ['вода! отлично!', 'можно напиться', 'источник!'],
+    'met_friend': ['рад встрече!', 'привет!', 'знакомое лицо'],
+    'new_tool': ['новый инструмент!', 'теперь я сильнее', 'крафт удался!'],
+}
+
+
+def generate_thought(agent: 'Agent') -> Optional[str]:
+    """Generate a contextual thought string for the agent based on current state."""
+    candidates: List[Tuple[float, str]] = []
+    emotions = agent.emotional_state
+
+    # Need-based thoughts
+    if agent.hunger > 0.7:
+        candidates.append((agent.hunger, 'hungry'))
+    if agent.thirst > 0.7:
+        candidates.append((agent.thirst, 'thirsty'))
+    if agent.sleepiness > 0.7:
+        candidates.append((agent.sleepiness, 'sleepy'))
+
+    # Emotion-based thoughts
+    dom = emotions.dominant()
+    if dom == 'fear':
+        candidates.append((emotions.get('fear'), 'scared'))
+    elif dom == 'happiness':
+        candidates.append((emotions.get('happiness'), 'happy'))
+    elif dom == 'loneliness':
+        candidates.append((emotions.get('loneliness'), 'lonely'))
+    elif dom == 'curiosity':
+        candidates.append((emotions.get('curiosity'), 'curious'))
+    elif dom == 'pride':
+        candidates.append((emotions.get('pride'), 'proud'))
+    elif dom == 'grief':
+        candidates.append((emotions.get('grief'), 'grief'))
+    elif dom == 'anger':
+        candidates.append((emotions.get('anger'), 'angry'))
+
+    if not candidates:
+        return None
+
+    # Pick the strongest
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    key = candidates[0][1]
+    templates = _THOUGHT_TEMPLATES.get(key, [])
+    return random.choice(templates) if templates else None
+
+
 @dataclass
 class AgentGenes:
     """Генетические параметры агента"""
@@ -230,6 +472,13 @@ class Agent:
     last_intended_meaning: Optional[str] = None
     last_heard: Optional[str] = None
 
+    # ── Личность, эмоции, отношения (NEW) ──────────────────────
+    personality: Personality = field(default_factory=Personality)
+    emotional_state: EmotionalState = field(default_factory=EmotionalState)
+    social: SocialMemory = field(default_factory=SocialMemory)
+    current_thought: Optional[str] = None    # мысль для UI
+    last_mood: Optional[str] = None          # настроение для UI
+
     def __post_init__(self):
         """Инициализация после создания"""
         # Устанавливаем exploration_rate на основе генов
@@ -237,6 +486,10 @@ class Agent:
         
         # Инициализируем память с правильной емкостью
         self.episodic_memory = EpisodicMemory(self.memory_capacity)
+
+        # Generate personality from genes if still default
+        if all(getattr(self.personality, t) == 0.5 for t in PERSONALITY_TRAITS):
+            self.personality = Personality.random(self.genes)
 
     def _invent_token(self) -> str:
         consonants = "bdgklmnprstfv"
@@ -292,14 +545,34 @@ class Agent:
                 in_map[m] *= 0.995
 
     def choose_communication_meaning(self, local_env: Dict[str, Any]) -> str:
-        """Выбирает смысл сообщения из наблюдаемого состояния (без захардкоженных слов)."""
-        # Набор смыслов фиксирован как исследовательский «набор задач», токены эволюционируют сами.
+        """Выбирает смысл сообщения из наблюдаемого состояния (без захардкоженных слов).
+        Набор смыслов фиксирован как исследовательский «набор задач», токены эволюционируют сами."""
+        # Urgent needs first
         if self.hunger > 0.6:
             return "need_food"
+        if self.thirst > 0.6:
+            return "need_water"
+        # Perception-based
         perceived = local_env.get('perceived_objects', []) or []
         if any(getattr(o, 'is_edible', lambda: False)() for o in perceived):
             return "food_here"
-        return "idle"
+        if any(getattr(o, 'type', None) == 'water' for o in perceived):
+            return "water_here"
+        # Emotion-based communication
+        emo = self.emotional_state
+        dom = emo.dominant() if emo else None
+        if dom == 'fear':
+            return "danger"
+        if dom == 'happiness':
+            return "happy"
+        if dom == 'loneliness':
+            return "come_here"
+        if dom == 'curiosity':
+            return "look"
+        # Tool-related
+        if any(getattr(o, 'type', None) in ('stone', 'wood', 'bone', 'fiber') for o in perceived):
+            return "material_here"
+        return "greeting"
     
     def perceive(self, environment) -> Dict[str, Any]:
         """Воспринимает локальную среду"""

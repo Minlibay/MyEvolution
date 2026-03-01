@@ -7,7 +7,7 @@ import random
 import time
 
 from .environment import Environment, EnvironmentConfig
-from .agent import Agent, AgentFactory
+from .agent import Agent, AgentFactory, generate_thought
 from .agent_actions import ActionExecutor, ActionResult
 from .tools import ToolLibrary
 from ..learning.q_learning import LearningManager
@@ -295,18 +295,23 @@ class SimulationState:
                     except Exception:
                         continue
 
-            # Выбор действия
+            # Выбор действия (personality-influenced)
             decision_maker = self.learning_manager.get_decision_maker(agent_id)
+            pers = getattr(agent, 'personality', None)
             if decision_maker:
                 if hungry_child and 'care' in available_actions:
-                    action = 'care'
+                    # Empathetic agents always care; others sometimes skip
+                    care_prob = 0.5 + 0.5 * (pers.empathy if pers else 0.5)
+                    if random.random() < care_prob:
+                        action = 'care'
+                    else:
+                        action = decision_maker.select_action(local_env, available_actions)
                 # Размножение: когда всё спокойно и рядом подходящий партнёр
                 elif mate_candidates and 'mate' in available_actions:
-                    # Не пытаемся размножаться при критических нуждах
                     if not (getattr(agent, 'hunger', 0.0) > 0.75 or getattr(agent, 'thirst', 0.0) > 0.75 or getattr(agent, 'sleepiness', 0.0) > 0.85):
                         base = 0.002
                         base += 0.010 * float(getattr(agent.genes, 'social_tendency', 0.5))
-                        base += 0.006 * float(getattr(agent.genes, 'exploration_bias', 0.5))
+                        base += 0.006 * (pers.sociability if pers else 0.5)
                         if random.random() < base:
                             action = 'mate'
                         else:
@@ -315,15 +320,45 @@ class SimulationState:
                         action = decision_maker.select_action(local_env, available_actions)
                 # Сон: ночью при высокой сонливости
                 elif (not getattr(self.environment, 'is_daytime', True)) and getattr(agent, 'sleepiness', 0.0) > 0.65 and 'sleep' in available_actions:
-                    # Не спим, если критический голод/жажда
                     if not (getattr(agent, 'hunger', 0.0) > 0.85 or getattr(agent, 'thirst', 0.0) > 0.85):
                         action = 'sleep'
                     else:
                         action = decision_maker.select_action(local_env, available_actions)
+                # Personality-driven spontaneous actions (when not in urgent need)
+                elif not (hungry_self or thirsty_self) and pers:
+                    chosen = False
+                    # Social agents spontaneously communicate
+                    if not chosen and 'communicate' in available_actions and nearby_agents:
+                        if random.random() < 0.03 * pers.sociability:
+                            action = 'communicate'
+                            chosen = True
+                    # Curious agents explore more
+                    if not chosen and 'move' in available_actions:
+                        if random.random() < 0.02 * pers.curiosity:
+                            action = 'move'
+                            chosen = True
+                    # Industrious agents gather materials proactively
+                    if not chosen and wants_tool_materials and tool_material_visible_here and 'gather' in available_actions:
+                        if random.random() < 0.3 + 0.5 * pers.industriousness:
+                            action = 'gather'
+                            chosen = True
+                    # Curious/patient agents try crafting more
+                    if not chosen and can_toolmake and 'combine' in available_actions:
+                        prob = 0.01 + 0.06 * getattr(agent.genes, 'intelligence', 0.5) + 0.05 * pers.curiosity + 0.03 * pers.patience
+                        if random.random() < prob:
+                            action = 'combine'
+                            chosen = True
+                    # Brave agents attack when possible
+                    if not chosen and 'attack' in available_actions:
+                        if random.random() < 0.04 * pers.bravery:
+                            action = 'attack'
+                            chosen = True
+                    if not chosen:
+                        action = decision_maker.select_action(local_env, available_actions)
                 # Сбор материалов для инструментов
                 elif wants_tool_materials and tool_material_visible_here and 'gather' in available_actions:
                     action = 'gather'
-                # Создание инструментов: периодически пробуем combine, когда всё спокойно
+                # Создание инструментов
                 elif can_toolmake and 'combine' in available_actions:
                     prob = 0.01 + 0.06 * getattr(agent.genes, 'intelligence', 0.5) + 0.04 * getattr(agent.genes, 'exploration_bias', 0.5)
                     if random.random() < prob:
@@ -341,7 +376,7 @@ class SimulationState:
                 else:
                     action = decision_maker.select_action(local_env, available_actions)
             else:
-                action = "rest"  # Действие по умолчанию
+                action = "rest"
             
             # Исполнение действия
             if action in ('communicate', 'mate', 'care'):
@@ -425,6 +460,18 @@ class SimulationState:
                         name_source = father if random.random() < 0.5 else agent
                         setattr(child, 'display_name', name_source.invent_name())
 
+                        # Family bonds: parent <-> child
+                        try:
+                            from .agent import Personality
+                            child.social.add_family(agent.id)
+                            child.social.add_family(father.id)
+                            agent.social.add_family(child.id)
+                            father.social.add_family(child.id)
+                            # Inherit personality from parents
+                            child.personality = Personality.inherit(agent.personality, father.personality)
+                        except Exception:
+                            pass
+
                         self.agents[child.id] = child
                         self.learning_manager.register_agent(child)
 
@@ -476,6 +523,103 @@ class SimulationState:
                     'token': result.data.get('token'),
                     'meaning': result.data.get('meaning'),
                 })
+
+            # ── Emotions, social, thoughts ──────────────────────────
+            try:
+                emo = agent.emotional_state
+                soc = agent.social
+                pers = agent.personality
+
+                # Decay emotions & relationships each tick
+                emo.decay()
+                soc.decay()
+
+                # Need-driven emotions
+                if agent.hunger > 0.75:
+                    emo.add('fear', 0.06)
+                    emo.add('anger', 0.03)
+                if agent.thirst > 0.75:
+                    emo.add('fear', 0.08)
+                if agent.health < 0.4:
+                    emo.add('fear', 0.10)
+                if agent.energy > 0.6 and agent.hunger < 0.3 and agent.thirst < 0.3:
+                    emo.add('contentment', 0.08)
+                    emo.add('happiness', 0.04)
+
+                # Loneliness: no close agents for a while
+                if not close_agents:
+                    emo.add('loneliness', 0.02 * pers.sociability)
+                else:
+                    emo.add('loneliness', -0.05)
+                    # Met a friend?
+                    for other in close_agents:
+                        trust = soc.get_trust(other.id)
+                        if trust > 0.3:
+                            emo.add('happiness', 0.03)
+
+                # Action-based emotions
+                if result.success:
+                    if action == 'consume':
+                        emo.add('happiness', 0.12)
+                        emo.add('contentment', 0.08)
+                    elif action == 'drink':
+                        emo.add('contentment', 0.10)
+                    elif action == 'combine':
+                        emo.add('pride', 0.20)
+                        emo.add('curiosity', 0.10)
+                        emo.add('happiness', 0.10)
+                    elif action == 'communicate':
+                        emo.add('happiness', 0.06)
+                        listener_id = result.data.get('listener_id') if result.data else None
+                        if listener_id:
+                            soc.add_interaction(listener_id, 0.05)
+                    elif action == 'mate':
+                        emo.add('happiness', 0.15)
+                        partner_id = result.data.get('father_id') or result.data.get('mother_id') if result.data else None
+                        if partner_id and partner_id != agent.id:
+                            soc.add_interaction(partner_id, 0.15)
+                            soc.add_family(partner_id)
+                    elif action == 'care':
+                        emo.add('contentment', 0.10)
+                        emo.add('happiness', 0.06)
+                        child_id = result.data.get('child_id') if result.data else None
+                        if child_id:
+                            soc.add_interaction(child_id, 0.08)
+                    elif action == 'gather':
+                        emo.add('contentment', 0.03)
+                    elif action == 'sleep':
+                        emo.add('contentment', 0.05)
+                    elif action == 'attack':
+                        emo.add('pride', 0.08)
+                        emo.add('anger', -0.05)
+                else:
+                    if action == 'combine':
+                        emo.add('anger', 0.06)
+                    elif action == 'attack':
+                        emo.add('fear', 0.05)
+                        emo.add('anger', 0.08)
+                    elif action in ('gather', 'consume', 'drink'):
+                        emo.add('anger', 0.03)
+
+                # Curiosity from exploration
+                if action == 'move':
+                    emo.add('curiosity', 0.02 * pers.curiosity)
+
+                # Birth: family bonds + emotions
+                # (handled in birth section above, but also add parent emotions)
+                if getattr(agent, 'pregnant', False) and int(getattr(agent, 'pregnancy_remaining', 1)) <= 1:
+                    emo.add('happiness', 0.25)
+                    emo.add('pride', 0.15)
+
+                # Generate thought for UI (every 5 ticks to avoid spam)
+                if self.timestep % 5 == 0:
+                    thought = generate_thought(agent)
+                    agent.current_thought = thought
+
+                # Update mood label
+                agent.last_mood = emo.mood_ru()
+            except Exception:
+                pass
     
     def _handle_agent_death(self, agent: Agent):
         """Обрабатывает смерть агента"""
@@ -507,6 +651,24 @@ class SimulationState:
             'max_age': agent.max_age,
         })
         
+        # Grief: nearby agents feel sadness, especially family
+        try:
+            for other in list(self.agents.values()):
+                if other.id == agent.id:
+                    continue
+                dx = abs(other.position[0] - agent.position[0])
+                dy = abs(other.position[1] - agent.position[1])
+                if dx <= 3 and dy <= 3:
+                    grief_amt = 0.08
+                    if agent.id in other.social.family:
+                        grief_amt = 0.35
+                    elif other.social.get_trust(agent.id) > 0.2:
+                        grief_amt = 0.15
+                    other.emotional_state.add('grief', grief_amt)
+                    other.emotional_state.add('fear', grief_amt * 0.3)
+        except Exception:
+            pass
+
         # Удаляем агента из систем
         self.learning_manager.unregister_agent(agent.id)
         del self.agents[agent.id]

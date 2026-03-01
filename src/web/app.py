@@ -237,8 +237,8 @@ def _update_run_end(run_id: int, reason: str, reason_details: Optional[Dict[str,
                 details_json,
                 duration,
                 int(getattr(prev_state, "timestep", 0) or 0),
-                int(getattr(prev_state.world, "day", 0) if prev_state and prev_state.world else 0),
-                str(getattr(prev_state.world, "time_of_day", "") if prev_state and prev_state.world else ""),
+                int(getattr(getattr(prev_state, "environment", None), "day_count", 0) or 0) if prev_state else 0,
+                (lambda _env: f"{int(getattr(_env, 'hour', 0)):02d}:{int(getattr(_env, 'minute', 0)):02d}" if _env else "")(getattr(prev_state, "environment", None)),
                 int(run_id),
             ),
         )
@@ -1449,6 +1449,14 @@ class SimulationController:
                         "speech_meaning": getattr(agent, "last_intended_meaning", None),
                         "heard": getattr(agent, "last_heard", None),
                         "rl": rl,
+                        "personality": agent.personality.to_dict() if hasattr(agent, 'personality') and hasattr(agent.personality, 'to_dict') else None,
+                        "personality_ru": agent.personality.describe_ru() if hasattr(agent, 'personality') and hasattr(agent.personality, 'describe_ru') else None,
+                        "mood": getattr(agent, 'last_mood', None),
+                        "mood_score": round(agent.emotional_state.mood_score(), 2) if hasattr(agent, 'emotional_state') else None,
+                        "emotions": agent.emotional_state.to_dict() if hasattr(agent, 'emotional_state') and hasattr(agent.emotional_state, 'to_dict') else None,
+                        "dominant_emotion": agent.emotional_state.dominant() if hasattr(agent, 'emotional_state') else None,
+                        "thought": getattr(agent, 'current_thought', None),
+                        "social": agent.social.to_dict() if hasattr(agent, 'social') and hasattr(agent.social, 'to_dict') else None,
                     }
                 )
 
@@ -1814,23 +1822,22 @@ async def privacy_page():
   <meta charset=\"utf-8\" />
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>Политика конфиденциальности</title>
+  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />
+  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />
+  <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\" />
+  <link rel=\"stylesheet\" href=\"/static/style.css\" />
   <style>
-    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 0; background: #0b1020; color: #e7e9ee; }}
-    header {{ padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.10); display:flex; align-items:center; justify-content:space-between; gap:12px; }}
-    a {{ color:#cbd2ff; text-decoration:none; }}
-    a:hover {{ text-decoration: underline; }}
-    .wrap {{ max-width: 980px; margin: 0 auto; padding: 18px 16px; }}
-    .card {{ background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; }}
-    pre {{ white-space: pre-wrap; line-height: 1.45; margin: 0; font-size: 14px; color: #d4d8e6; }}
+    .wrap {{ max-width: 980px; margin: 0 auto; padding: 24px 16px; }}
+    pre {{ white-space: pre-wrap; line-height: 1.5; margin: 0; font-size: 14px; color: var(--text-secondary); }}
   </style>
 </head>
 <body>
-  <header>
-    <div><b>Политика конфиденциальности</b></div>
-    <div><a href=\"/\">← назад</a></div>
-  </header>
-  <div class=\"wrap\">
-    <div class=\"card\"><pre>{safe}</pre></div>
+  <nav class=\"navbar\">
+    <div class=\"navbar-brand\" style=\"font-size:1rem;\">Политика конфиденциальности</div>
+    <div><a href=\"/\" class=\"btn btn-secondary btn-sm\">← назад</a></div>
+  </nav>
+  <div class=\"wrap\" style=\"position:relative; z-index:1;\">
+    <div class=\"card\" style=\"padding:20px;\"><pre>{safe}</pre></div>
   </div>
 </body>
 </html>"""
@@ -1885,8 +1892,6 @@ async def api_bootstrap_status():
 async def api_bootstrap_admin(payload: Dict[str, Any]):
     if _any_admin_exists():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="admin_already_exists")
-    if _get_setting("registration_open", "1") != "1":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="registration_closed")
 
     username = (payload.get("username") or "").strip()
     password = payload.get("password") or ""
@@ -1896,18 +1901,28 @@ async def api_bootstrap_admin(payload: Dict[str, Any]):
     conn = _db_connect()
     try:
         cur = conn.cursor()
-        password_hash = _pwd_context.hash(password)
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            cur.execute(
-                "INSERT INTO users(username, password_hash, is_admin, created_at) VALUES(?,?,?,?)",
-                (username, password_hash, 1, now),
-            )
+        # Check if user already exists — if so, promote them to admin
+        cur.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,))
+        existing = cur.fetchone()
+        if existing:
+            if not _pwd_context.verify(password, existing["password_hash"]):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+            cur.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (int(existing["id"]),))
             conn.commit()
-        except sqlite3.IntegrityError as e:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username_taken") from e
+            user_id = int(existing["id"])
+        else:
+            password_hash = _pwd_context.hash(password)
+            now = datetime.now(timezone.utc).isoformat()
+            try:
+                cur.execute(
+                    "INSERT INTO users(username, password_hash, is_admin, created_at) VALUES(?,?,?,?)",
+                    (username, password_hash, 1, now),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError as e:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username_taken") from e
+            user_id = int(cur.lastrowid)
 
-        user_id = int(cur.lastrowid)
         exp = datetime.now(timezone.utc) + timedelta(hours=_JWT_TTL_HOURS)
         token = _jwt_encode({"uid": user_id, "username": username, "is_admin": True, "exp": exp})
         return JSONResponse({"token": token, "username": username, "is_admin": True})
@@ -1948,10 +1963,22 @@ async def api_auth_me(token: str):
         has_agent = _user_has_agent(int(user.get("uid")))
     except Exception:
         has_agent = False
+    # Always read is_admin from DB (token may be stale)
+    is_admin_db = False
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute("SELECT is_admin FROM users WHERE id = ?", (int(user["uid"]),))
+        row = cur.fetchone()
+        if row:
+            is_admin_db = bool(int(row["is_admin"] or 0))
+        conn.close()
+    except Exception:
+        is_admin_db = bool(user.get("is_admin", False))
     return JSONResponse(
         {
             "username": user["username"],
-            "is_admin": bool(user.get("is_admin", False)),
+            "is_admin": is_admin_db,
             "has_agent": bool(has_agent),
         }
     )
@@ -2065,8 +2092,21 @@ async def api_news(limit: int = 20):
 
 def _require_admin(token: str) -> Dict[str, Any]:
     user = _auth_from_token(token)
-    if not bool(user.get("is_admin", False)):
+    # Always verify is_admin from DB (token may be stale)
+    is_admin_db = False
+    try:
+        conn = _db_connect()
+        cur = conn.cursor()
+        cur.execute("SELECT is_admin FROM users WHERE id = ?", (int(user["uid"]),))
+        row = cur.fetchone()
+        if row:
+            is_admin_db = bool(int(row["is_admin"] or 0))
+        conn.close()
+    except Exception:
+        is_admin_db = bool(user.get("is_admin", False))
+    if not is_admin_db:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin_only")
+    user["is_admin"] = True
     return user
 
 

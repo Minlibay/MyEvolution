@@ -11,355 +11,348 @@
   <meta property="og:type" content="website" />
   <meta property="og:image" content="{{SEO_OG_IMAGE}}" />
   <link rel="icon" href="{{FAVICON_URL}}" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
   <style>
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 0; background: #0b1020; color: #e7e9ee; }
-    header { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:12px; }
-    button { background:#243bff; color:#fff; border:0; padding:8px 10px; border-radius:8px; cursor:pointer; }
-    button.secondary { background:#2a2f45; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .layout { display:grid; grid-template-columns: 1fr 420px; gap: 12px; padding: 12px; min-height: calc(100vh - 64px); }
-    .panel { background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow:hidden; }
-    .panel h3 { margin:0; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 14px; color:#cbd2ff; }
-    #canvasWrap { padding: 10px; position: relative; overflow: visible; }
-    canvas { background: #070a14; border-radius: 10px; width: 100%; height: 720px; }
-    #events { height: 720px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
-    .event { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
     .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    input[type=range] { width: 180px; }
-    .kv { display:flex; gap:10px; font-size: 12px; color:#aab0c0; }
-    .kv b { color:#e7e9ee; }
-
-    #agentTooltip {
-      position: absolute;
-      left: 0;
-      top: 0;
-      display: none;
-      pointer-events: none;
-      z-index: 40;
-      background: rgba(17, 22, 42, 0.95);
-      border: 1px solid rgba(255,255,255,0.18);
-      border-radius: 10px;
-      padding: 8px 10px;
-      min-width: 140px;
-      max-width: 260px;
-      font-size: 12px;
-      color: #e7e9ee;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-    }
-    #agentTooltip .title { font-weight: 700; margin-bottom: 6px; color: #cbd2ff; }
-    #agentTooltip .muted { color: #aab0c0; }
-    #agentTooltip .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-
-    #camPad {
-      position: absolute;
-      right: 16px;
-      top: 16px;
-      z-index: 12;
-      display: grid;
-      grid-template-columns: 38px 38px 38px;
-      grid-template-rows: 38px 38px 38px 38px;
-      gap: 6px;
-      pointer-events: auto;
-    }
-    .camBtn {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(17, 22, 42, 0.80);
-      color: #e7e9ee;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      cursor: pointer;
-      user-select: none;
-      font-size: 16px;
-    }
-    .camBtn:active { transform: translateY(1px); }
-    .camBtn:disabled { opacity: 0.45; cursor: not-allowed; }
-
-    #bannerSlot {
-      width: 728px;
-      height: 90px;
-      border-radius: 12px;
-      border: 1px dashed rgba(255,255,255,0.22);
-      background: rgba(255,255,255,0.03);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      color: rgba(231,233,238,0.65);
-      font-size: 12px;
-    }
-    @media (max-width: 1180px) {
-      #bannerSlot { display: none; }
-    }
-
-    #cookieBar {
-      position: fixed;
-      left: 12px;
-      right: 12px;
-      bottom: 12px;
-      z-index: 60;
-      background: rgba(17, 22, 42, 0.98);
-      border: 1px solid rgba(255,255,255,0.18);
-      border-radius: 14px;
-      box-shadow: 0 16px 60px rgba(0,0,0,0.55);
-      padding: 12px 14px;
-      display: none;
-      gap: 12px;
-      align-items: center;
-      justify-content: space-between;
-    }
-    #cookieText {
-      font-size: 12px;
-      color: #c9cedc;
-      line-height: 1.35;
-      max-width: 980px;
-    }
-    #cookieText b { color: #e7e9ee; }
-    #cookieText a { color: #cbd2ff; text-decoration: underline; }
-    #worldPanel {
-      display: flex;
-      flex-direction: column;
-      min-height: calc(100vh - 64px - 24px);
-      overflow: visible;
-    }
-    #chatSection {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 260px;
-    }
-    #chatBox {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 180px;
-    }
-    #chatMessages {
-      flex: 1;
-      min-height: 160px;
-      overflow: auto;
-    }
-    #chatAnnounce {
-      display:none;
-      margin-bottom: 8px;
-      padding: 10px 10px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(17, 22, 42, 0.70);
-      color: #dbe0f3;
-      font-size: 12px;
-      line-height: 1.35;
-    }
-    #chatAnnounce b { color: #cbd2ff; }
+    .kv { display:flex; gap:10px; font-size:12px; color:var(--text-secondary); }
+    .kv b { color:var(--text-primary); }
+    .muted { color:var(--text-muted); }
+    #worldPanel { display:flex; flex-direction:column; overflow:hidden; min-height:0; }
+    #canvasWrap { flex:1; position:relative; overflow:hidden; min-height:0; }
+    #canvasWrap canvas { background:#070a14; display:block; width:100%; height:100%; }
+    #agentTooltip { position:absolute; left:0; top:0; display:none; pointer-events:none; z-index:40; background:rgba(10,14,26,0.95); backdrop-filter:blur(8px); border:1px solid var(--border-default); border-radius:var(--radius-sm); padding:8px 10px; min-width:140px; max-width:260px; font-size:12px; color:var(--text-primary); box-shadow:var(--shadow-md); }
+    #agentTooltip .title { font-weight:700; margin-bottom:6px; color:var(--text-accent); }
+    #agentTooltip .muted { color:var(--text-secondary); }
+    #agentTooltip .mono { font-family:var(--font-mono); }
+    #camPad { position:absolute; right:16px; bottom:16px; z-index:12; display:flex; flex-direction:column; gap:4px; pointer-events:auto; }
+    .camBtn { width:36px; height:36px; border-radius:var(--radius-sm); border:1px solid var(--border-default); background:rgba(10,14,26,0.85); backdrop-filter:blur(8px); color:var(--text-secondary); display:flex; align-items:center; justify-content:center; cursor:pointer; user-select:none; font-size:15px; transition:all var(--transition-fast); padding:0; }
+    .camBtn:hover { background:var(--bg-glass-hover); color:var(--text-primary); border-color:var(--border-hover); }
+    .camBtn:active { transform:translateY(1px); }
+    .camBtn:disabled { opacity:0.4; cursor:not-allowed; }
+    #chatSection { display:flex; flex-direction:column; flex:1; min-height:0; }
+    #chatBox { display:flex; flex-direction:column; flex:1; min-height:0; }
+    #chatMessages { flex:1; min-height:0; overflow-y:auto; padding:8px; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); background:rgba(0,0,0,0.18); }
+    #chatAnnounce { display:none; margin-bottom:8px; padding:8px 10px; border-radius:var(--radius-sm); border:1px solid rgba(251,191,36,0.15); background:var(--warning-bg); color:var(--warning); font-size:12px; line-height:1.35; }
+    #chatAnnounce b { color:var(--warning); }
+    #events { flex:1; min-height:0; overflow-y:auto; font-family:var(--font-mono); font-size:12px; }
+    .event { padding:6px 10px; border-bottom:1px solid var(--border-subtle); color:var(--text-secondary); }
+    #bannerSlot { display:flex; align-items:center; justify-content:center; padding:6px 0; background:rgba(0,0,0,0.15); border-bottom:1px solid var(--border-subtle); }
+    #bannerSlot:empty { display:none; }
+    #bannerContainer { width:728px; height:90px; border-radius:var(--radius-sm); border:1px dashed rgba(255,255,255,0.10); display:flex; align-items:center; justify-content:center; overflow:hidden; color:var(--text-muted); font-size:12px; flex-shrink:0; }
+    @media(max-width:780px){ #bannerSlot{display:none;} }
+    #cookieBar { position:fixed; left:0; right:0; bottom:0; z-index:60; padding:12px 20px; display:none; gap:16px; align-items:center; justify-content:space-between; }
+    #cookieText { font-size:12px; color:var(--text-secondary); line-height:1.35; max-width:980px; }
+    #cookieText b { color:var(--text-primary); }
+    #cookieText a { color:var(--text-accent); text-decoration:underline; }
+    button { font-family:inherit; }
+    .panel-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border-subtle); }
+    .panel-head h3 { margin:0; font-size:0.85rem; font-weight:600; color:var(--text-accent); }
   </style>
 </head>
 <body>
-<header>
-  <div class="row">
-    <div class="kv" id="status"></div>
-  </div>
+<div class="app-layout">
 
-  <div style="flex:1"></div>
-  <div id="bannerSlot">
-    <div id="bannerContainer">{{BANNER_HTML}}</div>
-  </div>
-</header>
-
-<div class="layout">
-  <div class="panel" id="worldPanel">
-    <h3>Мир (агенты/объекты)</h3>
-    <div id="worldControls" class="row" style="padding:10px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); display:none;">
-      <button id="btnCreateAgent" class="secondary">Создать агента</button>
-      <div id="createAgentState" style="font-size:12px; color:#aab0c0;"></div>
+  <!-- ===== NAVBAR ===== -->
+  <nav class="navbar" style="flex-shrink:0;">
+    <div class="navbar-brand">
+      <svg width="28" height="28" viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="46" stroke="#818cf8" stroke-width="6"/><circle cx="35" cy="40" r="8" fill="#818cf8"/><circle cx="65" cy="40" r="8" fill="#6366f1"/><path d="M30 65 Q50 82 70 65" stroke="#818cf8" stroke-width="5" fill="none" stroke-linecap="round"/></svg>
+      <span>{{PROJECT_NAME}}</span>
     </div>
-    <div id="canvasWrap">
-      <canvas id="cv" width="1000" height="720"></canvas>
-      <div id="agentTooltip"></div>
-      <div id="camPad">
-        <button id="camZoomIn" class="camBtn" title="приблизить" type="button">+</button>
-        <div></div>
-        <button id="camZoomOut" class="camBtn" title="отдалить" type="button">−</button>
-
-        <div></div>
-        <button id="camUp" class="camBtn" title="вверх" type="button">↑</button>
-        <div></div>
-
-        <button id="camLeft" class="camBtn" title="влево" type="button">←</button>
-        <button id="camDown" class="camBtn" title="вниз" type="button">↓</button>
-        <button id="camRight" class="camBtn" title="вправо" type="button">→</button>
-
-        <button id="camReset" class="camBtn" title="сброс (R)" type="button">R</button>
-        <div></div>
-        <div></div>
+    <div class="navbar-right">
+      <div class="navbar-status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="onlineCount">0</span> онлайн
       </div>
     </div>
-    <h3>Чат</h3>
-    <div id="chatSection" style="padding:10px 12px; border-top: 1px solid rgba(255,255,255,0.08);">
-      <div id="chatAuth" class="row" style="gap:10px; align-items:flex-end;">
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <div style="font-size:12px; color:#aab0c0;">Логин</div>
-          <input id="authUser" type="text" placeholder="username" style="width:140px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <div style="font-size:12px; color:#aab0c0;">Пароль</div>
-          <input id="authPass" type="password" placeholder="password" style="width:140px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
-        </div>
-        <button id="btnLogin">Войти</button>
-        <button id="btnRegister" class="secondary">Регистрация</button>
-        <button id="btnLogout" class="secondary" style="display:none;">Выйти</button>
-        <div id="authState" style="font-size:12px; color:#aab0c0;"></div>
-      </div>
+  </nav>
 
-      <div id="accountBar" class="row" style="display:none; gap:10px; align-items:center; margin-top:10px;">
-        <div id="accountText" style="font-size:12px; color:#aab0c0;"></div>
-        <a id="adminLink" href="/adminkins" style="display:none; font-size:12px; color:#cbd2ff;">админка</a>
-        <button id="btnLogout2" class="secondary">Выйти</button>
-      </div>
+  <!-- ===== BANNER ===== -->
+  <div id="bannerSlot" style="flex-shrink:0;"><div id="bannerContainer">{{BANNER_HTML}}</div></div>
 
-      <div id="chatBox" style="margin-top:10px; display:none;">
-        <div id="chatAnnounce"><b>Анонс:</b> <span id="chatAnnounceText"></span></div>
-        <div id="chatMessages" style="border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:8px; background:rgba(0,0,0,0.18);"></div>
-        <div class="row" style="margin-top:8px;">
-          <input id="chatInput" type="text" placeholder="сообщение..." style="flex:1; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
-          <button id="btnSend" disabled>Отправить</button>
+  <!-- ===== MAIN CONTENT ===== -->
+  <div class="main-content">
+
+    <!-- Simulation Panel -->
+    <div class="sim-panel" id="worldPanel">
+      <div class="sim-info-bar" id="simInfoBar">
+        <div class="info-item">Тик: <span class="info-value" id="infoTick">0</span></div>
+        <div class="info-item">День: <span class="info-value" id="infoDay">0</span></div>
+        <div class="info-item">Время: <span class="info-value" id="infoTime">00:00</span></div>
+        <div class="info-item">Сезон: <span class="info-value" id="infoSeason">—</span></div>
+        <div class="info-item">Агенты: <span class="info-value" id="infoAgents">0</span></div>
+        <div class="info-item">Run: <span class="info-value" id="infoRun">#1</span></div>
+        <div id="worldControls" style="display:none; margin-left:auto;">
+          <button id="btnCreateAgent" class="btn btn-primary btn-sm">+ Создать агента</button>
+          <span id="createAgentState" class="text-sm text-muted" style="margin-left:6px;"></span>
+        </div>
+      </div>
+      <div class="kv" id="status" style="padding:4px 16px; background:rgba(0,0,0,0.25); border-bottom:1px solid var(--border-subtle); flex-wrap:wrap;"></div>
+
+      <div id="canvasWrap">
+        <canvas id="cv" width="1000" height="720"></canvas>
+        <div id="agentTooltip"></div>
+        <div id="camPad">
+          <button id="camZoomIn" class="camBtn" title="приблизить" type="button">+</button>
+          <button id="camUp" class="camBtn" title="вверх" type="button">↑</button>
+          <button id="camZoomOut" class="camBtn" title="отдалить" type="button">−</button>
+          <button id="camLeft" class="camBtn" title="влево" type="button">←</button>
+          <button id="camReset" class="camBtn" title="сброс (R)" type="button">R</button>
+          <button id="camRight" class="camBtn" title="вправо" type="button">→</button>
+          <button id="camDown" class="camBtn" title="вниз" type="button">↓</button>
         </div>
       </div>
     </div>
-  </div>
-  <div class="panel">
-    <h3>История</h3>
-    <div id="history" style="max-height:220px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;"></div>
-    <h3>События (хвост)</h3>
-    <div id="events"></div>
-    <h3>Новости</h3>
-    <div style="padding:10px 12px; border-top: 1px solid rgba(255,255,255,0.08);">
-      <div id="newsAdmin" style="display:none; margin-bottom:10px;">
-        <div style="font-size:12px; color:#aab0c0; margin-bottom:6px;">Админка: добавить новость</div>
-        <input id="newsTitle" type="text" placeholder="заголовок" style="width:100%; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
-        <textarea id="newsText" placeholder="текст" style="width:100%; margin-top:6px; height:80px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;"></textarea>
-        <div class="row" style="margin-top:6px;">
-          <button id="btnPostNews">Опубликовать</button>
-          <div id="newsAdminState" style="font-size:12px; color:#aab0c0;"></div>
+
+    <!-- ===== SIDEBAR ===== -->
+    <div class="sidebar">
+      <div class="sidebar-tabs">
+        <div class="sidebar-tab active" data-tab="tab-chat">Чат</div>
+        <div class="sidebar-tab" data-tab="tab-events">События</div>
+        <div class="sidebar-tab" data-tab="tab-news">Новости</div>
+        <div class="sidebar-tab" data-tab="tab-agent">Агент</div>
+        <div class="sidebar-tab" data-tab="tab-history">История</div>
+      </div>
+
+      <!-- TAB: Chat -->
+      <div class="sidebar-panel active" id="tab-chat">
+        <div id="chatSection">
+          <div id="chatAuth" class="auth-section">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Логин</label>
+                <input id="authUser" type="text" placeholder="username" />
+              </div>
+              <div class="form-group">
+                <label>Пароль</label>
+                <input id="authPass" type="password" placeholder="password" />
+              </div>
+            </div>
+            <div class="row" style="gap:6px;">
+              <button id="btnLogin" class="btn btn-primary btn-sm">Войти</button>
+              <button id="btnRegister" class="btn btn-secondary btn-sm">Регистрация</button>
+              <button id="btnLogout" class="btn btn-secondary btn-sm" style="display:none;">Выйти</button>
+              <span id="authState" class="text-sm text-muted"></span>
+            </div>
+          </div>
+
+          <div id="accountBar" style="display:none;" class="auth-logged-in">
+            <div class="auth-user-info">
+              <div class="auth-avatar" id="accountAvatar">?</div>
+              <div>
+                <div id="accountText" class="text-sm" style="font-weight:600;"></div>
+                <a id="adminLink" href="/adminkins" style="display:none;" class="text-xs text-accent">Панель управления</a>
+              </div>
+            </div>
+            <button id="btnLogout2" class="btn btn-secondary btn-xs">Выйти</button>
+          </div>
+
+          <div id="chatBox" style="display:none;">
+            <div id="chatAnnounce"><b>Анонс:</b> <span id="chatAnnounceText"></span></div>
+            <div id="chatMessages"></div>
+            <div class="chat-input-row" style="margin-top:8px;">
+              <input id="chatInput" type="text" placeholder="Написать сообщение..." />
+              <button id="btnSend" class="btn btn-primary btn-sm" disabled>Отправить</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div id="newsList"></div>
-    </div>
-    <div class="panel">
-      <h3>Твой агент</h3>
-      <div id="myAgent" style="padding:10px 12px; min-height:160px;">
-        <div id="myAgentState" class="muted">Войдите и создайте агента, чтобы следить за ним.</div>
-        <div id="myAgentBody" style="display:none;">
-          <div style="font-weight:700; margin-bottom:6px;" id="myAgentName"></div>
-          <div class="muted" id="myAgentOwner" style="margin-bottom:6px;"></div>
-          <div style="font-size:12px; color:#aab0c0;">Статус</div>
-          <div id="myAgentStatus" style="margin-bottom:8px; font-size:13px;"></div>
-          <div class="muted" style="font-size:12px;">Нужды</div>
-          <div id="myAgentNeeds" style="font-size:13px; margin-bottom:8px;"></div>
-          <div class="muted" style="font-size:12px;">Возраст / здоровье / энергия</div>
-          <div id="myAgentVitals" style="font-size:13px;"></div>
+
+      <!-- TAB: Events -->
+      <div class="sidebar-panel" id="tab-events">
+        <div class="panel-head">
+          <h3>События</h3>
         </div>
+        <div id="events"></div>
+      </div>
+
+      <!-- TAB: News -->
+      <div class="sidebar-panel" id="tab-news">
+        <div id="newsAdmin" style="display:none; margin-bottom:12px;">
+          <div class="card">
+            <div class="card-title" style="margin-bottom:8px;">Добавить новость</div>
+            <div class="form-group" style="margin-bottom:6px;">
+              <input id="newsTitle" type="text" placeholder="Заголовок" />
+            </div>
+            <div class="form-group" style="margin-bottom:6px;">
+              <textarea id="newsText" placeholder="Текст новости" rows="3"></textarea>
+            </div>
+            <div class="row">
+              <button id="btnPostNews" class="btn btn-primary btn-sm">Опубликовать</button>
+              <span id="newsAdminState" class="text-sm text-muted"></span>
+            </div>
+          </div>
+        </div>
+        <div id="newsList"></div>
+      </div>
+
+      <!-- TAB: My Agent -->
+      <div class="sidebar-panel" id="tab-agent">
+        <div id="myAgent">
+          <div id="myAgentState" class="text-sm text-muted" style="padding:20px 0; text-align:center;">Войдите и создайте агента, чтобы следить за ним.</div>
+          <div id="myAgentBody" style="display:none;">
+            <div class="card">
+              <div style="font-weight:700; margin-bottom:6px; font-size:1rem;" id="myAgentName"></div>
+              <div class="text-xs text-muted" id="myAgentOwner" style="margin-bottom:10px;"></div>
+              <div class="divider"></div>
+              <div class="text-xs text-muted" style="margin-top:8px;">Статус</div>
+              <div id="myAgentStatus" style="margin-bottom:8px; font-size:13px;"></div>
+              <div class="text-xs text-muted">Нужды</div>
+              <div id="myAgentNeeds" style="font-size:13px; margin-bottom:8px;"></div>
+              <div class="text-xs text-muted">Возраст / здоровье / энергия</div>
+              <div id="myAgentVitals" style="font-size:13px;"></div>
+              <div id="myAgentExtra"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: History -->
+      <div class="sidebar-panel" id="tab-history">
+        <div class="panel-head">
+          <h3>История запусков</h3>
+        </div>
+        <div id="history" style="font-family:var(--font-mono); font-size:12px; flex:1; min-height:0; overflow-y:auto;"></div>
       </div>
     </div>
   </div>
 </div>
 
-<div id="agentModal" style="display:none; position:fixed; inset:0; background: rgba(0,0,0,0.55); z-index: 50; align-items:center; justify-content:center;">
-  <div style="width:min(520px, calc(100vw - 24px)); background: rgba(17, 22, 42, 0.98); border:1px solid rgba(255,255,255,0.18); border-radius: 14px; box-shadow: 0 16px 60px rgba(0,0,0,0.55); overflow:hidden;">
-    <div class="row" style="justify-content:space-between; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.10);">
+<!-- ===== AGENT CREATION MODAL ===== -->
+<div id="agentModal" class="modal-overlay">
+  <div class="modal">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
       <div>
-        <b>Создать агента</b>
-        <div style="font-size:12px; color:#aab0c0; margin-top:4px;">Агент появится в мире и будет участвовать в эксперименте</div>
+        <div class="modal-title">Создать агента</div>
+        <div class="text-sm text-muted">Агент появится в мире и будет участвовать в эксперименте</div>
       </div>
-      <button id="btnCloseAgentModal" class="secondary">Закрыть</button>
+      <button id="btnCloseAgentModal" class="btn btn-secondary btn-sm">Закрыть</button>
     </div>
-    <div style="padding: 14px;">
-      <div style="font-size:12px; color:#aab0c0; margin-bottom:6px;">Имя</div>
-      <input id="agentName" type="text" placeholder="например: Кин" style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
 
-      <div style="font-size:12px; color:#aab0c0; margin-top:12px; margin-bottom:6px;">Пол</div>
-      <div class="row">
-        <label class="row" style="gap:8px; font-size:12px; color:#aab0c0;"><input type="radio" name="agentSex" value="male" checked /> мужской</label>
-        <label class="row" style="gap:8px; font-size:12px; color:#aab0c0;"><input type="radio" name="agentSex" value="female" /> женский</label>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Имя</label>
+      <input id="agentName" type="text" placeholder="например: Кин" />
+    </div>
+
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Пол</label>
+      <div class="radio-group">
+        <label class="radio-label"><input type="radio" name="agentSex" value="male" checked /> мужской</label>
+        <label class="radio-label"><input type="radio" name="agentSex" value="female" /> женский</label>
       </div>
+    </div>
 
-      <div style="font-size:12px; color:#aab0c0; margin-top:12px; margin-bottom:6px;">Характеристики (5 очков)</div>
-      <div class="row" style="gap:10px; flex-wrap:wrap; align-items:flex-end;">
-        <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
-          <div style="font-size:12px; color:#aab0c0;">Сила</div>
-          <input id="agentStatsStrength" type="number" min="0" max="3" value="0" style="width:120px; padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Характеристики (5 очков)</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px;">
+        <div class="form-group">
+          <label class="text-xs">Сила</label>
+          <input id="agentStatsStrength" type="number" min="0" max="3" value="0" />
         </div>
-        <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
-          <div style="font-size:12px; color:#aab0c0;">Интеллект</div>
-          <input id="agentStatsIntelligence" type="number" min="0" max="3" value="0" style="width:120px; padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        <div class="form-group">
+          <label class="text-xs">Интеллект</label>
+          <input id="agentStatsIntelligence" type="number" min="0" max="3" value="0" />
         </div>
-        <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
-          <div style="font-size:12px; color:#aab0c0;">Социальность</div>
-          <input id="agentStatsSocial" type="number" min="0" max="3" value="0" style="width:120px; padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
+        <div class="form-group">
+          <label class="text-xs">Социальность</label>
+          <input id="agentStatsSocial" type="number" min="0" max="3" value="0" />
         </div>
-        <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
-          <div style="font-size:12px; color:#aab0c0;">Выносливость</div>
-          <input id="agentStatsEndurance" type="number" min="0" max="3" value="0" style="width:120px; padding:8px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:#0b1020; color:#e7e9ee;" />
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between;">
-        <div id="agentStatsLeft" style="font-size:12px; color:#aab0c0;"></div>
-        <div class="row" style="gap:8px; flex-wrap:wrap;">
-          <button id="btnPresetInventor" class="secondary">Изобретатель</button>
-          <button id="btnPresetSurvivor" class="secondary">Выживальщик</button>
-          <button id="btnPresetLeader" class="secondary">Вождь</button>
+        <div class="form-group">
+          <label class="text-xs">Выносливость</label>
+          <input id="agentStatsEndurance" type="number" min="0" max="3" value="0" />
         </div>
       </div>
+    </div>
 
-      <div class="row" style="margin-top:14px; justify-content:space-between;">
-        <div id="agentModalState" style="font-size:12px; color:#aab0c0;"></div>
-        <div class="row">
-          <button id="btnSubmitAgent">Создать</button>
-        </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <div id="agentStatsLeft" class="text-sm text-muted"></div>
+      <div class="preset-group">
+        <button id="btnPresetInventor" class="preset-btn">Изобретатель</button>
+        <button id="btnPresetSurvivor" class="preset-btn">Выживальщик</button>
+        <button id="btnPresetLeader" class="preset-btn">Вождь</button>
       </div>
+    </div>
+
+    <div class="modal-actions">
+      <span id="agentModalState" class="text-sm text-muted"></span>
+      <button id="btnSubmitAgent" class="btn btn-primary">Создать</button>
     </div>
   </div>
 </div>
 
-<div id="welcomeModal" style="display:none; position:fixed; inset:0; background: rgba(0,0,0,0.55); z-index: 55; align-items:center; justify-content:center;">
-  <div style="width:min(640px, calc(100vw - 24px)); background: rgba(17, 22, 42, 0.98); border:1px solid rgba(255,255,255,0.18); border-radius: 14px; box-shadow: 0 16px 60px rgba(0,0,0,0.55); overflow:hidden;">
-    <div class="row" style="justify-content:space-between; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.10);">
-      <div>
-        <b>О проекте</b>
-        <div style="font-size:12px; color:#aab0c0; margin-top:4px;">Коротко: это интерактивная симуляция эволюции поведения агентов и появления инструментов</div>
-      </div>
-      <button id="btnCloseWelcome" class="secondary">Закрыть</button>
-    </div>
-    <div style="padding: 14px; font-size: 13px; color: #d4d8e6; line-height: 1.4;">
-      <div style="margin-bottom:10px;">
+<!-- ===== WELCOME MODAL ===== -->
+<div id="welcomeModal" class="modal-overlay">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-title">О проекте</div>
+    <div class="text-sm text-muted" style="margin-bottom:12px;">Коротко: это интерактивная симуляция эволюции поведения агентов и появления инструментов</div>
+    <div style="font-size:13px; color:var(--text-secondary); line-height:1.5;">
+      <p style="margin-bottom:10px;">
         Здесь можно наблюдать за жизнью агентов в 2D-мире: они перемещаются, собирают ресурсы, общаются, пытаются выжить, а также могут открывать и использовать инструменты.
-      </div>
-      <div style="margin-bottom:10px;">
-        Если ты зарегистрируешься и войдёшь, ты сможешь <b>создать собственного агента</b> — он появится в мире, и ты сможешь следить за его состоянием, действиями и судьбой.
-      </div>
-      <div class="row" style="justify-content:flex-end; gap:10px;">
-        <button id="btnWelcomeOk">Понятно</button>
-      </div>
+      </p>
+      <p style="margin-bottom:10px;">
+        Если ты зарегистрируешься и войдёшь, ты сможешь <b style="color:var(--text-primary);">создать собственного агента</b> — он появится в мире, и ты сможешь следить за его состоянием, действиями и судьбой.
+      </p>
+    </div>
+    <div class="modal-actions">
+      <button id="btnCloseWelcome" class="btn btn-secondary btn-sm" style="display:none;">_</button>
+      <button id="btnWelcomeOk" class="btn btn-primary">Понятно</button>
     </div>
   </div>
 </div>
 
-<div id="cookieBar" class="row">
+<!-- ===== COOKIE BAR ===== -->
+<div id="cookieBar" class="cookie-bar">
   <div id="cookieText">
     <b>Файлы cookie</b>. Мы используем cookie и похожие технологии для обеспечения работы сайта, безопасности, авторизации/сессии, сохранения настроек интерфейса и аналитики.
     Cookie могут содержать технические идентификаторы и информацию о действиях на сайте. Нажимая «Принять» и продолжая пользоваться сайтом, ты даёшь согласие на обработку таких данных и установку cookie.
     Согласие можно отозвать, удалив cookie в браузере и/или запретив их в настройках браузера (при этом часть функций может работать некорректно).
     Если используются сторонние сервисы (например, сети баннеров/аналитики), они могут устанавливать свои cookie согласно своим политикам. Подробнее: <a href="/privacy" target="_blank" rel="noopener noreferrer">Политика cookie/конфиденциальности</a>.
   </div>
-  <div class="row" style="gap:8px; flex-wrap:nowrap;">
-    <button id="btnCookieAccept">Принять</button>
+  <div style="flex-shrink:0;">
+    <button id="btnCookieAccept" class="btn btn-primary btn-sm">Принять</button>
   </div>
 </div>
 
 <script>
+  // --- Sidebar tab switching ---
+  document.querySelectorAll('.sidebar-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      const target = document.getElementById(tab.dataset.tab);
+      if (target) target.classList.add('active');
+    });
+  });
+
+  // --- Info bar elements ---
+  const infoTick = document.getElementById('infoTick');
+  const infoDay = document.getElementById('infoDay');
+  const infoTime = document.getElementById('infoTime');
+  const infoSeason = document.getElementById('infoSeason');
+  const infoAgents = document.getElementById('infoAgents');
+  const infoRun = document.getElementById('infoRun');
+  const onlineCountEl = document.getElementById('onlineCount');
+  const statusDot = document.getElementById('statusDot');
+  const accountAvatar = document.getElementById('accountAvatar');
+
+  const seasonNames = ['Весна', 'Лето', 'Осень', 'Зима'];
+
+  function updateInfoBar(snap) {
+    if (!snap || !snap.world) return;
+    try {
+      if (infoTick) infoTick.textContent = snap.timestep || 0;
+      if (infoDay) infoDay.textContent = snap.world.day || 0;
+      if (infoTime) infoTime.textContent = String(snap.world.hour || 0).padStart(2,'0') + ':' + String(snap.world.minute || 0).padStart(2,'0');
+      if (infoSeason) infoSeason.textContent = seasonNames[snap.world.season] || '—';
+      if (infoAgents) infoAgents.textContent = (snap.agents || []).length;
+      if (infoRun) infoRun.textContent = '#' + (snap.run_number || snap.run_info?.number || 1);
+      if (onlineCountEl && snap.online) onlineCountEl.textContent = snap.online.viewers || 0;
+    } catch(e) {}
+  }
+
   const status = document.getElementById('status');
 
   const cv = document.getElementById('cv');
@@ -583,12 +576,12 @@
       if (localStorage.getItem(k) === '1') return;
       localStorage.setItem(k, '1');
       if (!welcomeModal) return;
-      welcomeModal.style.display = 'flex';
+      welcomeModal.classList.add('open');
     } catch (e) {}
   }
 
   function hideWelcome() {
-    try { if (welcomeModal) welcomeModal.style.display = 'none'; } catch (e) {}
+    try { if (welcomeModal) welcomeModal.classList.remove('open'); } catch (e) {}
   }
 
   if (btnCloseWelcome) btnCloseWelcome.addEventListener('click', hideWelcome);
@@ -719,8 +712,13 @@
         }
       }
       const rru = reasonRu[h.reason] || h.reason || 'завершён';
-      const dur = h.duration_sec_wall ? ` · длительность ${h.duration_sec_wall.toFixed(1)}s` : '';
-      div.textContent = `run #${h.run}: ${rru}; t=${h.ended_at_timestep} день=${h.ended_at_day} время=${h.ended_at_time}${dur}${extra}`;
+      const dur = h.duration_sec_wall ? ` · ${h.duration_sec_wall.toFixed(1)}s` : '';
+      const ts = h.ended_at_timestep ? `t=${h.ended_at_timestep}` : '';
+      const dy = h.ended_at_day ? `день ${h.ended_at_day}` : '';
+      const tm = h.ended_at_time ? h.ended_at_time : '';
+      const when = [ts, dy, tm].filter(Boolean).join(' ');
+      const whenStr = when ? `; ${when}` : '';
+      div.textContent = `run #${h.run}: ${rru}${whenStr}${dur}${extra}`;
       el.appendChild(div);
     }
   }
@@ -913,17 +911,58 @@
       ? `<div class="muted">статус: <span class="mono">плавает</span> (${escapeHtml(agent.water_ticks ?? 0)})</div>`
       : '';
 
+    // Personality & mood
+    const personalityLine = agent.personality_ru
+      ? `<div class="muted">характер: <b>${escapeHtml(agent.personality_ru)}</b></div>`
+      : '';
+
+    const emotionRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
+    const domEmo = agent.dominant_emotion ? (emotionRu[agent.dominant_emotion] || agent.dominant_emotion) : null;
+    const moodLine = agent.mood
+      ? `<div class="muted">настроение: <b>${escapeHtml(agent.mood)}</b>${domEmo ? ' (' + escapeHtml(domEmo) + ')' : ''}</div>`
+      : '';
+
+    const thoughtLine = agent.thought
+      ? `<div style="color:var(--accent);font-style:italic;margin:4px 0;">💭 ${escapeHtml(agent.thought)}</div>`
+      : '';
+
+    // Social
+    let socialLine = '';
+    if (agent.social) {
+      const friends = (agent.social.friends || []).slice(0, 3);
+      const fam = (agent.social.family || []).length;
+      if (friends.length || fam) {
+        const parts = [];
+        if (fam) parts.push(`семья: ${fam}`);
+        for (const f of friends) {
+          const name = findAgentName(f.id);
+          parts.push(`${escapeHtml(name)}: ${f.trust > 0.5 ? '❤' : '👍'}`);
+        }
+        socialLine = `<div class="muted">связи: ${parts.join(', ')}</div>`;
+      }
+    }
+
     agentTooltip.innerHTML = `
       <div class="title">${title}</div>
       ${ownerLine}
+      ${personalityLine}
+      ${moodLine}
+      ${thoughtLine}
       ${swimLine}
+      ${socialLine}
       <div class="muted">Инвентарь:</div>
       <div class="mono">${invLine}</div>
-      <div style="height:6px"></div>
+      <div style="height:4px"></div>
       <div class="muted">Инструменты:</div>
       <div class="mono">${toolLine}</div>
     `;
     agentTooltip.style.display = 'block';
+  }
+
+  function findAgentName(id) {
+    if (!lastAgents) return id || '?';
+    const a = lastAgents.find(x => x.id === id);
+    return a ? (a.name || a.id) : (id || '?');
   }
 
   function renderObjectTooltip(obj) {
@@ -1091,9 +1130,13 @@
         ctx.restore();
       }
 
-      // Speech bubble (placeholder: last action)
+      // Speech bubble: name + status/speech/thought
       const who = a.name || a.id;
       let bubbleText = `${who}`;
+      let bubbleBg = '#11162a';
+      let bubbleBorder = 'rgba(255,255,255,0.25)';
+      let bubbleColor = '#e7e9ee';
+
       if (a.is_child) {
         bubbleText = `${who} (ребёнок)`;
       }
@@ -1103,11 +1146,29 @@
       }
       if (a.speech) {
         bubbleText = `${who}: ${a.speech}`;
+        bubbleBg = '#1a1540';
+        bubbleBorder = 'rgba(129,140,248,0.4)';
+      } else if (a.thought) {
+        bubbleText = `${who}: ${a.thought}`;
+        bubbleBg = '#0f1a2e';
+        bubbleBorder = 'rgba(99,102,241,0.3)';
+        bubbleColor = '#a5b4fc';
       } else if (a.is_swimming) {
         bubbleText = `${who}: плавает`;
       } else if (a.last_action) {
         bubbleText = `${who}: ${actionToRu(a.last_action)}`;
       }
+
+      // Mood emoji prefix
+      if (a.mood_score !== null && a.mood_score !== undefined) {
+        let moodIcon = '';
+        if (a.mood_score > 0.3) moodIcon = '😊';
+        else if (a.mood_score > 0) moodIcon = '🙂';
+        else if (a.mood_score > -0.3) moodIcon = '😐';
+        else moodIcon = '😟';
+        bubbleText = moodIcon + ' ' + bubbleText;
+      }
+
       ctx.save();
       ctx.font = '12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const padX = 6;
@@ -1118,15 +1179,15 @@
       const bx = px - bw / 2;
       const by = py - 58;
       ctx.globalAlpha = 0.85;
-      ctx.fillStyle = '#11162a';
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillStyle = bubbleBg;
+      ctx.strokeStyle = bubbleBorder;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.roundRect(bx, by, bw, bh, 8);
       ctx.fill();
       ctx.stroke();
       ctx.globalAlpha = 1.0;
-      ctx.fillStyle = '#e7e9ee';
+      ctx.fillStyle = bubbleColor;
       ctx.fillText(bubbleText, bx + padX, by + 13);
       ctx.restore();
     }
@@ -1170,21 +1231,6 @@
     const pct = (x) => (x === undefined || x === null) ? '—' : `${(x * 100).toFixed(0)}%`;
     const num = (x) => (x === undefined || x === null) ? '—' : `${x}`;
 
-    const viewers = (snapshot.online && snapshot.online.viewers !== undefined && snapshot.online.viewers !== null)
-      ? snapshot.online.viewers
-      : '—';
-
-    const day = snapshot.world.day ?? 0;
-    const hh = String(snapshot.world.hour ?? 0).padStart(2, '0');
-    const mm = String(snapshot.world.minute ?? 0).padStart(2, '0');
-    const isDay = snapshot.world.is_daytime ?? true;
-    const dayNight = isDay ? 'день' : 'ночь';
-    const runNo = (snapshot.run_number !== undefined && snapshot.run_number !== null)
-      ? snapshot.run_number
-      : ((snapshot.run_info && snapshot.run_info.number !== undefined && snapshot.run_info.number !== null)
-        ? snapshot.run_info.number
-        : 1);
-
     const prog = snapshot.progress || {};
     const needsLoad = (prog.needs_load_avg === undefined || prog.needs_load_avg === null) ? '—' : prog.needs_load_avg.toFixed(2);
     const critical = (prog.critical_share === undefined || prog.critical_share === null) ? '—' : `${(prog.critical_share * 100).toFixed(0)}%`;
@@ -1213,25 +1259,18 @@
     const kindLine = kindParts.length ? kindParts.join(', ') : '—';
 
     status.innerHTML = `
-      <span title="Сколько людей сейчас открыли страницу и подключены по WebSocket"><b>онлайн</b>: ${viewers}</span>
-      <span title="Номер текущего прогона симуляции (auto-restart при вымирании)"><b>симуляция</b>: №${runNo}</span>
-      <span title="Текущий шаг симуляции (timestep)"><b>t</b>: ${snapshot.timestep}</span>
-      <span title="Номер дня в симуляции (счётчик суток)"><b>день</b>: ${day}</span>
-      <span title="Внутрисуточное время + день/ночь (влияет на сонливость и поведение)"><b>время</b>: ${hh}:${mm} (${dayNight})</span>
-      <span title="Количество живых агентов сейчас"><b>agents</b>: ${snapshot.agents.length}</span>
-      <span title="Сезон (0-3: весна/лето/осень/зима)"><b>season</b>: ${snapshot.world.season}</span>
-      <span title="Температура среды (°C)"><b>T</b>: ${snapshot.world.temperature.toFixed(1)}</span>
-      <span title="Средняя нагрузка нужд по живым: (голод+жажда+сонливость)/3, диапазон 0..1"><b>нужды</b>: ${needsLoad}</span>
-      <span title="Доля живых агентов в критическом состоянии: max(голод,жажда,сонливость) ≥ 0.85"><b>критич</b>: ${critical}</span>
-      <span title="Возраст живых агентов: средний/максимальный (в шагах симуляции)"><b>возраст</b>: ${avgAge}/${maxAge}</span>
-      <span title="Успешные крафты (combine, success=true) за последние 200 событий"><b>крафт(ok/200)</b>: ${combOk}</span>
-      <span title="Сколько инструментов существует в мире сейчас (в Environment.tools)"><b>инструм</b>: ${totalTools}</span>
-      <span title="Распределение инструментов по 'kind' (именованные рецепты и unknown)"><b>типы</b>: ${kindLine}</span>
-      <span title="Смерти по причинам за последние 200 событий"><b>смерти(200)</b>: ${deathLine}</span>
-      <span title="Размер словаря: количество устойчивых токенов (по весу в лексиконе)"><b>язык: словарь</b>: ${num(lang.lexicon_size)}</span>
-      <span title="Стабильность: насколько доминирует лучший токен для каждого смысла (0..100%)"><b>стабильность</b>: ${pct(lang.stability)}</span>
-      <span title="Сходимость: насколько агенты используют похожие соответствия смысл→токен (0..100%)"><b>сходимость</b>: ${pct(lang.convergence)}</span>
-      <span title="Успешность коммуникации за последние 200 событий: доля успехов и количество попыток"><b>успех (200)</b>: ${pct(lang.comm_success_rate_recent)} (${num(lang.comm_count_recent)})</span>
+      <span title="Температура среды (°C)"><b>T</b>: ${snapshot.world.temperature.toFixed(1)}°C</span>
+      <span title="Средняя нагрузка нужд по живым: (голод+жажда+сонливость)/3"><b>нужды</b>: ${needsLoad}</span>
+      <span title="Доля живых в критическом состоянии"><b>критич</b>: ${critical}</span>
+      <span title="Возраст: средний/максимальный"><b>возраст</b>: ${avgAge}/${maxAge}</span>
+      <span title="Успешные крафты за последние 200 событий"><b>крафт</b>: ${combOk}</span>
+      <span title="Инструментов в мире"><b>инструм</b>: ${totalTools}</span>
+      <span title="Типы инструментов"><b>типы</b>: ${kindLine}</span>
+      <span title="Смерти за последние 200 событий"><b>смерти</b>: ${deathLine}</span>
+      <span title="Размер словаря"><b>словарь</b>: ${num(lang.lexicon_size)}</span>
+      <span title="Стабильность лексикона"><b>стаб</b>: ${pct(lang.stability)}</span>
+      <span title="Сходимость языка"><b>сходим</b>: ${pct(lang.convergence)}</span>
+      <span title="Успешность коммуникации"><b>комм</b>: ${pct(lang.comm_success_rate_recent)} (${num(lang.comm_count_recent)})</span>
     `;
   }
 
@@ -1318,6 +1357,7 @@
     renderHistory(snapshot);
     renderEvents(snapshot);
     renderMyAgent(snapshot);
+    updateInfoBar(snapshot);
 
     if (!renderLoopStarted) {
       renderLoopStarted = true;
@@ -1443,8 +1483,38 @@
     const needs = `голод ${fmtPct01(agent.hunger)} · жажда ${fmtPct01(agent.thirst)} · сонливость ${fmtPct01(agent.sleepiness)}`;
     myAgentNeeds.textContent = needs;
 
-    const vitals = `здоровье ${fmtPct01(agent.health)} · энергия ${fmtPct01(agent.energy)} · возраст ${agent.age}/${agent.max_age}`;
+    const vitals = `здоровье ${fmtPct01(agent.health)} · энергия ${fmtPct01(agent.energy)} · возраст ${agent.age}`;
     myAgentVitals.textContent = vitals;
+
+    // Personality, mood, thought, social (dynamic section)
+    let extraHtml = '';
+    if (agent.personality_ru) {
+      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Характер</div><div style="font-size:13px;">${escapeHtml(agent.personality_ru)}</div>`;
+    }
+    if (agent.mood) {
+      const emoRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
+      const emo = agent.dominant_emotion ? (emoRu[agent.dominant_emotion] || '') : '';
+      extraHtml += `<div class="text-xs text-muted" style="margin-top:6px;">Настроение</div><div style="font-size:13px;">${escapeHtml(agent.mood)}${emo ? ' · ' + escapeHtml(emo) : ''}</div>`;
+    }
+    if (agent.thought) {
+      extraHtml += `<div style="margin-top:6px;color:var(--accent);font-style:italic;font-size:13px;">💭 ${escapeHtml(agent.thought)}</div>`;
+    }
+    if (agent.social) {
+      const fam = (agent.social.family || []).length;
+      const friends = (agent.social.friends || []).slice(0, 5);
+      if (fam || friends.length) {
+        extraHtml += `<div class="text-xs text-muted" style="margin-top:6px;">Связи</div><div style="font-size:13px;">`;
+        if (fam) extraHtml += `семья: ${fam} `;
+        for (const f of friends) {
+          const n = findAgentName(f.id);
+          extraHtml += `${escapeHtml(n)}(${f.trust > 0 ? '+' : ''}${f.trust}) `;
+        }
+        extraHtml += `</div>`;
+      }
+    }
+    // Render extra section
+    const extraEl = document.getElementById('myAgentExtra');
+    if (extraEl) extraEl.innerHTML = extraHtml;
   }
 
   function hasAgent() {
@@ -1488,12 +1558,21 @@
 
   function appendChatLine(item) {
     const div = document.createElement('div');
+    div.className = 'chat-msg';
     div.dataset.msgId = String(item.id ?? '');
-    div.style.padding = '6px 6px';
-    div.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
-    const ts = (item.created_at || '').replace('T', ' ').slice(0, 19);
-    const adminTag = item.is_admin ? ' > Администратор' : '';
-    div.textContent = `${ts} ${item.username}${adminTag}: ${item.text}`;
+    const ts = (item.created_at || '').replace('T', ' ').slice(11, 16);
+    const authorSpan = document.createElement('span');
+    authorSpan.className = 'chat-author' + (item.is_admin ? ' admin' : '');
+    authorSpan.textContent = item.username;
+    const textSpan = document.createElement('span');
+    textSpan.className = 'chat-text';
+    textSpan.textContent = item.text;
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'chat-time';
+    timeSpan.textContent = ts;
+    div.appendChild(authorSpan);
+    div.appendChild(textSpan);
+    div.appendChild(timeSpan);
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
@@ -1518,8 +1597,9 @@
     accountBar.style.display = '';
     chatBox.style.display = '';
     btnSend.disabled = false;
-    const tag = isAdmin() ? ' > Администратор' : '';
-    accountText.textContent = username ? `вы вошли как ${username}${tag}` : `вы вошли${tag}`;
+    const tag = isAdmin() ? ' (admin)' : '';
+    accountText.textContent = username ? `${username}${tag}` : `вы вошли${tag}`;
+    if (accountAvatar) accountAvatar.textContent = username ? username.charAt(0).toUpperCase() : '?';
     adminLink.style.display = isAdmin() ? '' : 'none';
     setAuthState('');
     newsAdmin.style.display = isAdmin() ? '' : 'none';
@@ -1626,13 +1706,13 @@
     writeStat(agentStatsSocial, 0);
     writeStat(agentStatsEndurance, 0);
     updateStatsLeft();
-    agentModal.style.display = 'flex';
+    agentModal.classList.add('open');
     try { agentName && agentName.focus(); } catch (e) {}
   }
 
   function closeAgentModal() {
     if (!agentModal) return;
-    agentModal.style.display = 'none';
+    agentModal.classList.remove('open');
     setAgentModalState('');
   }
 
@@ -1833,24 +1913,17 @@
     for (let i = arr.length - 1; i >= 0; i--) {
       const n = arr[i];
       const wrap = document.createElement('div');
-      wrap.style.padding = '8px 10px';
-      wrap.style.border = '1px solid rgba(255,255,255,0.08)';
-      wrap.style.borderRadius = '10px';
-      wrap.style.marginBottom = '8px';
-      wrap.style.background = 'rgba(255,255,255,0.03)';
+      wrap.className = 'news-item';
 
       const t = (n.created_at || '').replace('T', ' ').slice(0, 19);
       const title = document.createElement('div');
-      title.style.fontWeight = '700';
-      title.style.marginBottom = '4px';
+      title.className = 'news-title';
       title.textContent = n.title;
       const meta = document.createElement('div');
-      meta.style.fontSize = '12px';
-      meta.style.color = '#aab0c0';
-      meta.style.marginBottom = '6px';
+      meta.className = 'news-meta';
       meta.textContent = `${t} — ${n.author_username}`;
       const body = document.createElement('div');
-      body.style.whiteSpace = 'pre-wrap';
+      body.className = 'news-body';
       body.textContent = n.text;
 
       wrap.appendChild(title);
@@ -1859,10 +1932,9 @@
 
       if (isAdmin() && getToken()) {
         const row = document.createElement('div');
-        row.className = 'row';
         row.style.marginTop = '8px';
         const btnDel = document.createElement('button');
-        btnDel.className = 'secondary';
+        btnDel.className = 'btn btn-danger btn-xs';
         btnDel.textContent = 'Удалить';
         btnDel.addEventListener('click', async () => {
           try {
