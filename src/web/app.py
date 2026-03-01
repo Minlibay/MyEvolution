@@ -20,7 +20,7 @@ from fastapi import status
 from fastapi.responses import JSONResponse, FileResponse
 from passlib.context import CryptContext
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from html import escape
 
 from ..utils.config_loader import load_config
@@ -1857,10 +1857,17 @@ async def privacy_page():
     return HTMLResponse(html)
 
 
+@app.get("/robots.txt")
+async def robots_txt():
+    content = "User-agent: *\nDisallow: /adminkins\n"
+    return PlainTextResponse(content, media_type="text/plain")
+
+
 @app.get("/adminkins")
 async def adminkins():
     html_path = Path(__file__).parent / "static" / "adminkins.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    headers = {"X-Robots-Tag": "noindex, nofollow"}
+    return HTMLResponse(html_path.read_text(encoding="utf-8"), headers=headers)
 
 
 @app.post("/api/auth/register")

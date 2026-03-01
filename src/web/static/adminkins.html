@@ -4,10 +4,32 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Панель управления</title>
+  <meta name="robots" content="noindex, nofollow" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    #adminLoginOverlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: var(--bg-base, #070a14);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #adminLoginOverlay.hidden { display: none; }
+    .login-card {
+      background: var(--bg-card); border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg); padding: 36px 32px; width: 340px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    }
+    .login-card h2 {
+      margin: 0 0 6px; font-size: 1.15rem; color: var(--text-accent);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .login-card .subtitle { color: var(--text-muted); font-size: 12px; margin-bottom: 24px; }
+    .login-card input { width: 100%; margin-bottom: 10px; box-sizing: border-box; }
+    .login-card .btn { width: 100%; margin-top: 4px; }
+    .login-card .err { color: var(--danger, #ef4444); font-size: 12px; margin-top: 8px; min-height: 16px; }
+  </style>
   <style>
     button { font-family:inherit; }
     .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -27,6 +49,22 @@
   </style>
 </head>
 <body>
+
+<!-- ===== LOGIN OVERLAY ===== -->
+<div id="adminLoginOverlay">
+  <div class="login-card">
+    <h2>
+      <svg width="22" height="22" viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="46" stroke="#818cf8" stroke-width="6"/><circle cx="35" cy="40" r="8" fill="#818cf8"/><circle cx="65" cy="40" r="8" fill="#6366f1"/><path d="M30 65 Q50 82 70 65" stroke="#818cf8" stroke-width="5" fill="none" stroke-linecap="round"/></svg>
+      Панель управления
+    </h2>
+    <div class="subtitle">Доступ только для администраторов</div>
+    <input id="overlayLoginUser" placeholder="Логин" autocomplete="username" />
+    <input id="overlayLoginPass" type="password" placeholder="Пароль" autocomplete="current-password" />
+    <button id="overlayLoginBtn" class="btn btn-primary">Войти</button>
+    <div id="overlayLoginErr" class="err"></div>
+  </div>
+</div>
+
 <div class="admin-layout">
 
   <!-- ===== SIDEBAR NAV ===== -->
@@ -1440,11 +1478,59 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     }
   }
 
+  const adminLoginOverlay = document.getElementById('adminLoginOverlay');
+  const overlayLoginUser = document.getElementById('overlayLoginUser');
+  const overlayLoginPass = document.getElementById('overlayLoginPass');
+  const overlayLoginBtn  = document.getElementById('overlayLoginBtn');
+  const overlayLoginErr  = document.getElementById('overlayLoginErr');
+
+  function showOverlay(errMsg) {
+    adminLoginOverlay.classList.remove('hidden');
+    overlayLoginErr.textContent = errMsg || '';
+  }
+
+  function hideOverlay() {
+    adminLoginOverlay.classList.add('hidden');
+  }
+
+  async function overlayLogin() {
+    const username = (overlayLoginUser.value || '').trim();
+    const password = overlayLoginPass.value || '';
+    if (!username || !password) { overlayLoginErr.textContent = 'Введите логин и пароль'; return; }
+    overlayLoginBtn.disabled = true;
+    overlayLoginErr.textContent = '...';
+    const { res, data } = await jsonFetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    overlayLoginBtn.disabled = false;
+    if (!res.ok) { overlayLoginErr.textContent = localizeDetail(data.detail) || 'Ошибка входа'; return; }
+    if (!data.is_admin) { overlayLoginErr.textContent = 'Этот аккаунт не является администратором'; return; }
+    setToken(data.token);
+    localStorage.setItem('evosim_username', data.username);
+    localStorage.setItem('evosim_is_admin', '1');
+    hideOverlay();
+    await refreshMe();
+    await loadUsers();
+    await loadNews();
+    await loadMap();
+    await loadTools();
+    await loadSiteSettings();
+    await loadPrivacy();
+    await loadChatAnnouncement();
+  }
+
+  overlayLoginBtn.addEventListener('click', () => overlayLogin());
+  overlayLoginPass.addEventListener('keydown', (e) => { if (e.key === 'Enter') overlayLogin(); });
+  overlayLoginUser.addEventListener('keydown', (e) => { if (e.key === 'Enter') overlayLoginPass.focus(); });
+
   function logout() {
     clearToken();
     setText(loginState, '');
     usersList.innerHTML = '';
     newsList.innerHTML = '';
+    showOverlay();
     refreshMe();
   }
 
@@ -1460,6 +1546,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       setText(newsState, 'нужен admin token');
       btnCreateUser.disabled = true;
       btnPostNews.disabled = true;
+      showOverlay();
       return;
     }
 
@@ -1468,6 +1555,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       setText(loginState, localizeDetail(data.detail) || `Ошибка ${res.status}`);
       btnCreateUser.disabled = true;
       btnPostNews.disabled = true;
+      showOverlay(localizeDetail(data.detail) || 'Сессия устарела, войдите снова');
       return;
     }
 
@@ -1475,9 +1563,11 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       setText(loginState, `вы вошли как ${data.username}, но вы не админ`);
       btnCreateUser.disabled = true;
       btnPostNews.disabled = true;
+      showOverlay('Этот аккаунт не является администратором');
       return;
     }
 
+    hideOverlay();
     setText(loginState, `вы вошли как ${data.username} > Администратор`);
     btnCreateUser.disabled = false;
     btnPostNews.disabled = false;
