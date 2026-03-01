@@ -27,11 +27,6 @@
     #agentTooltip .title { font-weight:700; margin-bottom:6px; color:var(--text-accent); }
     #agentTooltip .muted { color:var(--text-secondary); }
     #agentTooltip .mono { font-family:var(--font-mono); }
-    #camPad { position:absolute; right:16px; bottom:16px; z-index:12; display:flex; flex-direction:column; gap:4px; pointer-events:auto; }
-    .camBtn { width:36px; height:36px; border-radius:var(--radius-sm); border:1px solid var(--border-default); background:rgba(10,14,26,0.85); backdrop-filter:blur(8px); color:var(--text-secondary); display:flex; align-items:center; justify-content:center; cursor:pointer; user-select:none; font-size:15px; transition:all var(--transition-fast); padding:0; }
-    .camBtn:hover { background:var(--bg-glass-hover); color:var(--text-primary); border-color:var(--border-hover); }
-    .camBtn:active { transform:translateY(1px); }
-    .camBtn:disabled { opacity:0.4; cursor:not-allowed; }
     #chatSection { display:flex; flex-direction:column; flex:1; min-height:0; }
     #chatBox { display:flex; flex-direction:column; flex:1; min-height:0; }
     #chatMessages { flex:1; min-height:0; overflow-y:auto; padding:8px; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); background:rgba(0,0,0,0.18); }
@@ -124,15 +119,6 @@
       <div id="canvasWrap">
         <canvas id="cv" width="1000" height="720"></canvas>
         <div id="agentTooltip"></div>
-        <div id="camPad">
-          <button id="camZoomIn" class="camBtn" title="приблизить" type="button">+</button>
-          <button id="camUp" class="camBtn" title="вверх" type="button">↑</button>
-          <button id="camZoomOut" class="camBtn" title="отдалить" type="button">−</button>
-          <button id="camLeft" class="camBtn" title="влево" type="button">←</button>
-          <button id="camReset" class="camBtn" title="сброс (R)" type="button">R</button>
-          <button id="camRight" class="camBtn" title="вправо" type="button">→</button>
-          <button id="camDown" class="camBtn" title="вниз" type="button">↓</button>
-        </div>
       </div>
     </div>
 
@@ -509,151 +495,8 @@
     }
   }
 
-  // Camera (pan/zoom)
-  const camera = { x: 0, y: 0, zoom: 1, _initialized: true };
-  const cameraLimits = { minZoom: 0.75, maxZoom: 6 };
-  let dragging = false;
-  let dragStart = null;
-  let autoCenteredOnce = false;
-
-  function computeCameraLimits(snapshot) {
-    if (!snapshot) return;
-    // Let's enforce strict zoom limits.
-    cameraLimits.minZoom = 0.5;
-    cameraLimits.maxZoom = 15;
-  }
-
-  function clampCamera(snapshot) {
-    if (!snapshot) return;
-    computeCameraLimits(snapshot);
-
-    camera.zoom = Math.max(cameraLimits.minZoom, Math.min(cameraLimits.maxZoom, camera.zoom));
-
-    const worldW = cv.width * camera.zoom;
-    const worldH = cv.height * camera.zoom;
-
-    // Allow panning, but don't let the map completely leave the screen.
-    // Let's keep at least 100px of the map visible.
-    const padding = 100;
-    const minX = cv.width - worldW - padding;
-    const maxX = padding;
-    const minY = cv.height - worldH - padding;
-    const maxY = padding;
-
-    if (worldW < cv.width) {
-      camera.x = (cv.width - worldW) / 2;
-    } else {
-      camera.x = Math.max(minX, Math.min(maxX, camera.x));
-    }
-
-    if (worldH < cv.height) {
-      camera.y = (cv.height - worldH) / 2;
-    } else {
-      camera.y = Math.max(minY, Math.min(maxY, camera.y));
-    }
-  }
-
-  function centerOnAgents(snapshot) {
-    if (!snapshot || !snapshot.agents || snapshot.agents.length === 0) return;
-    const w = snapshot.world.width;
-    const h = snapshot.world.height;
-    const sx = cv.width / w;
-    const sy = cv.height / h;
-
-    let ax = 0;
-    let ay = 0;
-    for (const a of snapshot.agents) {
-      ax += a.x;
-      ay += a.y;
-    }
-    ax /= snapshot.agents.length;
-    ay /= snapshot.agents.length;
-
-    const px = ax * sx;
-    const py = ay * sy;
-    camera.x = cv.width / 2 - px * camera.zoom;
-    camera.y = cv.height / 2 - py * camera.zoom;
-    clampCamera(snapshot);
-  }
-
-  function resetCamera(snapshot) {
-    camera.zoom = 1;
-    camera.x = 0;
-    camera.y = 0;
-    clampCamera(snapshot);
-  }
-
-  function zoomAtCanvasPoint(canvasX, canvasY, factor) {
-    if (!lastSnapshot) return;
-    computeCameraLimits(lastSnapshot);
-    const oldZoom = camera.zoom;
-    let newZoom = oldZoom * factor;
-    newZoom = Math.max(cameraLimits.minZoom, Math.min(cameraLimits.maxZoom, newZoom));
-    if (Math.abs(newZoom - oldZoom) < 1e-6) return;
-    camera.x = canvasX - (canvasX - camera.x) * (newZoom / oldZoom);
-    camera.y = canvasY - (canvasY - camera.y) * (newZoom / oldZoom);
-    camera.zoom = newZoom;
-    clampCamera(lastSnapshot);
-  }
-
-  function nudgeCamera(dx, dy) {
-    if (!lastSnapshot) return;
-    camera.x += dx;
-    camera.y += dy;
-    clampCamera(lastSnapshot);
-  }
-
-  function bindHold(btn, onStep) {
-    if (!btn) return;
-    let t = null;
-    let raf = null;
-    const step = () => {
-      try { onStep(); } catch (e) {}
-      raf = requestAnimationFrame(step);
-    };
-    const stop = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = null;
-      if (t) clearTimeout(t);
-      t = null;
-    };
-    btn.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      onStep();
-      t = setTimeout(() => { raf = requestAnimationFrame(step); }, 180);
-    });
-    window.addEventListener('mouseup', stop);
-    btn.addEventListener('mouseleave', stop);
-  }
-
-  const centerX = () => cv.width / 2;
-  const centerY = () => cv.height / 2;
-
-  if (camZoomIn) {
-    camZoomIn.disabled = true;
-    camZoomIn.title = 'зум отключен';
-  }
-  if (camZoomOut) {
-    camZoomOut.disabled = true;
-    camZoomOut.title = 'зум отключен';
-  }
-  if (camUp) { camUp.disabled = true; camUp.style.display = 'none'; }
-  if (camDown) { camDown.disabled = true; camDown.style.display = 'none'; }
-  if (camLeft) { camLeft.disabled = true; camLeft.style.display = 'none'; }
-  if (camRight) { camRight.disabled = true; camRight.style.display = 'none'; }
-  if (camReset) camReset.addEventListener('click', () => resetCamera(lastSnapshot));
-
-  const basePan = () => 42;
-  const panStep = () => basePan() * Math.max(1.0, camera.zoom * 0.55);
-  if (camUp && !camUp.disabled) bindHold(camUp, () => nudgeCamera(0, panStep()));
-  if (camDown && !camDown.disabled) bindHold(camDown, () => nudgeCamera(0, -panStep()));
-  if (camLeft && !camLeft.disabled) bindHold(camLeft, () => nudgeCamera(panStep(), 0));
-  if (camRight && !camRight.disabled) bindHold(camRight, () => nudgeCamera(-panStep(), 0));
-
-  cv.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    // zoom отключен
-  }, { passive: false });
+  // Camera (фиксированная, без управления)
+  const camera = { x: 0, y: 0, zoom: 1 };
 
   function showWelcomeOnce() {
     try {
@@ -695,33 +538,6 @@
   } catch (e) {}
 
   cv.addEventListener('contextmenu', (e) => e.preventDefault());
-
-  cv.addEventListener('mousedown', (e) => {
-    // Like in admin editor: pan with RMB/MMB, keep LMB for selection/hover.
-    if (e.button !== 1 && e.button !== 2) return;
-    dragging = true;
-    dragStart = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y };
-  });
-  window.addEventListener('mouseup', () => { dragging = false; dragStart = null; });
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging || !dragStart) return;
-    const dx = e.clientX - dragStart.x;
-    const dy = e.clientY - dragStart.y;
-    camera.x = dragStart.cx + dx;
-    camera.y = dragStart.cy + dy;
-    clampCamera(lastSnapshot);
-  });
-
-  cv.addEventListener('dblclick', (e) => {
-    e.preventDefault();
-    centerOnAgents(lastSnapshot);
-  });
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'r' || e.key === 'R') {
-      resetCamera(lastSnapshot);
-    }
-  });
 
   const ruAction = {
     move: 'идёт',
