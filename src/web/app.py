@@ -2070,6 +2070,54 @@ async def api_admin_chat_delete_message(msg_id: int, token: str):
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/admin/chat/clear")
+async def api_admin_chat_clear(token: str):
+    _require_admin(token)
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM chat_messages")
+        conn.commit()
+    finally:
+        conn.close()
+    await chat_controller.broadcast({"type": "moderation", "event": "clear_all"})
+    return JSONResponse({"ok": True})
+
+
+@app.put("/api/admin/chat/pin")
+async def api_admin_chat_pin(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    try:
+        text = str((payload or {}).get("text") or "").strip()
+    except Exception:
+        text = ""
+    _set_setting("chat_pinned", text)
+    await chat_controller.broadcast({"type": "pinned", "text": text})
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/admin/chat/ban_by_name")
+async def api_admin_chat_ban_by_name(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    username = str((payload or {}).get("username") or "").strip()
+    if not username:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="empty_username")
+    banned = bool((payload or {}).get("banned", True))
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users WHERE username = ?", (username,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user_not_found")
+        uid = int(row["id"])
+    finally:
+        conn.close()
+    _set_chat_ban(uid, banned)
+    await chat_controller.broadcast({"type": "moderation", "event": "ban", "user_id": uid, "username": username, "banned": banned})
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/news")
 async def api_news(limit: int = 20):
     limit = max(1, min(50, int(limit)))
@@ -2402,7 +2450,7 @@ async def chat_ws(ws: WebSocket):
 
     await ws.send_text(
         json.dumps(
-            {"type": "history", "items": items, "announcement": _get_chat_announcement()},
+            {"type": "history", "items": items, "announcement": _get_chat_announcement(), "pinned": _get_setting("chat_pinned", "")},
             ensure_ascii=False,
         )
     )

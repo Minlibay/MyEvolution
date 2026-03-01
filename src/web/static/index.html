@@ -48,6 +48,21 @@
     #cookieText b { color:var(--text-primary); }
     #cookieText a { color:var(--text-accent); text-decoration:underline; }
     button { font-family:inherit; }
+    .skill-row { display:flex; align-items:center; gap:6px; margin-bottom:3px; font-size:12px; }
+    .skill-name { width:110px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .skill-bar-bg { flex:1; height:10px; background:rgba(255,255,255,0.06); border-radius:5px; overflow:hidden; position:relative; border:1px solid rgba(255,255,255,0.08); }
+    .skill-bar-fill { height:100%; border-radius:5px; transition:width 0.4s ease; min-width:1px; }
+    .skill-lv { width:28px; text-align:right; font-weight:600; font-size:11px; color:var(--text-primary); }
+    .skill-bar-fill.sk-gathering { background:linear-gradient(90deg, #22c55e, #4ade80); }
+    .skill-bar-fill.sk-crafting { background:linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .skill-bar-fill.sk-hunting { background:linear-gradient(90deg, #ef4444, #f87171); }
+    .skill-bar-fill.sk-cooking { background:linear-gradient(90deg, #f97316, #fb923c); }
+    .skill-bar-fill.sk-communication { background:linear-gradient(90deg, #6366f1, #818cf8); }
+    .skill-bar-fill.sk-survival { background:linear-gradient(90deg, #06b6d4, #22d3ee); }
+    #chatAdminBar { display:none; margin-bottom:6px; gap:4px; flex-wrap:wrap; }
+    #chatAdminBar .btn { font-size:11px; padding:2px 8px; }
+    .chat-pinned { display:none; margin-bottom:6px; padding:6px 10px; border-radius:var(--radius-sm); border:1px solid rgba(99,102,241,0.2); background:rgba(99,102,241,0.08); color:#a5b4fc; font-size:12px; line-height:1.35; }
+    .chat-pinned b { color:#818cf8; }
     .panel-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border-subtle); }
     .panel-head h3 { margin:0; font-size:0.85rem; font-weight:600; color:var(--text-accent); }
   </style>
@@ -150,6 +165,12 @@
           </div>
 
           <div id="chatBox" style="display:none;">
+            <div id="chatAdminBar">
+              <button id="btnChatClear" class="btn btn-secondary" title="Очистить чат для всех">🗑 Очистить чат</button>
+              <button id="btnChatPin" class="btn btn-secondary" title="Закрепить сообщение">📌 Закрепить</button>
+              <button id="btnChatBanInline" class="btn btn-secondary" title="Забанить пользователя">🚫 Бан</button>
+            </div>
+            <div id="chatPinned" class="chat-pinned"><b>📌 Закреплено:</b> <span id="chatPinnedText"></span></div>
             <div id="chatAnnounce"><b>Анонс:</b> <span id="chatAnnounceText"></span></div>
             <div id="chatMessages"></div>
             <div class="chat-input-row" style="margin-top:8px;">
@@ -1489,6 +1510,12 @@
   const btnSend = document.getElementById('btnSend');
   const chatAnnounce = document.getElementById('chatAnnounce');
   const chatAnnounceText = document.getElementById('chatAnnounceText');
+  const chatAdminBar = document.getElementById('chatAdminBar');
+  const btnChatClear = document.getElementById('btnChatClear');
+  const btnChatPin = document.getElementById('btnChatPin');
+  const btnChatBanInline = document.getElementById('btnChatBanInline');
+  const chatPinned = document.getElementById('chatPinned');
+  const chatPinnedText = document.getElementById('chatPinnedText');
 
   const worldControls = document.getElementById('worldControls');
   const btnCreateAgent = document.getElementById('btnCreateAgent');
@@ -1545,6 +1572,8 @@
       invalid_agent_stats: 'Некорректные характеристики агента',
       simulation_not_ready: 'Симуляция ещё не готова. Попробуйте чуть позже.',
       agent_already_created: 'У вас уже есть агент. Можно только наблюдать за ним.',
+      user_not_found: 'Пользователь не найден',
+      empty_username: 'Введите имя пользователя',
     };
     return map[d] || d;
   }
@@ -1644,14 +1673,18 @@
       }
     }
 
-    // Skills
+    // Skills (graphical progress bars)
     if (agent.skills) {
       const skillRu = {gathering:'собирательство',crafting:'крафтинг',hunting:'охота',cooking:'кулинария',communication:'общение',survival:'выживание'};
-      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Навыки</div><div style="font-size:13px;">`;
+      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Навыки</div><div style="padding:2px 0;">`;
       for (const [sk, info] of Object.entries(agent.skills)) {
         if (!info || !info.level) continue;
-        const bar = '▓'.repeat(info.level) + '░'.repeat(10 - info.level);
-        extraHtml += `<div>${escapeHtml(skillRu[sk] || sk)}: ${bar} lv${info.level}</div>`;
+        const pct = Math.round((info.value || 0) * 100);
+        extraHtml += `<div class="skill-row">
+          <span class="skill-name">${escapeHtml(skillRu[sk] || sk)}</span>
+          <div class="skill-bar-bg"><div class="skill-bar-fill sk-${sk}" style="width:${pct}%"></div></div>
+          <span class="skill-lv">lv${info.level}</span>
+        </div>`;
       }
       extraHtml += `</div>`;
     }
@@ -1719,6 +1752,18 @@
     chatAnnounceText.textContent = t;
   }
 
+  function setChatPinned(text) {
+    const t = String(text || '').trim();
+    if (!chatPinned || !chatPinnedText) return;
+    if (!t) {
+      chatPinned.style.display = 'none';
+      chatPinnedText.textContent = '';
+      return;
+    }
+    chatPinned.style.display = '';
+    chatPinnedText.textContent = t;
+  }
+
   function appendChatLine(item) {
     const div = document.createElement('div');
     div.className = 'chat-msg';
@@ -1764,6 +1809,7 @@
     accountText.textContent = username ? `${username}${tag}` : `вы вошли${tag}`;
     if (accountAvatar) accountAvatar.textContent = username ? username.charAt(0).toUpperCase() : '?';
     adminLink.style.display = isAdmin() ? '' : 'none';
+    if (chatAdminBar) chatAdminBar.style.display = isAdmin() ? 'flex' : 'none';
     setAuthState('');
     newsAdmin.style.display = isAdmin() ? '' : 'none';
     if (worldControls) worldControls.style.display = '';
@@ -1971,6 +2017,7 @@
         chatMessages.innerHTML = '';
         for (const it of items) appendChatLine(it);
         setChatAnnouncement(msg.announcement || '');
+        setChatPinned(msg.pinned || '');
         return;
       }
       if (msg.type === 'message' && msg.item) {
@@ -1983,6 +2030,22 @@
       }
       if (msg.type === 'moderation' && msg.event === 'delete') {
         deleteChatLineById(msg.id);
+        return;
+      }
+      if (msg.type === 'moderation' && msg.event === 'clear_all') {
+        chatMessages.innerHTML = '';
+        return;
+      }
+      if (msg.type === 'pinned') {
+        setChatPinned(msg.text || '');
+        return;
+      }
+      if (msg.type === 'moderation' && msg.event === 'ban') {
+        const me = localStorage.getItem('evosim_username') || '';
+        if (msg.username === me && msg.banned) {
+          setAuthState('вы заблокированы в чате');
+          try { if (chatBox) chatBox.style.display = 'none'; } catch (e) {}
+        }
         return;
       }
       if (msg.type === 'banned') {
@@ -2163,6 +2226,50 @@
   btnSend.addEventListener('click', sendChat);
   chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') sendChat();
+  });
+
+  // ── Admin chat buttons ──────────────────────────────────────
+  btnChatClear.addEventListener('click', async () => {
+    if (!confirm('Очистить весь чат для всех пользователей?')) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/chat/clear?token=' + encodeURIComponent(token), { method: 'POST' });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(localizeDetail(d.detail) || 'Ошибка'); }
+    } catch (e) { alert('Ошибка сети'); }
+  });
+
+  btnChatPin.addEventListener('click', async () => {
+    const text = prompt('Введите текст закреплённого сообщения (пусто — снять закреп):');
+    if (text === null) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/chat/pin?token=' + encodeURIComponent(token), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text.trim() }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(localizeDetail(d.detail) || 'Ошибка'); }
+    } catch (e) { alert('Ошибка сети'); }
+  });
+
+  btnChatBanInline.addEventListener('click', async () => {
+    const username = prompt('Введите имя пользователя для бана (или разбана):');
+    if (!username || !username.trim()) return;
+    const action = confirm(`Заблокировать "${username.trim()}" в чате?\n\nОК — забанить\nОтмена — разбанить`);
+    const token = getToken();
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/chat/ban_by_name?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), banned: action }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(localizeDetail(d.detail) || 'Ошибка'); }
+      else { alert(action ? 'Пользователь забанен' : 'Пользователь разбанен'); }
+    } catch (e) { alert('Ошибка сети'); }
   });
 
   validateTokenAndSyncUI();
