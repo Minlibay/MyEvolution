@@ -375,11 +375,42 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
               </div>
             </div>
 
+            <!-- Banner: image upload -->
+            <div class="item" style="margin-bottom:12px;">
+              <b style="font-size:13px;">Баннер — изображение (приоритет)</b>
+              <div class="muted" style="margin:4px 0 12px;">PNG / JPG / GIF / WebP, макс. 1 МБ, 728×90. Имеет приоритет над HTML-кодом ниже.</div>
+
+              <div id="bannerPreviewWrap" style="margin-bottom:12px; background:rgba(0,0,0,0.25); border:1px dashed var(--border-subtle); border-radius:var(--radius-sm); width:100%; max-width:728px; height:92px; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                <img id="bannerPreviewImg" src="" alt="" style="max-width:728px; height:90px; object-fit:contain; display:none;" />
+                <span id="bannerPreviewEmpty" class="muted" style="font-size:12px;">нет загруженного баннера</span>
+              </div>
+
+              <div class="row" style="gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                <div class="form-group" style="flex:1; min-width:200px; margin:0;">
+                  <label class="text-xs">Ссылка при клике (новое окно)</label>
+                  <input id="siteBannerLink" placeholder="https://example.com" style="width:100%; box-sizing:border-box;" />
+                </div>
+                <div class="form-group" style="margin:0; display:flex; align-items:flex-end;">
+                  <label class="text-xs" style="display:none;">Файл</label>
+                  <input id="siteBannerFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none;" />
+                  <button id="btnBannerPickFile" class="btn btn-secondary btn-sm">Выбрать файл</button>
+                </div>
+              </div>
+
+              <div class="row" style="gap:8px; align-items:center;">
+                <button id="btnBannerUpload" class="btn btn-primary btn-sm" disabled>Загрузить баннер</button>
+                <button id="btnBannerDelete" class="btn btn-danger btn-sm">Удалить баннер</button>
+                <div id="bannerState" class="muted"></div>
+              </div>
+              <div id="bannerFileName" class="muted" style="margin-top:6px; font-size:11px;"></div>
+            </div>
+
+            <!-- Banner: HTML fallback -->
             <div class="item">
               <div class="form-group">
-                <label>Баннер HTML (728x90)</label>
-                <div class="muted" style="margin-bottom:8px;">Код iframe баннерной сети. Показывается в шапке.</div>
-                <textarea id="siteBannerHtml" style="height:140px;" placeholder="<iframe ...></iframe>"></textarea>
+                <label>Баннер HTML — резервный (728×90)</label>
+                <div class="muted" style="margin-bottom:8px;">Используется только если изображение выше не загружено. Можно вставить код iframe баннерной сети.</div>
+                <textarea id="siteBannerHtml" style="height:100px;" placeholder="<iframe ...></iframe>"></textarea>
               </div>
             </div>
           </div>
@@ -661,6 +692,15 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   const siteSeoKeywords = document.getElementById('siteSeoKeywords');
   const siteOgImage = document.getElementById('siteOgImage');
   const siteBannerHtml = document.getElementById('siteBannerHtml');
+  const siteBannerLink = document.getElementById('siteBannerLink');
+  const siteBannerFile = document.getElementById('siteBannerFile');
+  const btnBannerPickFile = document.getElementById('btnBannerPickFile');
+  const btnBannerUpload = document.getElementById('btnBannerUpload');
+  const btnBannerDelete = document.getElementById('btnBannerDelete');
+  const bannerState = document.getElementById('bannerState');
+  const bannerFileName = document.getElementById('bannerFileName');
+  const bannerPreviewImg = document.getElementById('bannerPreviewImg');
+  const bannerPreviewEmpty = document.getElementById('bannerPreviewEmpty');
   const siteFaviconUrl = document.getElementById('siteFaviconUrl');
 
   const btnChatAnnLoad = document.getElementById('btnChatAnnLoad');
@@ -720,7 +760,9 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       invalid_user_id: 'Некорректный user_id',
       unknown_slot: 'Неизвестный слот текстуры',
       only_png: 'Поддерживается только формат PNG',
-      file_too_large: 'Файл слишком большой (макс. 2 МБ)',
+      unsupported_image_type: 'Формат не поддерживается (PNG, JPG, GIF, WebP)',
+      file_too_large: 'Файл слишком большой (макс. 1 МБ для баннера, 2 МБ для спрайтов)',
+      banner_not_found: 'Баннер-изображение не найдено',
       sprite_not_found: 'Спрайт не найден',
       animal_not_found: 'Животное не найдено',
       invalid_direction: 'Некорректное направление (up/down/left/right)',
@@ -836,6 +878,18 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     if (siteState) siteState.textContent = t || '';
   }
 
+  function _refreshBannerPreview(hasImage) {
+    if (hasImage) {
+      bannerPreviewImg.src = '/api/banner/image?_=' + Date.now();
+      bannerPreviewImg.style.display = '';
+      bannerPreviewEmpty.style.display = 'none';
+    } else {
+      bannerPreviewImg.src = '';
+      bannerPreviewImg.style.display = 'none';
+      bannerPreviewEmpty.style.display = '';
+    }
+  }
+
   async function loadSiteSettings() {
     const token = getToken();
     if (!token) {
@@ -854,7 +908,9 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       if (siteSeoKeywords) siteSeoKeywords.value = String(s.seo_keywords || '');
       if (siteOgImage) siteOgImage.value = String(s.seo_og_image || '');
       if (siteBannerHtml) siteBannerHtml.value = String(s.banner_html || '');
+      if (siteBannerLink) siteBannerLink.value = String(s.banner_link || '');
       if (siteFaviconUrl) siteFaviconUrl.value = String(s.favicon_url || '');
+      _refreshBannerPreview(!!s.banner_has_image);
       setSiteState('ok');
     } catch (e) {
       setSiteState(String(e && e.message ? e.message : e));
@@ -876,6 +932,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
         seo_keywords: (siteSeoKeywords ? siteSeoKeywords.value : ''),
         seo_og_image: (siteOgImage ? siteOgImage.value : ''),
         banner_html: (siteBannerHtml ? siteBannerHtml.value : ''),
+        banner_link: (siteBannerLink ? siteBannerLink.value.trim() : ''),
         favicon_url: (siteFaviconUrl ? siteFaviconUrl.value : ''),
       };
       const res = await fetch(`/api/admin/site_settings?token=${encodeURIComponent(token)}`, {
@@ -890,6 +947,68 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       setSiteState(String(e && e.message ? e.message : e));
     }
   }
+
+  async function uploadBannerImage() {
+    const token = getToken();
+    if (!token || !siteBannerFile || !siteBannerFile.files.length) return;
+    const file = siteBannerFile.files[0];
+    bannerState.textContent = 'загрузка…';
+    btnBannerUpload.disabled = true;
+    try {
+      // Сначала сохраняем ссылку
+      if (siteBannerLink && siteBannerLink.value.trim()) {
+        await fetch(`/api/admin/site_settings?token=${encodeURIComponent(token)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ banner_link: siteBannerLink.value.trim() }),
+        });
+      }
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`/api/admin/banner/image?token=${encodeURIComponent(token)}`, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { bannerState.textContent = localizeDetail(data.detail) || 'Ошибка загрузки'; return; }
+      bannerState.textContent = 'загружено';
+      siteBannerFile.value = '';
+      bannerFileName.textContent = '';
+      btnBannerUpload.disabled = true;
+      _refreshBannerPreview(true);
+    } catch (e) {
+      bannerState.textContent = 'Ошибка сети';
+    } finally {
+      btnBannerUpload.disabled = !siteBannerFile.files.length;
+    }
+  }
+
+  async function deleteBannerImage() {
+    const token = getToken();
+    if (!token) return;
+    if (!confirm('Удалить баннер-изображение?')) return;
+    bannerState.textContent = 'удаление…';
+    try {
+      const res = await fetch(`/api/admin/banner/image?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { bannerState.textContent = localizeDetail(data.detail) || 'Ошибка'; return; }
+      bannerState.textContent = 'удалено';
+      _refreshBannerPreview(false);
+    } catch (e) {
+      bannerState.textContent = 'Ошибка сети';
+    }
+  }
+
+  if (btnBannerPickFile) btnBannerPickFile.addEventListener('click', () => siteBannerFile && siteBannerFile.click());
+  if (siteBannerFile) siteBannerFile.addEventListener('change', () => {
+    const f = siteBannerFile.files[0];
+    if (f) {
+      bannerFileName.textContent = `${f.name} (${(f.size / 1024).toFixed(1)} КБ)`;
+      btnBannerUpload.disabled = false;
+    } else {
+      bannerFileName.textContent = '';
+      btnBannerUpload.disabled = true;
+    }
+  });
+  if (btnBannerUpload) btnBannerUpload.addEventListener('click', () => uploadBannerImage());
+  if (btnBannerDelete) btnBannerDelete.addEventListener('click', () => deleteBannerImage());
 
   function setPrivacyState(t) {
     if (privacyState) privacyState.textContent = t || '';

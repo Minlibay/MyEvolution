@@ -176,6 +176,24 @@ _SPRITES_DIR.mkdir(parents=True, exist_ok=True)
 _ANIMALS_DIR = Path(__file__).resolve().parents[2] / "data" / "animals"
 _ANIMALS_DIR.mkdir(parents=True, exist_ok=True)
 _ANIMALS_JSON = _ANIMALS_DIR / "animals.json"
+_BANNER_DIR = Path(__file__).resolve().parents[2] / "data" / "banner"
+_BANNER_DIR.mkdir(parents=True, exist_ok=True)
+
+_BANNER_MIME_MAP = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+
+
+def _get_banner_image_path() -> Optional[Path]:
+    """Возвращает путь к файлу баннера если он существует, иначе None."""
+    for ext in _BANNER_MIME_MAP.values():
+        p = _BANNER_DIR / f"banner{ext}"
+        if p.exists():
+            return p
+    return None
 
 _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
@@ -598,6 +616,7 @@ def _get_site_settings() -> Dict[str, str]:
     )
     og_image = _get_setting("seo_og_image", "")
     banner_html = _get_setting("banner_iframe_html", "")
+    banner_link = _get_setting("banner_link", "")
     favicon_url = _get_setting("favicon_url", "/static/favicon.svg")
     return {
         "project_name": str(project_name or "WorldSE"),
@@ -606,6 +625,8 @@ def _get_site_settings() -> Dict[str, str]:
         "seo_keywords": str(seo_keywords or ""),
         "seo_og_image": str(og_image or ""),
         "banner_html": str(banner_html or ""),
+        "banner_link": str(banner_link or ""),
+        "banner_has_image": _get_banner_image_path() is not None,
         "favicon_url": str(favicon_url or ""),
     }
 
@@ -625,6 +646,12 @@ def _set_site_settings(payload: Dict[str, Any]) -> None:
         _set_setting("seo_og_image", str(payload.get("seo_og_image") or "").strip())
     if "banner_html" in payload:
         _set_setting("banner_iframe_html", str(payload.get("banner_html") or ""))
+    if "banner_link" in payload:
+        link = str(payload.get("banner_link") or "").strip()
+        # Разрешаем только http/https ссылки
+        if link and not link.startswith(("http://", "https://")):
+            link = ""
+        _set_setting("banner_link", link)
     if "favicon_url" in payload:
         _set_setting("favicon_url", str(payload.get("favicon_url") or "").strip())
 
@@ -1941,10 +1968,16 @@ async def index():
     template = html_path.read_text(encoding="utf-8")
     s = _get_site_settings()
 
-    # Banner HTML is injected as-is (admin-controlled).
-    banner_html = (s.get("banner_html") or "").strip()
-    if not banner_html:
-        banner_html = "место для баннера 728×90"
+    # Баннер: если загружено изображение — используем его, иначе fallback на HTML.
+    if s.get("banner_has_image"):
+        link = escape(s.get("banner_link") or "")
+        img_tag = '<img src="/api/banner/image" alt="banner" style="max-width:728px;height:90px;object-fit:contain;display:block;">'
+        if link:
+            banner_html = f'<a href="{link}" target="_blank" rel="noopener noreferrer">{img_tag}</a>'
+        else:
+            banner_html = img_tag
+    else:
+        banner_html = (s.get("banner_html") or "").strip() or "место для баннера 728×90"
 
     rendered = template
     rendered = rendered.replace("{{PROJECT_NAME}}", escape(s.get("project_name") or "WorldSE"))
@@ -2295,6 +2328,50 @@ async def api_sprite_get(slot: str):
     if not path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="sprite_not_found")
     return FileResponse(str(path), media_type="image/png")
+
+
+@app.get("/api/banner/image")
+async def api_banner_image_get():
+    """Отдаёт загруженный файл баннера."""
+    p = _get_banner_image_path()
+    if not p:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="banner_not_found")
+    mime = next((m for m, e in _BANNER_MIME_MAP.items() if p.suffix == e), "image/png")
+    return FileResponse(str(p), media_type=mime)
+
+
+@app.post("/api/admin/banner/image")
+async def api_admin_banner_image_upload(token: str, file: UploadFile = File(...)):
+    """Загружает изображение баннера (admin)."""
+    _require_admin(token)
+    mime = (file.content_type or "").lower().split(";")[0].strip()
+    ext = _BANNER_MIME_MAP.get(mime)
+    if not ext:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unsupported_image_type")
+    data = await file.read()
+    if len(data) > 1 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file_too_large")
+    # Удаляем старый баннер любого расширения
+    for old_ext in _BANNER_MIME_MAP.values():
+        old = _BANNER_DIR / f"banner{old_ext}"
+        if old.exists():
+            old.unlink()
+    dest = _BANNER_DIR / f"banner{ext}"
+    dest.write_bytes(data)
+    return JSONResponse({"ok": True, "size": len(data), "mime": mime})
+
+
+@app.delete("/api/admin/banner/image")
+async def api_admin_banner_image_delete(token: str):
+    """Удаляет изображение баннера (admin)."""
+    _require_admin(token)
+    deleted = False
+    for ext in _BANNER_MIME_MAP.values():
+        p = _BANNER_DIR / f"banner{ext}"
+        if p.exists():
+            p.unlink()
+            deleted = True
+    return JSONResponse({"ok": True, "deleted": deleted})
 
 
 @app.get("/api/sprites")
