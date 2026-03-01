@@ -12,10 +12,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, Set
 
+import shutil
+
 import jwt
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form
 from fastapi import status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from passlib.context import CryptContext
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -42,6 +44,11 @@ _JWT_TTL_HOURS = int(os.environ.get("EVOSIM_JWT_TTL_HOURS", "168"))
 _WORLD_MAP_PATH = str((Path(__file__).resolve().parents[2] / "data" / "world_map.json").resolve())
 _TOOL_RECIPES_PATH = str((Path(__file__).resolve().parents[2] / "data" / "tool_recipes.json").resolve())
 _LEARNING_STATE_PATH = str((Path(__file__).resolve().parents[2] / "data" / "learning_state.json").resolve())
+_SPRITES_DIR = Path(__file__).resolve().parents[2] / "data" / "sprites"
+_SPRITES_DIR.mkdir(parents=True, exist_ok=True)
+_ANIMALS_DIR = Path(__file__).resolve().parents[2] / "data" / "animals"
+_ANIMALS_DIR.mkdir(parents=True, exist_ok=True)
+_ANIMALS_JSON = _ANIMALS_DIR / "animals.json"
 
 _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
@@ -2116,6 +2123,192 @@ async def api_admin_chat_ban_by_name(token: str, payload: Dict[str, Any]):
     _set_chat_ban(uid, banned)
     await chat_controller.broadcast({"type": "moderation", "event": "ban", "user_id": uid, "username": username, "banned": banned})
     return JSONResponse({"ok": True})
+
+
+# ── Sprites upload/serve API ────────────────────────────────────────────
+_SPRITE_SLOTS = [
+    "ground", "ground_forest", "ground_desert", "ground_mountain", "ground_swamp",
+    "ground_winter", "ground_winter_forest", "ground_winter_desert",
+]
+
+
+@app.get("/api/sprites/{slot}")
+async def api_sprite_get(slot: str):
+    """Отдаёт загруженный спрайт по слоту (ground, ground_forest, ...)."""
+    slot = slot.strip().lower()
+    if slot not in _SPRITE_SLOTS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown_slot")
+    path = _SPRITES_DIR / f"{slot}.png"
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="sprite_not_found")
+    return FileResponse(str(path), media_type="image/png")
+
+
+@app.get("/api/sprites")
+async def api_sprite_list():
+    """Список загруженных слотов спрайтов."""
+    loaded = {}
+    for s in _SPRITE_SLOTS:
+        p = _SPRITES_DIR / f"{s}.png"
+        loaded[s] = p.exists()
+    return JSONResponse({"slots": _SPRITE_SLOTS, "loaded": loaded})
+
+
+@app.post("/api/admin/sprites/{slot}")
+async def api_admin_sprite_upload(slot: str, token: str, file: UploadFile = File(...)):
+    """Загрузка спрайта текстуры (только PNG, ≤2MB)."""
+    _require_admin(token)
+    slot = slot.strip().lower()
+    if slot not in _SPRITE_SLOTS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown_slot")
+    if not file.content_type or "png" not in file.content_type.lower():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="only_png")
+    data = await file.read()
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file_too_large")
+    dest = _SPRITES_DIR / f"{slot}.png"
+    dest.write_bytes(data)
+    return JSONResponse({"ok": True, "slot": slot, "size": len(data)})
+
+
+@app.delete("/api/admin/sprites/{slot}")
+async def api_admin_sprite_delete(slot: str, token: str):
+    _require_admin(token)
+    slot = slot.strip().lower()
+    dest = _SPRITES_DIR / f"{slot}.png"
+    if dest.exists():
+        dest.unlink()
+    return JSONResponse({"ok": True})
+
+
+# ── Animals CRUD API ───────────────────────────────────────────────────
+def _load_animals() -> list:
+    if _ANIMALS_JSON.exists():
+        try:
+            return json.loads(_ANIMALS_JSON.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return []
+
+
+def _save_animals(animals: list):
+    _ANIMALS_JSON.write_text(json.dumps(animals, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.get("/api/animals")
+async def api_animals_list():
+    return JSONResponse({"animals": _load_animals()})
+
+
+@app.get("/api/animals/{animal_id}")
+async def api_animal_get(animal_id: str):
+    animals = _load_animals()
+    for a in animals:
+        if a.get("id") == animal_id:
+            return JSONResponse(a)
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="animal_not_found")
+
+
+@app.post("/api/admin/animals")
+async def api_admin_animal_create(token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    animals = _load_animals()
+    aid = f"animal_{int(time.time())}_{random.randint(1000,9999)}"
+    animal = {
+        "id": aid,
+        "name": str(payload.get("name", "Безымянное")).strip()[:60],
+        "status": str(payload.get("status", "active")).strip()[:30],
+        "health": max(1, min(10000, int(payload.get("health", 100)))),
+        "speed": max(0.1, min(10.0, float(payload.get("speed", 1.0)))),
+        "damage": max(0, min(1000, int(payload.get("damage", 10)))),
+        "armor": max(0, min(1000, int(payload.get("armor", 0)))),
+        "aggression": max(0.0, min(1.0, float(payload.get("aggression", 0.5)))),
+        "description": str(payload.get("description", "")).strip()[:200],
+        "sprites": {"up": False, "down": False, "left": False, "right": False},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    animals.append(animal)
+    _save_animals(animals)
+    return JSONResponse({"ok": True, "animal": animal})
+
+
+@app.put("/api/admin/animals/{animal_id}")
+async def api_admin_animal_update(animal_id: str, token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    animals = _load_animals()
+    for a in animals:
+        if a.get("id") == animal_id:
+            if "name" in payload:
+                a["name"] = str(payload["name"]).strip()[:60]
+            if "status" in payload:
+                a["status"] = str(payload["status"]).strip()[:30]
+            if "health" in payload:
+                a["health"] = max(1, min(10000, int(payload["health"])))
+            if "speed" in payload:
+                a["speed"] = max(0.1, min(10.0, float(payload["speed"])))
+            if "damage" in payload:
+                a["damage"] = max(0, min(1000, int(payload["damage"])))
+            if "armor" in payload:
+                a["armor"] = max(0, min(1000, int(payload["armor"])))
+            if "aggression" in payload:
+                a["aggression"] = max(0.0, min(1.0, float(payload["aggression"])))
+            if "description" in payload:
+                a["description"] = str(payload["description"]).strip()[:200]
+            _save_animals(animals)
+            return JSONResponse({"ok": True, "animal": a})
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="animal_not_found")
+
+
+@app.delete("/api/admin/animals/{animal_id}")
+async def api_admin_animal_delete(animal_id: str, token: str):
+    _require_admin(token)
+    animals = _load_animals()
+    animals = [a for a in animals if a.get("id") != animal_id]
+    _save_animals(animals)
+    # Remove sprite files
+    sprite_dir = _ANIMALS_DIR / animal_id
+    if sprite_dir.exists():
+        shutil.rmtree(str(sprite_dir), ignore_errors=True)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/admin/animals/{animal_id}/sprite/{direction}")
+async def api_admin_animal_sprite_upload(animal_id: str, direction: str, token: str, file: UploadFile = File(...)):
+    """Загрузка спрайта одного направления животного (up/down/left/right). PNG ≤2MB."""
+    _require_admin(token)
+    direction = direction.strip().lower()
+    if direction not in ("up", "down", "left", "right"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_direction")
+    if not file.content_type or "png" not in file.content_type.lower():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="only_png")
+    data = await file.read()
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file_too_large")
+    animals = _load_animals()
+    found = False
+    for a in animals:
+        if a.get("id") == animal_id:
+            found = True
+            a.setdefault("sprites", {})[direction] = True
+            break
+    if not found:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="animal_not_found")
+    dest_dir = _ANIMALS_DIR / animal_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    (dest_dir / f"{direction}.png").write_bytes(data)
+    _save_animals(animals)
+    return JSONResponse({"ok": True, "direction": direction, "size": len(data)})
+
+
+@app.get("/api/animals/{animal_id}/sprite/{direction}")
+async def api_animal_sprite_get(animal_id: str, direction: str):
+    direction = direction.strip().lower()
+    if direction not in ("up", "down", "left", "right"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_direction")
+    path = _ANIMALS_DIR / animal_id / f"{direction}.png"
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="sprite_not_found")
+    return FileResponse(str(path), media_type="image/png")
 
 
 @app.get("/api/news")

@@ -272,23 +272,63 @@ class Skills:
         return child
 
 
-# ── Дневник агента (ключевые события жизни) ──────────────────────────
-class LifeLog:
-    """Хранит важные события жизни агента для отображения пользователю."""
+# ── Иконки категорий дневника ─────────────────────────────────────────
+DIARY_ICONS: Dict[str, str] = {
+    'birth': '💒',
+    'achievement': '🏆',
+    'craft': '🔧',
+    'eat': '🍖',
+    'drink': '💧',
+    'danger': '⚠️',
+    'fight': '⚔️',
+    'social': '🤝',
+    'love': '💕',
+    'family': '👨‍👩‍👦',
+    'mood': '🎭',
+    'explore': '🗺️',
+    'discovery': '✨',
+    'skill_up': '📈',
+    'death': '☠️',
+    'swim': '🏊',
+    'sleep': '😴',
+}
 
-    def __init__(self, max_entries: int = 50):
+
+# ── Дневник агента (история жизни с эмоциональной привязкой) ─────────
+class LifeLog:
+    """Хранит важные события жизни агента с эмоциональным контекстом."""
+
+    def __init__(self, max_entries: int = 80):
         self.entries: List[Dict[str, Any]] = []
         self.max_entries = max_entries
+        self._last_mood: Optional[str] = None
+        self._last_emotion: Optional[str] = None
+
+    def set_emotional_context(self, mood: Optional[str], emotion: Optional[str]):
+        """Обновляет текущий эмоциональный контекст для следующих записей."""
+        self._last_mood = mood
+        self._last_emotion = emotion
 
     def add(self, timestep: int, event_type: str, text_ru: str, **extra):
-        entry = {'t': timestep, 'type': event_type, 'text': text_ru}
+        icon = extra.pop('icon', None) or DIARY_ICONS.get(event_type, '📝')
+        entry = {
+            't': timestep,
+            'type': event_type,
+            'icon': icon,
+            'text': text_ru,
+            'mood': extra.pop('mood', None) or self._last_mood,
+            'emo': extra.pop('emo', None) or self._last_emotion,
+        }
         entry.update(extra)
         self.entries.append(entry)
         if len(self.entries) > self.max_entries:
             self.entries = self.entries[-self.max_entries:]
 
+    def last(self) -> Optional[Dict[str, Any]]:
+        return self.entries[-1] if self.entries else None
+
     def to_list(self) -> List[Dict[str, Any]]:
-        return list(self.entries[-20:])  # Последние 20 для UI
+        return list(self.entries[-30:])  # Последние 30 для UI
 
 
 # ── Достижения ────────────────────────────────────────────────────────

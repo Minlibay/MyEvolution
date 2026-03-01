@@ -46,6 +46,8 @@
       <div class="admin-nav-item" id="tabSite" data-panel="sitePanel"><span class="nav-icon">⚙</span> SEO / Сайт</div>
       <div class="admin-nav-item" id="tabPrivacy" data-panel="privacyPanel"><span class="nav-icon">🔒</span> Политика</div>
       <div class="admin-nav-item" id="tabChat" data-panel="chatPanel"><span class="nav-icon">💬</span> Чат</div>
+      <div class="admin-nav-item" id="tabSprites" data-panel="spritesPanel"><span class="nav-icon">🎨</span> Текстуры</div>
+      <div class="admin-nav-item" id="tabAnimals" data-panel="animalsPanel"><span class="nav-icon">🐾</span> Животные</div>
     </nav>
     <div class="admin-sidebar-footer">
       <a href="/" class="btn btn-secondary btn-sm w-full" style="text-align:center; display:block;">← К симуляции</a>
@@ -407,6 +409,111 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
         </div>
       </div>
 
+      <!-- ══════ SPRITES / TEXTURES PANEL ══════ -->
+      <div id="spritesPanel" class="admin-section">
+        <div class="panel" style="margin-bottom:16px;">
+          <h3>🎨 Текстуры мира — Инструкция</h3>
+          <div class="pad">
+            <div class="muted" style="line-height:1.6;">
+              <b>Требования к текстурам:</b><br>
+              • Формат: <b>PNG</b> (прозрачность поддерживается)<br>
+              • Размер файла: до <b>2 МБ</b><br>
+              • Рекомендуемый размер: <b>64×64 px</b> или <b>128×128 px</b> (тайлится по карте)<br>
+              • Текстура земли — основной фон мира, заменяет чёрный цвет<br>
+              • Текстуры биомов — для будущих разных зон карты (лес, пустыня, горы, болото)<br>
+              • Зимние текстуры — для снежного сезона<br><br>
+              <b>Слоты текстур:</b><br>
+              • <b>ground</b> — основная земля (обязательная)<br>
+              • <b>ground_forest</b> — лесной биом<br>
+              • <b>ground_desert</b> — пустыня<br>
+              • <b>ground_mountain</b> — горы<br>
+              • <b>ground_swamp</b> — болото<br>
+              • <b>ground_winter</b> — зимняя земля (снег)<br>
+              • <b>ground_winter_forest</b> — зимний лес<br>
+              • <b>ground_winter_desert</b> — зимняя пустыня
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Загрузка текстур <span id="spritesState" class="muted"></span></h3>
+          <div class="pad">
+            <div id="spriteSlotsList" class="list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════ ANIMALS PANEL ══════ -->
+      <div id="animalsPanel" class="admin-section">
+        <div class="panel" style="margin-bottom:16px;">
+          <h3>🐾 Создать животное</h3>
+          <div class="pad">
+            <div class="split" style="margin-bottom:8px;">
+              <div>
+                <label class="muted">Название</label>
+                <input id="animalName" placeholder="Например: Волк" />
+              </div>
+              <div>
+                <label class="muted">Статус</label>
+                <select id="animalStatus">
+                  <option value="active">Активно</option>
+                  <option value="passive">Пассивное</option>
+                  <option value="hostile">Враждебное</option>
+                  <option value="friendly">Дружелюбное</option>
+                  <option value="disabled">Отключено</option>
+                </select>
+              </div>
+            </div>
+            <div class="split" style="margin-bottom:8px;">
+              <div>
+                <label class="muted">Здоровье (1–10000)</label>
+                <input id="animalHealth" type="number" value="100" min="1" max="10000" />
+              </div>
+              <div>
+                <label class="muted">Скорость (0.1–10)</label>
+                <input id="animalSpeed" type="number" value="1.0" min="0.1" max="10" step="0.1" />
+              </div>
+            </div>
+            <div class="split" style="margin-bottom:8px;">
+              <div>
+                <label class="muted">Урон (0–1000)</label>
+                <input id="animalDamage" type="number" value="10" min="0" max="1000" />
+              </div>
+              <div>
+                <label class="muted">Броня (0–1000)</label>
+                <input id="animalArmor" type="number" value="0" min="0" max="1000" />
+              </div>
+            </div>
+            <div class="split" style="margin-bottom:8px;">
+              <div>
+                <label class="muted">Агрессивность (0.0–1.0)</label>
+                <input id="animalAggression" type="number" value="0.5" min="0" max="1" step="0.05" />
+              </div>
+              <div>
+                <label class="muted">Описание</label>
+                <input id="animalDesc" placeholder="Краткое описание..." />
+              </div>
+            </div>
+            <div class="row" style="margin-top:10px; justify-content:space-between;">
+              <button id="btnAnimalCreate" class="btn btn-primary btn-sm">Создать животное</button>
+              <div id="animalCreateState" class="muted"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Список животных
+            <span style="display:flex; gap:6px; align-items:center;">
+              <button id="btnAnimalsReload" class="btn btn-secondary btn-xs">Обновить</button>
+              <span id="animalsState" class="muted"></span>
+            </span>
+          </h3>
+          <div class="pad">
+            <div id="animalsList" class="list"></div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </main>
 </div>
@@ -421,6 +528,8 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   const tabSite = document.getElementById('tabSite');
   const tabPrivacy = document.getElementById('tabPrivacy');
   const tabChat = document.getElementById('tabChat');
+  const tabSprites = document.getElementById('tabSprites');
+  const tabAnimals = document.getElementById('tabAnimals');
   const usersPanel = document.getElementById('usersPanel');
   const newsPanel = document.getElementById('newsPanel');
   const mapPanel = document.getElementById('mapPanel');
@@ -428,6 +537,8 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   const sitePanel = document.getElementById('sitePanel');
   const privacyPanel = document.getElementById('privacyPanel');
   const chatPanel = document.getElementById('chatPanel');
+  const spritesPanel = document.getElementById('spritesPanel');
+  const animalsPanel = document.getElementById('animalsPanel');
 
   const bootUser = document.getElementById('bootUser');
   const bootPass = document.getElementById('bootPass');
@@ -567,6 +678,12 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       username_too_short: 'Логин слишком короткий',
       password_too_short: 'Пароль слишком короткий',
       invalid_user_id: 'Некорректный user_id',
+      unknown_slot: 'Неизвестный слот текстуры',
+      only_png: 'Поддерживается только формат PNG',
+      file_too_large: 'Файл слишком большой (макс. 2 МБ)',
+      sprite_not_found: 'Спрайт не найден',
+      animal_not_found: 'Животное не найдено',
+      invalid_direction: 'Некорректное направление (up/down/left/right)',
     };
     return map[d] || d;
   }
@@ -637,6 +754,8 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     const isSite = which === 'site';
     const isPrivacy = which === 'privacy';
     const isChat = which === 'chat';
+    const isSprites = which === 'sprites';
+    const isAnimals = which === 'animals';
     // Update sidebar nav active state
     document.querySelectorAll('.admin-nav-item').forEach(el => el.classList.remove('active'));
     if (tabUsers && isUsers) tabUsers.classList.add('active');
@@ -646,6 +765,8 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     if (tabSite && isSite) tabSite.classList.add('active');
     if (tabPrivacy && isPrivacy) tabPrivacy.classList.add('active');
     if (tabChat && isChat) tabChat.classList.add('active');
+    if (tabSprites && isSprites) tabSprites.classList.add('active');
+    if (tabAnimals && isAnimals) tabAnimals.classList.add('active');
     // Update section visibility via admin-section active class
     document.querySelectorAll('.admin-section').forEach(el => el.classList.remove('active'));
     if (usersPanel && isUsers) usersPanel.classList.add('active');
@@ -655,11 +776,19 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     if (sitePanel && isSite) sitePanel.classList.add('active');
     if (privacyPanel && isPrivacy) privacyPanel.classList.add('active');
     if (chatPanel && isChat) chatPanel.classList.add('active');
+    if (spritesPanel && isSprites) spritesPanel.classList.add('active');
+    if (animalsPanel && isAnimals) animalsPanel.classList.add('active');
     if (isMap) {
       drawMap();
     }
     if (isTools) {
       renderToolsList();
+    }
+    if (isSprites) {
+      loadSpriteSlots();
+    }
+    if (isAnimals) {
+      loadAnimals();
     }
   }
 
@@ -1624,6 +1753,12 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   if (tabChat) {
     tabChat.addEventListener('click', () => showTab('chat'));
   }
+  if (tabSprites) {
+    tabSprites.addEventListener('click', () => showTab('sprites'));
+  }
+  if (tabAnimals) {
+    tabAnimals.addEventListener('click', () => showTab('animals'));
+  }
 
   if (btnSiteLoad) btnSiteLoad.addEventListener('click', () => loadSiteSettings());
   if (btnSiteSave) btnSiteSave.addEventListener('click', () => saveSiteSettings());
@@ -1720,6 +1855,245 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       drawMap();
     });
   }
+
+  // ── Sprites / Textures ──────────────────────────────────────────────
+  const spriteSlotsList = document.getElementById('spriteSlotsList');
+  const spritesState = document.getElementById('spritesState');
+
+  const spriteSlotNames = {
+    ground: 'Земля (основная)',
+    ground_forest: 'Лесной биом',
+    ground_desert: 'Пустыня',
+    ground_mountain: 'Горы',
+    ground_swamp: 'Болото',
+    ground_winter: 'Зима (снег)',
+    ground_winter_forest: 'Зимний лес',
+    ground_winter_desert: 'Зимняя пустыня',
+  };
+
+  async function loadSpriteSlots() {
+    if (!spriteSlotsList) return;
+    if (spritesState) spritesState.textContent = '...';
+    try {
+      const { res, data } = await jsonFetch('/api/sprites', { cache: 'no-store' });
+      if (!res.ok) { if (spritesState) spritesState.textContent = 'Ошибка'; return; }
+      const slots = data.slots || [];
+      const loaded = data.loaded || {};
+      if (spritesState) spritesState.textContent = '';
+      spriteSlotsList.innerHTML = '';
+      for (const slot of slots) {
+        const isLoaded = loaded[slot];
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="row" style="justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span class="dot ${isLoaded ? 'ok' : ''}"></span>
+              <div>
+                <b>${escapeHtml(spriteSlotNames[slot] || slot)}</b>
+                <div class="muted mono">${escapeHtml(slot)}.png ${isLoaded ? '✓ загружен' : '— не загружен'}</div>
+              </div>
+              ${isLoaded ? `<img src="/api/sprites/${slot}?_=${Date.now()}" style="height:40px; border-radius:4px; border:1px solid var(--border-subtle);" />` : ''}
+            </div>
+            <div class="row" style="gap:6px;">
+              <input type="file" accept="image/png" style="max-width:160px; font-size:11px;" data-slot="${escapeHtml(slot)}" class="sprite-file-input" />
+              <button class="btn btn-primary btn-xs sprite-upload-btn" data-slot="${escapeHtml(slot)}">Загрузить</button>
+              ${isLoaded ? `<button class="btn btn-danger btn-xs sprite-delete-btn" data-slot="${escapeHtml(slot)}">Удалить</button>` : ''}
+            </div>
+          </div>
+        `;
+        spriteSlotsList.appendChild(div);
+      }
+      // Attach handlers
+      spriteSlotsList.querySelectorAll('.sprite-upload-btn').forEach(btn => {
+        btn.addEventListener('click', () => uploadSprite(btn.dataset.slot));
+      });
+      spriteSlotsList.querySelectorAll('.sprite-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteSprite(btn.dataset.slot));
+      });
+    } catch (e) {
+      if (spritesState) spritesState.textContent = 'Ошибка сети';
+    }
+  }
+
+  async function uploadSprite(slot) {
+    const token = getToken();
+    if (!token) return;
+    const input = spriteSlotsList.querySelector(`.sprite-file-input[data-slot="${slot}"]`);
+    if (!input || !input.files.length) { alert('Выберите PNG файл'); return; }
+    const file = input.files[0];
+    if (!file.type.includes('png')) { alert('Только PNG файлы'); return; }
+    if (file.size > 2 * 1024 * 1024) { alert('Файл слишком большой (макс. 2 МБ)'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      if (spritesState) spritesState.textContent = 'Загрузка...';
+      const res = await fetch(`/api/admin/sprites/${slot}?token=${encodeURIComponent(token)}`, { method: 'POST', body: fd });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(localizeDetail(d.detail) || 'Ошибка'); }
+      await loadSpriteSlots();
+    } catch (e) { alert('Ошибка сети'); }
+  }
+
+  async function deleteSprite(slot) {
+    if (!confirm(`Удалить текстуру "${spriteSlotNames[slot] || slot}"?`)) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+      await fetch(`/api/admin/sprites/${slot}?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
+      await loadSpriteSlots();
+    } catch (e) { alert('Ошибка сети'); }
+  }
+
+  // ── Animals ────────────────────────────────────────────────────────
+  const animalsList = document.getElementById('animalsList');
+  const animalsState = document.getElementById('animalsState');
+  const animalCreateState = document.getElementById('animalCreateState');
+  const btnAnimalCreate = document.getElementById('btnAnimalCreate');
+  const btnAnimalsReload = document.getElementById('btnAnimalsReload');
+
+  const statusRu = { active: 'Активно', passive: 'Пассивное', hostile: 'Враждебное', friendly: 'Дружелюбное', disabled: 'Отключено' };
+  const dirRu = { up: 'Вверх', down: 'Вниз', left: 'Влево', right: 'Вправо' };
+
+  async function loadAnimals() {
+    if (!animalsList) return;
+    if (animalsState) animalsState.textContent = '...';
+    try {
+      const { res, data } = await jsonFetch('/api/animals', { cache: 'no-store' });
+      if (!res.ok) { if (animalsState) animalsState.textContent = 'Ошибка'; return; }
+      const animals = data.animals || [];
+      if (animalsState) animalsState.textContent = `${animals.length} шт.`;
+      animalsList.innerHTML = '';
+      if (!animals.length) {
+        animalsList.innerHTML = '<div class="muted">Нет животных. Создайте первое выше.</div>';
+        return;
+      }
+      for (const a of animals) {
+        const card = renderAnimalCard(a);
+        animalsList.appendChild(card);
+      }
+    } catch (e) {
+      if (animalsState) animalsState.textContent = 'Ошибка сети';
+    }
+  }
+
+  function renderAnimalCard(a) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    const sp = a.sprites || {};
+    let spritesHtml = '<div class="row" style="gap:6px; margin-top:8px; flex-wrap:wrap;">';
+    for (const dir of ['up', 'down', 'left', 'right']) {
+      const hasSprite = sp[dir];
+      spritesHtml += `
+        <div style="text-align:center; border:1px solid var(--border-subtle); border-radius:6px; padding:4px; min-width:70px;">
+          <div class="muted" style="font-size:10px; margin-bottom:2px;">${dirRu[dir]}</div>
+          ${hasSprite
+            ? `<img src="/api/animals/${a.id}/sprite/${dir}?_=${Date.now()}" style="height:48px; display:block; margin:0 auto 4px;" />`
+            : `<div style="height:48px; display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:20px;">?</div>`
+          }
+          <input type="file" accept="image/png" style="font-size:10px; max-width:80px;" class="animal-sprite-input" data-aid="${a.id}" data-dir="${dir}" />
+          <button class="btn btn-primary btn-xs animal-sprite-upload" data-aid="${a.id}" data-dir="${dir}" style="margin-top:2px; font-size:10px;">↑</button>
+        </div>
+      `;
+    }
+    spritesHtml += '</div>';
+
+    div.innerHTML = `
+      <div class="row" style="justify-content:space-between; align-items:flex-start;">
+        <div style="flex:1;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <b style="font-size:14px;">${escapeHtml(a.name)}</b>
+            <span class="pill"><span class="dot ${a.status === 'disabled' ? 'warn' : 'ok'}"></span>${escapeHtml(statusRu[a.status] || a.status)}</span>
+          </div>
+          ${a.description ? `<div class="muted" style="margin-bottom:4px;">${escapeHtml(a.description)}</div>` : ''}
+          <div class="muted mono" style="font-size:11px;">
+            HP=${a.health} · Урон=${a.damage} · Броня=${a.armor} · Скорость=${a.speed} · Агрессия=${a.aggression}
+          </div>
+          <div class="muted" style="font-size:10px;">ID: ${escapeHtml(a.id)}</div>
+          ${spritesHtml}
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px; margin-left:10px;">
+          <button class="btn btn-danger btn-xs animal-delete-btn" data-aid="${a.id}">Удалить</button>
+        </div>
+      </div>
+    `;
+
+    // Attach handlers after appending
+    setTimeout(() => {
+      div.querySelectorAll('.animal-sprite-upload').forEach(btn => {
+        btn.addEventListener('click', () => uploadAnimalSprite(btn.dataset.aid, btn.dataset.dir));
+      });
+      div.querySelector('.animal-delete-btn')?.addEventListener('click', () => deleteAnimal(a.id, a.name));
+    }, 0);
+
+    return div;
+  }
+
+  async function createAnimal() {
+    const token = getToken();
+    if (!token) { if (animalCreateState) animalCreateState.textContent = 'Войдите'; return; }
+    const name = (document.getElementById('animalName')?.value || '').trim();
+    if (!name) { if (animalCreateState) animalCreateState.textContent = 'Введите название'; return; }
+    const payload = {
+      name,
+      status: document.getElementById('animalStatus')?.value || 'active',
+      health: parseInt(document.getElementById('animalHealth')?.value || '100'),
+      speed: parseFloat(document.getElementById('animalSpeed')?.value || '1.0'),
+      damage: parseInt(document.getElementById('animalDamage')?.value || '10'),
+      armor: parseInt(document.getElementById('animalArmor')?.value || '0'),
+      aggression: parseFloat(document.getElementById('animalAggression')?.value || '0.5'),
+      description: (document.getElementById('animalDesc')?.value || '').trim(),
+    };
+    if (animalCreateState) animalCreateState.textContent = '...';
+    try {
+      const { res, data } = await jsonFetch(`/api/admin/animals?token=${encodeURIComponent(token)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        if (animalCreateState) animalCreateState.textContent = localizeDetail(data.detail) || 'Ошибка';
+        return;
+      }
+      if (animalCreateState) animalCreateState.textContent = 'Создано!';
+      document.getElementById('animalName').value = '';
+      document.getElementById('animalDesc').value = '';
+      await loadAnimals();
+    } catch (e) {
+      if (animalCreateState) animalCreateState.textContent = 'Ошибка сети';
+    }
+  }
+
+  async function deleteAnimal(aid, name) {
+    if (!confirm(`Удалить животное "${name}"?`)) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+      await fetch(`/api/admin/animals/${aid}?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
+      await loadAnimals();
+    } catch (e) { alert('Ошибка сети'); }
+  }
+
+  async function uploadAnimalSprite(aid, dir) {
+    const token = getToken();
+    if (!token) return;
+    const input = document.querySelector(`.animal-sprite-input[data-aid="${aid}"][data-dir="${dir}"]`);
+    if (!input || !input.files.length) { alert('Выберите PNG файл'); return; }
+    const file = input.files[0];
+    if (!file.type.includes('png')) { alert('Только PNG файлы'); return; }
+    if (file.size > 2 * 1024 * 1024) { alert('Файл слишком большой (макс. 2 МБ)'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch(`/api/admin/animals/${aid}/sprite/${dir}?token=${encodeURIComponent(token)}`, { method: 'POST', body: fd });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(localizeDetail(d.detail) || 'Ошибка'); return; }
+      await loadAnimals();
+    } catch (e) { alert('Ошибка сети'); }
+  }
+
+  if (btnAnimalCreate) btnAnimalCreate.addEventListener('click', () => createAnimal());
+  if (btnAnimalsReload) btnAnimalsReload.addEventListener('click', () => loadAnimals());
 
   // Auto-fill saved username
   try {

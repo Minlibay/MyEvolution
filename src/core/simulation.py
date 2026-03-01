@@ -640,31 +640,134 @@ class SimulationState:
                 if action == 'move' and result.success:
                     agent.track_visit(agent.position)
 
-                # ── Life log (key events only) ───────────────────────
+                # ── Life log (история жизни с эмоциональной привязкой) ──
                 log = agent.life_log
                 ach = agent.achievements
                 ts = self.timestep
 
+                # Обновляем эмоциональный контекст дневника
+                log.set_emotional_context(
+                    getattr(agent, 'last_mood', None),
+                    emo.dominant() if hasattr(emo, 'dominant') else None,
+                )
+
+                # ── Еда / питьё ──
+                if action == 'consume' and result.success:
+                    log.add(ts, 'eat', 'Утолил голод — поел.')
+                if action == 'drink' and result.success:
+                    log.add(ts, 'drink', 'Утолил жажду — попил воды.')
+
+                # ── Сбор ──
                 if action == 'gather' and result.success:
                     if ach.unlock('first_gather', ts):
-                        log.add(ts, 'achievement', '🥬 Первая добыча! Собрал первый объект.')
+                        log.add(ts, 'achievement', 'Первая добыча! Собрал первый объект.')
+                    elif ts % 50 == 0:
+                        log.add(ts, 'gather', 'Нашёл и собрал ресурсы.', icon='🌿')
+
+                # ── Крафт ──
                 if action == 'combine' and result.success:
                     if ach.unlock('first_craft', ts):
-                        log.add(ts, 'achievement', '🔧 Изобретатель! Создал первый инструмент.')
+                        log.add(ts, 'achievement', 'Изобретатель! Создал первый инструмент.')
                     else:
-                        log.add(ts, 'craft', 'Создал новый инструмент')
+                        log.add(ts, 'craft', 'Создал новый инструмент.')
 
-                # Birth achievement for parent
-                if action == 'mate' and result.success and getattr(agent, 'pregnant', False):
-                    if ach.unlock('first_child', ts):
-                        log.add(ts, 'achievement', '👶 Родитель! Скоро появится ребёнок.')
+                # ── Бой ──
+                if action == 'attack':
+                    if result.success:
+                        log.add(ts, 'fight', 'Одержал победу в схватке!')
+                    else:
+                        log.add(ts, 'fight', 'Проиграл бой... Получил раны.')
 
-                # Elder achievement
+                # ── Общение ──
+                if action == 'communicate' and result.success:
+                    listener_id = result.data.get('listener_id') if result.data else None
+                    if listener_id:
+                        name = self._agent_display_name(listener_id)
+                        trust = soc.get_trust(listener_id)
+                        if trust > 0.5:
+                            log.add(ts, 'social', f'Пообщался с другом {name}.')
+                        elif trust > 0.0:
+                            log.add(ts, 'social', f'Поговорил с {name}.')
+
+                # ── Любовь / размножение ──
+                if action == 'mate' and result.success:
+                    partner_id = (result.data.get('father_id') or result.data.get('mother_id')) if result.data else None
+                    name = self._agent_display_name(partner_id) if partner_id else '?'
+                    log.add(ts, 'love', f'Нашёл пару: {name}.')
+                    if getattr(agent, 'pregnant', False):
+                        if ach.unlock('first_child', ts):
+                            log.add(ts, 'achievement', 'Родитель! Скоро появится ребёнок.')
+
+                # ── Забота ──
+                if action == 'care' and result.success:
+                    child_id = result.data.get('child_id') if result.data else None
+                    name = self._agent_display_name(child_id) if child_id else 'ребёнок'
+                    log.add(ts, 'family', f'Позаботился о {name}.')
+
+                # ── Сон ──
+                if action == 'sleep' and result.success:
+                    log.add(ts, 'sleep', 'Лёг отдохнуть и набраться сил.')
+
+                # ── Опасность: здоровье/голод/жажда ──
+                if agent.health < 0.25 and not getattr(agent, '_log_danger_hp', False):
+                    log.add(ts, 'danger', 'Здоровье критически низкое! Нужна помощь...')
+                    agent._log_danger_hp = True
+                elif agent.health >= 0.4:
+                    agent._log_danger_hp = False
+
+                if agent.hunger > 0.85 and not getattr(agent, '_log_danger_hunger', False):
+                    log.add(ts, 'danger', 'Ужасно голоден... Нужно найти еду!')
+                    agent._log_danger_hunger = True
+                elif agent.hunger < 0.5:
+                    agent._log_danger_hunger = False
+
+                if getattr(agent, 'thirst', 0) > 0.85 and not getattr(agent, '_log_danger_thirst', False):
+                    log.add(ts, 'danger', 'Мучает жажда... Нужна вода!')
+                    agent._log_danger_thirst = True
+                elif getattr(agent, 'thirst', 0) < 0.5:
+                    agent._log_danger_thirst = False
+
+                # ── Плавание ──
+                if getattr(agent, 'is_swimming', False):
+                    wt = int(getattr(agent, 'water_ticks', 0))
+                    if wt == 3:
+                        log.add(ts, 'swim', 'Начал плыть по воде...')
+                    elif wt > self.drowning_grace_steps:
+                        log.add(ts, 'danger', 'Тону! Не могу выбраться из воды!')
+
+                # ── Смена настроения (значительная) ──
+                prev_mood = getattr(agent, '_prev_mood_for_log', None)
+                cur_mood = getattr(agent, 'last_mood', None)
+                if prev_mood and cur_mood and prev_mood != cur_mood and ts % 10 == 0:
+                    log.add(ts, 'mood', f'Настроение изменилось: {cur_mood}.')
+                agent._prev_mood_for_log = cur_mood
+
+                # ── Новая дружба ──
+                for other in close_agents:
+                    trust = soc.get_trust(other.id)
+                    prev_key = f'_log_friend_{other.id}'
+                    if trust > 0.4 and not getattr(agent, prev_key, False):
+                        name = self._agent_display_name(other.id)
+                        log.add(ts, 'social', f'Подружился с {name}!')
+                        setattr(agent, prev_key, True)
+
+                # ── Прокачка навыка ──
+                if skill_name and result.success:
+                    sk_obj = agent.skills
+                    new_lv = sk_obj.level(skill_name)
+                    prev_lv_key = f'_log_sk_lv_{skill_name}'
+                    prev_lv = getattr(agent, prev_lv_key, 1)
+                    if new_lv > prev_lv:
+                        from .agent import SKILL_RU
+                        log.add(ts, 'skill_up', f'Навык «{SKILL_RU.get(skill_name, skill_name)}» повысился до lv{new_lv}!')
+                        setattr(agent, prev_lv_key, new_lv)
+
+                # ── Долгожитель ──
                 if agent.age >= 5000:
                     if ach.unlock('elder', ts):
-                        log.add(ts, 'achievement', '🧓 Долгожитель! Прожил 5000 тиков.')
+                        log.add(ts, 'achievement', 'Долгожитель! Прожил 5000 тиков.')
 
-                # Skill mastery achievements
+                # ── Мастерство навыков ──
                 for sk, ach_id in [('hunting', 'master_hunter'), ('crafting', 'master_crafter'),
                                     ('gathering', 'master_gatherer'), ('survival', 'survivor'),
                                     ('communication', 'communicator')]:
@@ -673,25 +776,32 @@ class SimulationState:
                             from .agent import SKILL_RU
                             log.add(ts, 'achievement', f'Мастерство: {SKILL_RU.get(sk, sk)} lv7!')
 
-                # Social achievements
+                # ── Социальные достижения ──
                 friends_count = len([1 for _, t in agent.social.relationships.items() if t > 0.3])
                 if friends_count >= 5:
                     if ach.unlock('social_butterfly', ts):
-                        log.add(ts, 'achievement', '🦋 Душа компании! 5+ друзей.')
+                        log.add(ts, 'achievement', 'Душа компании! 5+ друзей.')
 
                 family_count = len(agent.social.family)
                 if family_count >= 3:
                     if ach.unlock('family_person', ts):
-                        log.add(ts, 'achievement', '👨‍👩‍👦 Семьянин! 3+ членов семьи.')
+                        log.add(ts, 'achievement', 'Семьянин! 3+ членов семьи.')
 
-                # Explorer achievement
+                # ── Путешественник ──
                 if agent.visited_cells >= 100:
                     if ach.unlock('explorer', ts):
-                        log.add(ts, 'achievement', '🗺️ Путешественник! Посетил 100+ клеток.')
+                        log.add(ts, 'achievement', 'Путешественник! Посетил 100+ клеток.')
 
             except Exception:
                 pass
     
+    def _agent_display_name(self, agent_id: str) -> str:
+        """Возвращает display_name агента по id, или сам id."""
+        a = self.agents.get(agent_id)
+        if a:
+            return getattr(a, 'display_name', a.id)
+        return str(agent_id)[:12]
+
     def _handle_agent_death(self, agent: Agent):
         """Обрабатывает смерть агента"""
         cause = 'unknown'
@@ -722,7 +832,17 @@ class SimulationState:
             'max_age': agent.max_age,
         })
         
+        # Запись смерти в дневник самого агента
+        cause_ru = {'drowning': 'утонул', 'starvation': 'от голода', 'dehydration': 'от жажды',
+                     'health_collapse': 'от ран', 'old_age': 'от старости', 'exhaustion': 'от истощения'}
+        try:
+            agent.life_log.add(self.timestep, 'death',
+                               f'Умер {cause_ru.get(cause, "по неизвестной причине")}. Прожил {agent.age} тиков.')
+        except Exception:
+            pass
+
         # Grief: nearby agents feel sadness, especially family
+        agent_name = getattr(agent, 'display_name', agent.id)
         try:
             for other in list(self.agents.values()):
                 if other.id == agent.id:
@@ -731,10 +851,16 @@ class SimulationState:
                 dy = abs(other.position[1] - agent.position[1])
                 if dx <= 3 and dy <= 3:
                     grief_amt = 0.08
-                    if agent.id in other.social.family:
+                    is_family = agent.id in other.social.family
+                    is_friend = other.social.get_trust(agent.id) > 0.2
+                    if is_family:
                         grief_amt = 0.35
-                    elif other.social.get_trust(agent.id) > 0.2:
+                        other.life_log.add(self.timestep, 'death',
+                                           f'Потерял близкого: {agent_name} умер... Горе.')
+                    elif is_friend:
                         grief_amt = 0.15
+                        other.life_log.add(self.timestep, 'death',
+                                           f'Знакомый {agent_name} погиб... Печально.')
                     other.emotional_state.add('grief', grief_amt)
                     other.emotional_state.add('fear', grief_amt * 0.3)
         except Exception:

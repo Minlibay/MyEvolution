@@ -63,6 +63,21 @@
     #chatAdminBar .btn { font-size:11px; padding:2px 8px; }
     .chat-pinned { display:none; margin-bottom:6px; padding:6px 10px; border-radius:var(--radius-sm); border:1px solid rgba(99,102,241,0.2); background:rgba(99,102,241,0.08); color:#a5b4fc; font-size:12px; line-height:1.35; }
     .chat-pinned b { color:#818cf8; }
+    .diary-wrap { max-height:180px; overflow-y:auto; padding:2px 0; }
+    .diary-entry { display:flex; gap:6px; padding:4px 6px; border-radius:6px; margin-bottom:3px; font-size:12px; line-height:1.35; transition:background 0.2s; }
+    .diary-entry:hover { background:rgba(255,255,255,0.04); }
+    .diary-icon { flex-shrink:0; font-size:14px; width:20px; text-align:center; }
+    .diary-body { flex:1; min-width:0; }
+    .diary-text { color:var(--text-primary); }
+    .diary-meta { display:flex; gap:6px; font-size:10px; color:var(--text-muted); margin-top:1px; }
+    .diary-entry.cat-danger { border-left:2px solid #ef4444; }
+    .diary-entry.cat-achievement { border-left:2px solid #fbbf24; }
+    .diary-entry.cat-love { border-left:2px solid #ec4899; }
+    .diary-entry.cat-social { border-left:2px solid #6366f1; }
+    .diary-entry.cat-death { border-left:2px solid #6b7280; background:rgba(107,114,128,0.06); }
+    .diary-entry.cat-mood { border-left:2px solid #8b5cf6; }
+    .diary-entry.cat-skill_up { border-left:2px solid #22d3ee; }
+    .diary-entry.cat-fight { border-left:2px solid #f97316; }
     .panel-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border-subtle); }
     .panel-head h3 { margin:0; font-size:0.85rem; font-weight:600; color:var(--text-accent); }
   </style>
@@ -392,11 +407,39 @@
     male: new Image(),
     female: new Image(),
     rip: new Image(),
+    tree: new Image(),
+    stone: new Image(),
+    flans: new Image(),
+    berry: new Image(),
+    bones: new Image(),
+    fiber: new Image(),
   };
 
   sprites.male.src = '/static/sprites/male.png';
   sprites.female.src = '/static/sprites/female.png';
   sprites.rip.src = '/static/sprites/rip.png';
+  sprites.tree.src = '/static/sprites/tree.png';
+  sprites.stone.src = '/static/sprites/stone.png';
+  sprites.flans.src = '/static/sprites/flans.png';
+  sprites.berry.src = '/static/sprites/berry.png';
+  sprites.bones.src = '/static/sprites/Bones.png';
+  sprites.fiber.src = '/static/sprites/fiber.png';
+
+  const objTypeToSprite = {
+    wood: 'tree',
+    stone: 'stone',
+    plant: 'flans',
+    berry: 'berry',
+    bone: 'bones',
+    fiber: 'fiber',
+  };
+
+  // Ground/biome sprite (loaded dynamically from admin uploads)
+  const groundSprite = new Image();
+  groundSprite.src = '/api/sprites/ground?_=' + Date.now();
+  let groundReady = false;
+  groundSprite.onload = () => { groundReady = true; };
+  groundSprite.onerror = () => { groundReady = false; };
 
   const agentRenderState = new Map();
 
@@ -1018,6 +1061,15 @@
       achieveLine = `<div class="muted">достижения: ${icons}</div>`;
     }
 
+    // Last diary entry
+    let diaryLine = '';
+    if (agent.life_log && agent.life_log.length) {
+      const last = agent.life_log[agent.life_log.length - 1];
+      const emotionRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
+      const emoTag = last.emo ? ` <span style="opacity:0.6">(${emotionRu[last.emo] || last.emo})</span>` : '';
+      diaryLine = `<div class="muted" style="margin-top:3px;font-style:italic;">${last.icon || '📝'} ${escapeHtml(last.text)}${emoTag}</div>`;
+    }
+
     agentTooltip.innerHTML = `
       <div class="title">${title}</div>
       ${ownerLine}
@@ -1026,6 +1078,7 @@
       ${thoughtLine}
       ${skillsLine}
       ${achieveLine}
+      ${diaryLine}
       ${swimLine}
       ${socialLine}
       <div class="muted">Инвентарь:</div>
@@ -1156,11 +1209,45 @@
       loadWorldMap();
     }
 
-    // Objects
+    // Ground texture (tiled if available)
+    if (groundReady && groundSprite.naturalWidth > 0) {
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      const pat = ctx.createPattern(groundSprite, 'repeat');
+      if (pat) {
+        const scaleX = sx / groundSprite.naturalWidth * 2;
+        const scaleY = sy / groundSprite.naturalHeight * 2;
+        ctx.fillStyle = pat;
+        ctx.setTransform(scaleX, 0, 0, scaleY, camera.x, camera.y);
+        ctx.fillRect(0, 0, w * groundSprite.naturalWidth / 2, h * groundSprite.naturalHeight / 2);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.translate(camera.x, camera.y);
+        ctx.scale(camera.zoom, camera.zoom);
+      }
+      ctx.restore();
+      // Re-apply camera after ground
+      ctx.save();
+      ctx.translate(camera.x, camera.y);
+      ctx.scale(camera.zoom, camera.zoom);
+    }
+
+    // Objects (sprites)
     for (const o of objectsState.values()) {
-      ctx.fillStyle = colorForObject(o.type);
-      ctx.globalAlpha = 0.7;
-      ctx.fillRect(o.x * sx, o.y * sy, Math.max(1, sx*0.7), Math.max(1, sy*0.7));
+      const spKey = objTypeToSprite[o.type];
+      const sp = spKey ? sprites[spKey] : null;
+      const spReady = sp && sp.complete && sp.naturalWidth > 0;
+      if (spReady) {
+        const drawH = Math.max(12, sy * 1.6);
+        const drawW = Math.round((sp.naturalWidth / sp.naturalHeight) * drawH);
+        ctx.save();
+        ctx.globalAlpha = 0.92;
+        ctx.drawImage(sp, o.x * sx - drawW / 2 + sx / 2, o.y * sy - drawH + sy, drawW, drawH);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = colorForObject(o.type);
+        ctx.globalAlpha = 0.7;
+        ctx.fillRect(o.x * sx, o.y * sy, Math.max(1, sx*0.7), Math.max(1, sy*0.7));
+      }
     }
 
     // Dead agents (надгробия)
@@ -1698,12 +1785,24 @@
       extraHtml += `</div>`;
     }
 
-    // Life log (last 8 entries)
+    // Life log (diary with emotional context)
     if (agent.life_log && agent.life_log.length) {
-      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Дневник</div><div style="font-size:12px;max-height:120px;overflow-y:auto;">`;
-      const entries = agent.life_log.slice(-8).reverse();
+      const emotionRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
+      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">📖 Дневник жизни</div><div class="diary-wrap">`;
+      const entries = agent.life_log.slice(-12).reverse();
       for (const e of entries) {
-        extraHtml += `<div style="margin-bottom:2px;"><span class="mono" style="color:var(--text-secondary);">t${e.t}</span> ${escapeHtml(e.text)}</div>`;
+        const cat = e.type || '';
+        const icon = e.icon || '📝';
+        let metaParts = [`t${e.t}`];
+        if (e.mood) metaParts.push(e.mood);
+        if (e.emo) metaParts.push(emotionRu[e.emo] || e.emo);
+        extraHtml += `<div class="diary-entry cat-${escapeHtml(cat)}">
+          <div class="diary-icon">${icon}</div>
+          <div class="diary-body">
+            <div class="diary-text">${escapeHtml(e.text)}</div>
+            <div class="diary-meta">${metaParts.map(p => escapeHtml(p)).join(' · ')}</div>
+          </div>
+        </div>`;
       }
       extraHtml += `</div>`;
     }
