@@ -1214,20 +1214,6 @@
     const sx = cv.width / w;
     const sy = cv.height / h;
 
-    // Terrain (water) from saved map (cached as 1px-per-cell offscreen)
-    if (worldMapCache && worldMapCache.w === w && worldMapCache.h === h) {
-      if (!worldMapCache.off) {
-        worldMapCache.off = buildWaterOffscreen(w, h, worldMapCache.water);
-      }
-      if (worldMapCache.off) {
-        ctx.globalAlpha = 1.0;
-        ctx.drawImage(worldMapCache.off, 0, 0, w * sx, h * sy);
-      }
-    } else {
-      // Map/world size changed (e.g., admin applied a new map). Reload map.
-      loadWorldMap();
-    }
-
     // Ground texture (tiled if available)
     if (groundReady && groundSprite.naturalWidth > 0) {
       ctx.save();
@@ -1248,6 +1234,20 @@
       ctx.save();
       ctx.translate(camera.x, camera.y);
       ctx.scale(camera.zoom, camera.zoom);
+    }
+
+    // Terrain (water) from saved map — rendered on top of ground texture
+    if (worldMapCache && worldMapCache.w === w && worldMapCache.h === h) {
+      if (!worldMapCache.off) {
+        worldMapCache.off = buildWaterOffscreen(w, h, worldMapCache.water);
+      }
+      if (worldMapCache.off) {
+        ctx.globalAlpha = 1.0;
+        ctx.drawImage(worldMapCache.off, 0, 0, w * sx, h * sy);
+      }
+    } else {
+      // Map/world size changed (e.g., admin applied a new map). Reload map.
+      loadWorldMap();
     }
 
     // Objects (sprites)
