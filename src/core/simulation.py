@@ -7,7 +7,7 @@ import random
 import time
 
 from .environment import Environment, EnvironmentConfig
-from .agent import Agent, AgentFactory, generate_thought
+from .agent import Agent, AgentFactory, generate_thought, ACTION_TO_SKILL, Skills
 from .agent_actions import ActionExecutor, ActionResult
 from .tools import ToolLibrary
 from ..learning.q_learning import LearningManager
@@ -55,6 +55,9 @@ class SimulationState:
         self.total_births = 0
         self.total_deaths = 0
         self.total_discoveries = 0
+        
+        # Мёртвые агенты (надгробия на карте)
+        self.dead_agents: List[Dict[str, Any]] = []
     
     def _initialize_environment(self):
         """Инициализирует среду"""
@@ -460,15 +463,23 @@ class SimulationState:
                         name_source = father if random.random() < 0.5 else agent
                         setattr(child, 'display_name', name_source.invent_name())
 
-                        # Family bonds: parent <-> child
+                        # Family bonds: parent <-> child + inherit personality & skills
                         try:
                             from .agent import Personality
                             child.social.add_family(agent.id)
                             child.social.add_family(father.id)
                             agent.social.add_family(child.id)
                             father.social.add_family(child.id)
-                            # Inherit personality from parents
                             child.personality = Personality.inherit(agent.personality, father.personality)
+                            child.skills = Skills.inherit(agent.skills, father.skills)
+                        except Exception:
+                            pass
+
+                        # Записи в дневник родителей
+                        try:
+                            child_name = getattr(child, 'display_name', child.id)
+                            agent.life_log.add(self.timestep, 'birth', f'Родился ребёнок: {child_name}')
+                            father.life_log.add(self.timestep, 'birth', f'Родился ребёнок: {child_name}')
                         except Exception:
                             pass
 
@@ -618,6 +629,66 @@ class SimulationState:
 
                 # Update mood label
                 agent.last_mood = emo.mood_ru()
+
+                # ── Skills XP ────────────────────────────────────────
+                skill_name = ACTION_TO_SKILL.get(action)
+                if skill_name and result.success:
+                    xp = 0.004 + 0.003 * getattr(agent.genes, 'intelligence', 0.5)
+                    agent.skills.add_xp(skill_name, xp)
+
+                # Track visited cells for explorer achievement
+                if action == 'move' and result.success:
+                    agent.track_visit(agent.position)
+
+                # ── Life log (key events only) ───────────────────────
+                log = agent.life_log
+                ach = agent.achievements
+                ts = self.timestep
+
+                if action == 'gather' and result.success:
+                    if ach.unlock('first_gather', ts):
+                        log.add(ts, 'achievement', '🥬 Первая добыча! Собрал первый объект.')
+                if action == 'combine' and result.success:
+                    if ach.unlock('first_craft', ts):
+                        log.add(ts, 'achievement', '🔧 Изобретатель! Создал первый инструмент.')
+                    else:
+                        log.add(ts, 'craft', 'Создал новый инструмент')
+
+                # Birth achievement for parent
+                if action == 'mate' and result.success and getattr(agent, 'pregnant', False):
+                    if ach.unlock('first_child', ts):
+                        log.add(ts, 'achievement', '👶 Родитель! Скоро появится ребёнок.')
+
+                # Elder achievement
+                if agent.age >= 5000:
+                    if ach.unlock('elder', ts):
+                        log.add(ts, 'achievement', '🧓 Долгожитель! Прожил 5000 тиков.')
+
+                # Skill mastery achievements
+                for sk, ach_id in [('hunting', 'master_hunter'), ('crafting', 'master_crafter'),
+                                    ('gathering', 'master_gatherer'), ('survival', 'survivor'),
+                                    ('communication', 'communicator')]:
+                    if agent.skills.level(sk) >= 7:
+                        if ach.unlock(ach_id, ts):
+                            from .agent import SKILL_RU
+                            log.add(ts, 'achievement', f'Мастерство: {SKILL_RU.get(sk, sk)} lv7!')
+
+                # Social achievements
+                friends_count = len([1 for _, t in agent.social.relationships.items() if t > 0.3])
+                if friends_count >= 5:
+                    if ach.unlock('social_butterfly', ts):
+                        log.add(ts, 'achievement', '🦋 Душа компании! 5+ друзей.')
+
+                family_count = len(agent.social.family)
+                if family_count >= 3:
+                    if ach.unlock('family_person', ts):
+                        log.add(ts, 'achievement', '👨‍👩‍👦 Семьянин! 3+ членов семьи.')
+
+                # Explorer achievement
+                if agent.visited_cells >= 100:
+                    if ach.unlock('explorer', ts):
+                        log.add(ts, 'achievement', '🗺️ Путешественник! Посетил 100+ клеток.')
+
             except Exception:
                 pass
     
@@ -668,6 +739,33 @@ class SimulationState:
                     other.emotional_state.add('fear', grief_amt * 0.3)
         except Exception:
             pass
+
+        # Сохраняем мёртвого агента для отображения надгробия на карте
+        cause_ru_map = {
+            'drowning': 'утонул',
+            'starvation': 'голод',
+            'dehydration': 'жажда',
+            'health_collapse': 'здоровье',
+            'old_age': 'старость',
+            'exhaustion': 'истощение',
+            'unknown': 'неизвестно',
+        }
+        self.dead_agents.append({
+            'id': agent.id,
+            'name': getattr(agent, 'display_name', agent.id),
+            'sex': getattr(agent, 'sex', 'unknown'),
+            'owner_username': getattr(agent, 'owner_username', None),
+            'x': int(agent.position[0]),
+            'y': int(agent.position[1]),
+            'age': int(agent.age),
+            'cause': cause,
+            'cause_ru': cause_ru_map.get(cause, cause),
+            'died_at': int(self.timestep),
+            'personality_ru': agent.personality.describe_ru() if hasattr(agent, 'personality') and hasattr(agent.personality, 'describe_ru') else None,
+        })
+        # Ограничиваем количество надгробий (не больше 50)
+        if len(self.dead_agents) > 50:
+            self.dead_agents = self.dead_agents[-50:]
 
         # Удаляем агента из систем
         self.learning_manager.unregister_agent(agent.id)

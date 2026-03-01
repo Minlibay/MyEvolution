@@ -370,10 +370,12 @@
   const sprites = {
     male: new Image(),
     female: new Image(),
+    rip: new Image(),
   };
 
   sprites.male.src = '/static/sprites/male.png';
   sprites.female.src = '/static/sprites/female.png';
+  sprites.rip.src = '/static/sprites/rip.png';
 
   const agentRenderState = new Map();
 
@@ -835,6 +837,47 @@
     return null;
   }
 
+  function findDeadAgentUnderCursor(snapshot, mx, my) {
+    const dead = snapshot && snapshot.dead_agents;
+    if (!dead || !dead.length) return null;
+    const w = snapshot.world.width;
+    const h = snapshot.world.height;
+    const sx = cv.width / w;
+    const sy = cv.height / h;
+    const wx = (mx - camera.x) / camera.zoom;
+    const wy = (my - camera.y) / camera.zoom;
+    let best = null;
+    let bestD2 = Infinity;
+    const threshold2 = 18 * 18;
+    for (const d of dead) {
+      const dx = wx - d.x * sx;
+      const dy = wy - d.y * sy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) { bestD2 = d2; best = d; }
+    }
+    if (best && bestD2 <= threshold2) return best;
+    return null;
+  }
+
+  function renderDeadAgentTooltip(d) {
+    if (!agentTooltip) return;
+    if (!d) { agentTooltip.style.display = 'none'; return; }
+    const causeRu = d.cause_ru || d.cause || '?';
+    const name = escapeHtml(d.name || d.id);
+    const owner = d.owner_username ? `<div class="muted">создатель: <span class="mono">${escapeHtml(d.owner_username)}</span></div>` : '';
+    const pers = d.personality_ru ? `<div class="muted">характер: ${escapeHtml(d.personality_ru)}</div>` : '';
+    agentTooltip.innerHTML = `
+      <div class="title" style="color:#c87a7a;">☠ ${name}</div>
+      ${owner}
+      <div class="muted">статус: <b style="color:#e57373;">Умер</b></div>
+      <div class="muted">причина: <b>${escapeHtml(causeRu)}</b></div>
+      <div class="muted">прожил: ${d.age} тиков</div>
+      <div class="muted">умер на t=${d.died_at}</div>
+      ${pers}
+    `;
+    agentTooltip.style.display = 'block';
+  }
+
   function findObjectUnderCursor(snapshot, mx, my) {
     if (!snapshot || !snapshot.objects || snapshot.objects.length === 0) return null;
 
@@ -942,12 +985,26 @@
       }
     }
 
+    // Skills
+    const skillsLine = agent.skills_ru
+      ? `<div class="muted">навыки: <b>${escapeHtml(agent.skills_ru)}</b></div>`
+      : '';
+
+    // Achievements (icons only in tooltip)
+    let achieveLine = '';
+    if (agent.achievements && agent.achievements.length) {
+      const icons = agent.achievements.map(a => a.icon || '⭐').join('');
+      achieveLine = `<div class="muted">достижения: ${icons}</div>`;
+    }
+
     agentTooltip.innerHTML = `
       <div class="title">${title}</div>
       ${ownerLine}
       ${personalityLine}
       ${moodLine}
       ${thoughtLine}
+      ${skillsLine}
+      ${achieveLine}
       ${swimLine}
       ${socialLine}
       <div class="muted">Инвентарь:</div>
@@ -1028,6 +1085,13 @@
       return;
     }
 
+    const da = findDeadAgentUnderCursor(hs, mx, my);
+    if (da) {
+      renderDeadAgentTooltip(da);
+      positionAgentTooltip(mxCss, myCss);
+      return;
+    }
+
     const o = findObjectUnderCursor(hs, mx, my);
     if (o) {
       renderObjectTooltip(o);
@@ -1076,6 +1140,48 @@
       ctx.fillStyle = colorForObject(o.type);
       ctx.globalAlpha = 0.7;
       ctx.fillRect(o.x * sx, o.y * sy, Math.max(1, sx*0.7), Math.max(1, sy*0.7));
+    }
+
+    // Dead agents (надгробия)
+    const ripReady = sprites.rip.complete && sprites.rip.naturalWidth > 0;
+    for (const d of (snapshot.dead_agents || [])) {
+      const dpx = d.x * sx;
+      const dpy = d.y * sy;
+      if (ripReady) {
+        const ripH = 32;
+        const ripW = Math.round((sprites.rip.naturalWidth / sprites.rip.naturalHeight) * ripH);
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.drawImage(sprites.rip, dpx - ripW / 2, dpy - ripH, ripW, ripH);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        ctx.fillStyle = '#555';
+        ctx.fillRect(dpx - 4, dpy - 8, 8, 8);
+        ctx.restore();
+      }
+      // Подпись "Имя: Умер"
+      const dName = d.name || d.id;
+      const dText = `${dName}: Умер`;
+      ctx.save();
+      ctx.font = '11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const dtw = ctx.measureText(dText).width;
+      const dbw = dtw + 10;
+      const dbx = dpx - dbw / 2;
+      const dby = dpy - 46;
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = '#1a1012';
+      ctx.strokeStyle = 'rgba(180,60,60,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(dbx, dby, dbw, 16, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+      ctx.fillStyle = '#c87a7a';
+      ctx.fillText(dText, dbx + 5, dby + 12);
+      ctx.restore();
     }
 
     // Agents
@@ -1458,10 +1564,35 @@
     return `${Math.round(x * 100)}%`;
   }
 
+  function findMyDeadAgent(snapshot) {
+    const u = localStorage.getItem('evosim_username') || '';
+    if (!u || !snapshot || !snapshot.dead_agents) return null;
+    return snapshot.dead_agents.find(d => d.owner_username === u) || null;
+  }
+
   function renderMyAgent(snapshot) {
     if (!myAgentState || !myAgentBody) return;
     const agent = findMyAgent(snapshot);
     if (!agent) {
+      // Проверяем, умер ли агент пользователя
+      const dead = findMyDeadAgent(snapshot);
+      if (dead) {
+        myAgentBody.style.display = '';
+        myAgentState.style.display = 'none';
+        myAgentName.textContent = `☠ ${dead.name || dead.id}`;
+        myAgentOwner.textContent = `user: ${dead.owner_username || '—'}`;
+        myAgentStatus.textContent = `Умер на t=${dead.died_at} · (${dead.x},${dead.y})`;
+        myAgentNeeds.textContent = `причина: ${dead.cause_ru || dead.cause}`;
+        myAgentVitals.textContent = `прожил: ${dead.age} тиков`;
+        const extraEl = document.getElementById('myAgentExtra');
+        if (extraEl) {
+          let html = '<div style="margin-top:8px;color:#e57373;font-weight:700;">Ваш агент погиб</div>';
+          if (dead.personality_ru) html += `<div class="text-xs text-muted" style="margin-top:6px;">Характер</div><div style="font-size:13px;">${escapeHtml(dead.personality_ru)}</div>`;
+          html += '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary);">Вы можете создать нового агента.</div>';
+          extraEl.innerHTML = html;
+        }
+        return;
+      }
       myAgentBody.style.display = 'none';
       myAgentState.style.display = '';
       myAgentState.textContent = localStorage.getItem('evosim_has_agent') === '1'
@@ -1512,6 +1643,38 @@
         extraHtml += `</div>`;
       }
     }
+
+    // Skills
+    if (agent.skills) {
+      const skillRu = {gathering:'собирательство',crafting:'крафтинг',hunting:'охота',cooking:'кулинария',communication:'общение',survival:'выживание'};
+      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Навыки</div><div style="font-size:13px;">`;
+      for (const [sk, info] of Object.entries(agent.skills)) {
+        if (!info || !info.level) continue;
+        const bar = '▓'.repeat(info.level) + '░'.repeat(10 - info.level);
+        extraHtml += `<div>${escapeHtml(skillRu[sk] || sk)}: ${bar} lv${info.level}</div>`;
+      }
+      extraHtml += `</div>`;
+    }
+
+    // Achievements
+    if (agent.achievements && agent.achievements.length) {
+      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Достижения</div><div style="font-size:13px;">`;
+      for (const a of agent.achievements) {
+        extraHtml += `<div>${a.icon || '⭐'} <b>${escapeHtml(a.name)}</b> — ${escapeHtml(a.desc)}</div>`;
+      }
+      extraHtml += `</div>`;
+    }
+
+    // Life log (last 8 entries)
+    if (agent.life_log && agent.life_log.length) {
+      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Дневник</div><div style="font-size:12px;max-height:120px;overflow-y:auto;">`;
+      const entries = agent.life_log.slice(-8).reverse();
+      for (const e of entries) {
+        extraHtml += `<div style="margin-bottom:2px;"><span class="mono" style="color:var(--text-secondary);">t${e.t}</span> ${escapeHtml(e.text)}</div>`;
+      }
+      extraHtml += `</div>`;
+    }
+
     // Render extra section
     const extraEl = document.getElementById('myAgentExtra');
     if (extraEl) extraEl.innerHTML = extraHtml;

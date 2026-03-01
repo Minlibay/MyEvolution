@@ -192,6 +192,159 @@ class SocialMemory:
                 'family': fam}
 
 
+# ── Навыки (растут с опытом) ──────────────────────────────────────────
+SKILL_NAMES = [
+    'gathering',     # собирательство
+    'crafting',      # крафтинг
+    'hunting',       # охота
+    'cooking',       # кулинария
+    'communication', # общение
+    'survival',      # выживание (сон, питьё, движение)
+]
+
+SKILL_RU = {
+    'gathering': 'собирательство', 'crafting': 'крафтинг',
+    'hunting': 'охота', 'cooking': 'кулинария',
+    'communication': 'общение', 'survival': 'выживание',
+}
+
+# Маппинг действий → навык
+ACTION_TO_SKILL = {
+    'gather': 'gathering', 'consume': 'gathering',
+    'combine': 'crafting', 'break': 'crafting',
+    'attack': 'hunting',
+    'communicate': 'communication', 'mate': 'communication',
+    'move': 'survival', 'drink': 'survival', 'sleep': 'survival',
+    'care': 'communication',
+}
+
+
+@dataclass
+class Skills:
+    """Навыки агента (0.0 → 1.0). Растут при успешных действиях."""
+    gathering: float = 0.0
+    crafting: float = 0.0
+    hunting: float = 0.0
+    cooking: float = 0.0
+    communication: float = 0.0
+    survival: float = 0.0
+
+    def add_xp(self, skill_name: str, amount: float = 0.005):
+        """Прибавляет опыт к навыку (с замедлением на высоких уровнях)."""
+        cur = getattr(self, skill_name, None)
+        if cur is None:
+            return
+        # Замедление: чем выше уровень, тем медленнее рост
+        gain = amount * (1.0 - cur * 0.7)
+        setattr(self, skill_name, min(1.0, cur + gain))
+
+    def get(self, skill_name: str) -> float:
+        return float(getattr(self, skill_name, 0.0))
+
+    def level(self, skill_name: str) -> int:
+        """Уровень навыка 1–10."""
+        return max(1, min(10, int(self.get(skill_name) * 10) + 1))
+
+    def bonus(self, skill_name: str) -> float:
+        """Бонус к успеху действия (0.0 → 0.3)."""
+        return self.get(skill_name) * 0.3
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {s: {"value": round(getattr(self, s), 3),
+                     "level": self.level(s)} for s in SKILL_NAMES}
+
+    def describe_ru(self) -> str:
+        parts = []
+        for s in SKILL_NAMES:
+            lv = self.level(s)
+            if lv > 1:
+                parts.append(f"{SKILL_RU[s]} lv{lv}")
+        return ', '.join(parts) if parts else 'новичок'
+
+    @staticmethod
+    def inherit(parent1: 'Skills', parent2: 'Skills') -> 'Skills':
+        """Ребёнок получает часть навыков родителей (культурная передача)."""
+        child = Skills()
+        for s in SKILL_NAMES:
+            avg = (parent1.get(s) + parent2.get(s)) / 2.0
+            inherited = avg * 0.25  # 25% от среднего родителей
+            setattr(child, s, min(1.0, inherited + random.gauss(0, 0.02)))
+        return child
+
+
+# ── Дневник агента (ключевые события жизни) ──────────────────────────
+class LifeLog:
+    """Хранит важные события жизни агента для отображения пользователю."""
+
+    def __init__(self, max_entries: int = 50):
+        self.entries: List[Dict[str, Any]] = []
+        self.max_entries = max_entries
+
+    def add(self, timestep: int, event_type: str, text_ru: str, **extra):
+        entry = {'t': timestep, 'type': event_type, 'text': text_ru}
+        entry.update(extra)
+        self.entries.append(entry)
+        if len(self.entries) > self.max_entries:
+            self.entries = self.entries[-self.max_entries:]
+
+    def to_list(self) -> List[Dict[str, Any]]:
+        return list(self.entries[-20:])  # Последние 20 для UI
+
+
+# ── Достижения ────────────────────────────────────────────────────────
+ACHIEVEMENTS = {
+    'first_gather':     {'name': 'Первая добыча',      'icon': '🥬', 'desc': 'Собрал первый объект'},
+    'first_craft':      {'name': 'Изобретатель',       'icon': '🔧', 'desc': 'Создал первый инструмент'},
+    'first_child':      {'name': 'Родитель',           'icon': '👶', 'desc': 'Родился первый ребёнок'},
+    'elder':            {'name': 'Долгожитель',        'icon': '🧓', 'desc': 'Дожил до 5000 тиков'},
+    'social_butterfly': {'name': 'Душа компании',      'icon': '🦋', 'desc': '5+ друзей'},
+    'master_hunter':    {'name': 'Мастер охоты',       'icon': '🏹', 'desc': 'Навык охоты lv7+'},
+    'master_crafter':   {'name': 'Мастер крафта',      'icon': '⚒️', 'desc': 'Навык крафтинга lv7+'},
+    'master_gatherer':  {'name': 'Мастер сбора',       'icon': '🌿', 'desc': 'Навык собирательства lv7+'},
+    'survivor':         {'name': 'Выживальщик',        'icon': '💪', 'desc': 'Навык выживания lv7+'},
+    'communicator':     {'name': 'Оратор',             'icon': '🗣️', 'desc': 'Навык общения lv7+'},
+    'explorer':         {'name': 'Путешественник',     'icon': '🗺️', 'desc': 'Посетил 100+ клеток'},
+    'well_fed':         {'name': 'Сытая жизнь',        'icon': '🍖', 'desc': 'Голод < 0.2 целых 500 тиков подряд'},
+    'family_person':    {'name': 'Семьянин',           'icon': '👨‍👩‍👦', 'desc': '3+ членов семьи'},
+}
+
+
+class AchievementTracker:
+    """Отслеживает достижения агента."""
+
+    def __init__(self):
+        self.unlocked: Dict[str, int] = {}  # achievement_id → timestep unlocked
+        self._counters: Dict[str, int] = {}  # internal counters
+
+    def unlock(self, achievement_id: str, timestep: int) -> bool:
+        """Разблокирует достижение. Возвращает True если новое."""
+        if achievement_id in self.unlocked:
+            return False
+        if achievement_id not in ACHIEVEMENTS:
+            return False
+        self.unlocked[achievement_id] = timestep
+        return True
+
+    def increment(self, counter_name: str, amount: int = 1):
+        self._counters[counter_name] = self._counters.get(counter_name, 0) + amount
+
+    def get_counter(self, counter_name: str) -> int:
+        return self._counters.get(counter_name, 0)
+
+    def to_list(self) -> List[Dict[str, Any]]:
+        result = []
+        for aid, ts in self.unlocked.items():
+            info = ACHIEVEMENTS.get(aid, {})
+            result.append({
+                'id': aid,
+                'name': info.get('name', aid),
+                'icon': info.get('icon', '⭐'),
+                'desc': info.get('desc', ''),
+                'unlocked_at': ts,
+            })
+        return result
+
+
 # ── Мысли/реакции (для UI) ────────────────────────────────────────────
 _THOUGHT_TEMPLATES = {
     'hungry': ['хочу есть...', 'где бы найти еду?', 'живот урчит'],
@@ -472,12 +625,19 @@ class Agent:
     last_intended_meaning: Optional[str] = None
     last_heard: Optional[str] = None
 
-    # ── Личность, эмоции, отношения (NEW) ──────────────────────
+    # ── Личность, эмоции, отношения ─────────────────────────────
     personality: Personality = field(default_factory=Personality)
     emotional_state: EmotionalState = field(default_factory=EmotionalState)
     social: SocialMemory = field(default_factory=SocialMemory)
     current_thought: Optional[str] = None    # мысль для UI
     last_mood: Optional[str] = None          # настроение для UI
+
+    # ── Навыки, дневник, достижения ──────────────────────────────
+    skills: Skills = field(default_factory=Skills)
+    life_log: LifeLog = field(default_factory=LifeLog)
+    achievements: AchievementTracker = field(default_factory=AchievementTracker)
+    visited_cells: int = 0                   # счётчик уникальных посещённых клеток
+    _visited_set: set = field(default_factory=set, repr=False)
 
     def __post_init__(self):
         """Инициализация после создания"""
@@ -490,6 +650,16 @@ class Agent:
         # Generate personality from genes if still default
         if all(getattr(self.personality, t) == 0.5 for t in PERSONALITY_TRAITS):
             self.personality = Personality.random(self.genes)
+
+        # Запись рождения в дневник
+        self.life_log.add(self.birth_time, 'birth', 'Родился в мир')
+
+    def track_visit(self, position: Tuple[int, int]):
+        """Учёт посещённой клетки для достижения 'explorer'."""
+        key = (int(position[0]), int(position[1]))
+        if key not in self._visited_set:
+            self._visited_set.add(key)
+            self.visited_cells = len(self._visited_set)
 
     def _invent_token(self) -> str:
         consonants = "bdgklmnprstfv"

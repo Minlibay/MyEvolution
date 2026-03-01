@@ -1457,6 +1457,11 @@ class SimulationController:
                         "dominant_emotion": agent.emotional_state.dominant() if hasattr(agent, 'emotional_state') else None,
                         "thought": getattr(agent, 'current_thought', None),
                         "social": agent.social.to_dict() if hasattr(agent, 'social') and hasattr(agent.social, 'to_dict') else None,
+                        "skills": agent.skills.to_dict() if hasattr(agent, 'skills') and hasattr(agent.skills, 'to_dict') else None,
+                        "skills_ru": agent.skills.describe_ru() if hasattr(agent, 'skills') and hasattr(agent.skills, 'describe_ru') else None,
+                        "achievements": agent.achievements.to_list() if hasattr(agent, 'achievements') and hasattr(agent.achievements, 'to_list') else [],
+                        "life_log": agent.life_log.to_list() if hasattr(agent, 'life_log') and hasattr(agent.life_log, 'to_list') else [],
+                        "visited_cells": int(getattr(agent, 'visited_cells', 0)),
                     }
                 )
 
@@ -1585,6 +1590,7 @@ class SimulationController:
                     "is_daytime": bool(getattr(env, 'is_daytime', True)),
                 },
                 "agents": agents_payload,
+                "dead_agents": list(state.dead_agents) if hasattr(state, 'dead_agents') else [],
                 "objects": (objects_full if objects_full is not None else []),
                 "objects_full": objects_full,
                 "objects_add": objects_add,
