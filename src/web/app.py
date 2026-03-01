@@ -3,25 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import os
 import sqlite3
+import threading
 import time
 import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, Set
+from typing import Optional, Dict, Any, Set, List
 
 import shutil
 
 import jwt
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form, Request
 from fastapi import status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from passlib.context import CryptContext
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from html import escape
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from ..utils.config_loader import load_config
 from ..core.simulation import Simulation
@@ -31,6 +36,128 @@ from ..core.tools import ToolFactory
 
 
 app = FastAPI(title="Evolution Simulation")
+
+# ---------------------------------------------------------------------------
+# Rate limiter (in-memory, no external dependencies)
+# ---------------------------------------------------------------------------
+_rl_lock = threading.Lock()
+# {key: deque of timestamps (monotonic)}
+_rl_store: Dict[str, collections.deque] = collections.defaultdict(collections.deque)
+# {ip: unblock_time (monotonic)} — hard lockout after too many failures
+_rl_lockout: Dict[str, float] = {}
+
+
+def _rate_limit(key: str, max_req: int, window_sec: int) -> bool:
+    """Return True if request is allowed, False if rate-limited."""
+    now = time.monotonic()
+    with _rl_lock:
+        dq = _rl_store[key]
+        cutoff = now - window_sec
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= max_req:
+            return False
+        dq.append(now)
+        return True
+
+
+def _is_locked_out(ip: str) -> bool:
+    now = time.monotonic()
+    with _rl_lock:
+        until = _rl_lockout.get(ip, 0)
+        return now < until
+
+
+def _set_lockout(ip: str, duration_sec: int) -> None:
+    with _rl_lock:
+        _rl_lockout[ip] = time.monotonic() + duration_sec
+
+
+def _get_client_ip(request: Request) -> str:
+    """Return real client IP, respecting X-Forwarded-For if behind proxy."""
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Security headers + global rate limit middleware
+# ---------------------------------------------------------------------------
+_GLOBAL_RL_MAX = int(os.environ.get("EVOSIM_GLOBAL_RL_MAX", "400"))   # req per window
+_GLOBAL_RL_WIN = int(os.environ.get("EVOSIM_GLOBAL_RL_WIN", "60"))    # window in seconds
+
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "X-XSS-Protection": "1; mode=block",
+}
+
+
+class SecurityMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        ip = _get_client_ip(request)
+
+        # Hard lockout (triggered by repeated auth failures)
+        if _is_locked_out(ip):
+            return Response(
+                content='{"detail":"too_many_requests"}',
+                status_code=429,
+                media_type="application/json",
+                headers={"Retry-After": "900"},
+            )
+
+        # Global rate limit (DDoS / flood)
+        if not _rate_limit(f"global:{ip}", _GLOBAL_RL_MAX, _GLOBAL_RL_WIN):
+            return Response(
+                content='{"detail":"too_many_requests"}',
+                status_code=429,
+                media_type="application/json",
+                headers={"Retry-After": str(_GLOBAL_RL_WIN)},
+            )
+
+        response = await call_next(request)
+
+        for header, value in _SECURITY_HEADERS.items():
+            response.headers[header] = value
+
+        return response
+
+
+app.add_middleware(SecurityMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get("EVOSIM_CORS_ORIGINS", "").split(",") if os.environ.get("EVOSIM_CORS_ORIGINS") else [],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+# ---------------------------------------------------------------------------
+# Auth failure tracker — brute-force login protection
+# ---------------------------------------------------------------------------
+_LOGIN_RL_MAX = int(os.environ.get("EVOSIM_LOGIN_RL_MAX", "5"))       # attempts
+_LOGIN_RL_WIN = int(os.environ.get("EVOSIM_LOGIN_RL_WIN", "60"))      # per N seconds
+_LOGIN_LOCKOUT_SEC = int(os.environ.get("EVOSIM_LOGIN_LOCKOUT", "900"))  # 15 min lockout
+
+# {ip: consecutive_failure_count}
+_login_failures: Dict[str, int] = collections.defaultdict(int)
+_login_failures_lock = threading.Lock()
+
+
+def _record_login_failure(ip: str) -> None:
+    with _login_failures_lock:
+        _login_failures[ip] += 1
+        if _login_failures[ip] >= _LOGIN_RL_MAX:
+            _set_lockout(ip, _LOGIN_LOCKOUT_SEC)
+            _login_failures[ip] = 0
+
+
+def _clear_login_failures(ip: str) -> None:
+    with _login_failures_lock:
+        _login_failures[ip] = 0
 
 
 _CHAT_DB_PATH = os.environ.get(
@@ -1776,6 +1903,11 @@ chat_controller = ChatController()
 @app.on_event("startup")
 async def _startup():
     _db_init()
+    if _JWT_SECRET in ("dev-insecure-secret", "secret", "changeme", ""):
+        print(
+            "[evosim] WARNING: JWT secret is weak or default. "
+            "Set EVOSIM_JWT_SECRET env variable to a strong random string!"
+        )
     try:
         print(f"[evosim] chat db: {_CHAT_DB_PATH}")
     except Exception:
@@ -1871,7 +2003,10 @@ async def adminkins():
 
 
 @app.post("/api/auth/register")
-async def api_register(payload: Dict[str, Any]):
+async def api_register(request: Request, payload: Dict[str, Any]):
+    ip = _get_client_ip(request)
+    if not _rate_limit(f"register:{ip}", 3, 60):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_requests")
     if not _registration_open():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="registration_closed")
     username = (payload.get("username") or "").strip()
@@ -1951,7 +2086,14 @@ async def api_bootstrap_admin(payload: Dict[str, Any]):
 
 
 @app.post("/api/auth/login")
-async def api_login(payload: Dict[str, Any]):
+async def api_login(request: Request, payload: Dict[str, Any]):
+    ip = _get_client_ip(request)
+    if _is_locked_out(ip):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_requests")
+    if not _rate_limit(f"login:{ip}", _LOGIN_RL_MAX, _LOGIN_RL_WIN):
+        _set_lockout(ip, _LOGIN_LOCKOUT_SEC)
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_requests")
+
     username = (payload.get("username") or "").strip()
     password = payload.get("password") or ""
     if not username or not password:
@@ -1963,10 +2105,13 @@ async def api_login(payload: Dict[str, Any]):
         cur.execute("SELECT id, username, password_hash, is_admin FROM users WHERE username = ?", (username,))
         row = cur.fetchone()
         if row is None:
+            _record_login_failure(ip)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
         if not _pwd_context.verify(password, row["password_hash"]):
+            _record_login_failure(ip)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
 
+        _clear_login_failures(ip)
         exp = datetime.now(timezone.utc) + timedelta(hours=_JWT_TTL_HOURS)
         is_admin = bool(int(row["is_admin"] or 0))
         token = _jwt_encode({"uid": int(row["id"]), "username": str(row["username"]), "is_admin": is_admin, "exp": exp})
@@ -2656,9 +2801,22 @@ async def chat_ws(ws: WebSocket):
         )
     )
 
+    # Per-connection message rate limit: max 2 messages per 3 seconds
+    _ws_msg_times: collections.deque = collections.deque()
+
     try:
         while True:
             raw = await ws.receive_text()
+
+            # WebSocket message flood protection
+            now_ws = time.monotonic()
+            while _ws_msg_times and _ws_msg_times[0] < now_ws - 3:
+                _ws_msg_times.popleft()
+            if len(_ws_msg_times) >= 2:
+                await ws.send_text(json.dumps({"type": "error", "detail": "slow_down"}, ensure_ascii=False))
+                continue
+            _ws_msg_times.append(now_ws)
+
             try:
                 msg = json.loads(raw)
             except Exception:

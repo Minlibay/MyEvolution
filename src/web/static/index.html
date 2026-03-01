@@ -2175,6 +2175,11 @@
         setAuthState('вы заблокированы в чате');
         return;
       }
+      if (msg.type === 'error' && msg.detail === 'slow_down') {
+        setAuthState('слишком быстро — подождите секунду');
+        setTimeout(() => setAuthState(''), 2000);
+        return;
+      }
     };
 
     chatWs.onclose = () => {
