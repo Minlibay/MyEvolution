@@ -160,6 +160,248 @@ def _clear_login_failures(ip: str) -> None:
         _login_failures[ip] = 0
 
 
+# ---------------------------------------------------------------------------
+# Agent personal chat (in-memory, per owner_uid)
+# ---------------------------------------------------------------------------
+_agent_chats: Dict[int, list] = collections.defaultdict(list)
+_agent_chats_lock = threading.Lock()
+_AGENT_CHAT_MAX = 60  # максимум сообщений в истории
+
+
+def _agent_chat_push(uid: int, role: str, text: str) -> None:
+    with _agent_chats_lock:
+        log = _agent_chats[uid]
+        log.append({"role": role, "text": text, "ts": time.time()})
+        if len(log) > _AGENT_CHAT_MAX:
+            del log[: len(log) - _AGENT_CHAT_MAX]
+
+
+def _agent_chat_get(uid: int) -> list:
+    with _agent_chats_lock:
+        return list(_agent_chats.get(uid, []))
+
+
+def _find_agent_by_owner(uid: int):
+    """Возвращает объект Agent по owner_uid из живой симуляции."""
+    try:
+        sim = controller.simulation
+        if sim is None:
+            return None
+        state = getattr(sim, "state", None)
+        if state is None:
+            return None
+        for a in state.agents.values():
+            if int(getattr(a, "owner_uid", -1)) == int(uid):
+                return a
+    except Exception:
+        pass
+    return None
+
+
+def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
+    """Генерирует ответ агента на сообщение пользователя (или None — игнорирует)."""
+    p = getattr(agent, "personality", None)
+    es = getattr(agent, "emotional_state", None)
+
+    agreeableness  = float(getattr(p, "agreeableness",  0.5)) if p else 0.5
+    extraversion   = float(getattr(p, "extraversion",   0.5)) if p else 0.5
+    neuroticism    = float(getattr(p, "neuroticism",    0.5)) if p else 0.5
+    openness       = float(getattr(p, "openness",       0.5)) if p else 0.5
+
+    mood = 0.0
+    try:
+        mood = float(es.mood_score()) if es else 0.0
+    except Exception:
+        pass
+
+    hunger   = float(getattr(agent, "hunger",   0.0))
+    health   = float(getattr(agent, "health",   1.0))
+    energy   = float(getattr(agent, "energy",   1.0))
+    last_act = str(getattr(agent, "last_action", "") or "")
+
+    u = user_text.lower()
+
+    # Игнорировать только при очень критическом состоянии + интроверсия,
+    # и только если нет прямых команд (привет/как ты/найди и т.д.)
+    is_direct = any(w in u for w in [
+        "привет", "здравствуй", "как ты", "как дела", "что делаешь",
+        "найди", "иди", "пойди", "принеси", "сделай", "помоги",
+        "отдохни", "попей", "поешь", "исследуй", "пообщайся",
+    ])
+    if not is_direct:
+        respond_prob = 0.55 + agreeableness * 0.3 + extraversion * 0.15
+        if random.random() > respond_prob:
+            return None
+
+    # Критическое состояние — короткие ответы
+    if hunger > 0.85:
+        return random.choice([
+            "Есть хочу… не до разговоров.",
+            "Голодный я. Потом.",
+            "Найти бы что поесть.",
+        ])
+    if health < 0.25:
+        return random.choice([
+            "Плохо мне. Говорить трудно.",
+            "Больно…",
+            "Не сейчас. Мне плохо.",
+        ])
+    if energy < 0.15:
+        return random.choice([
+            "Устал очень. Дай отдохнуть.",
+            "Сил нет…",
+            "Сплю почти. Позже.",
+        ])
+
+    # Приветствия
+    if any(w in u for w in ["привет", "здравствуй", "hello", "hi", "эй", "ау"]):
+        if mood > 0.3 and extraversion > 0.5:
+            return random.choice([
+                "Привет! Рад тебя слышать.",
+                "О, привет! Хорошо что ты здесь.",
+                "Приветствую! Как ты?",
+            ])
+        elif mood > 0.3:
+            return random.choice(["Привет.", "А, это ты. Привет.", "Мм. Привет."])
+        else:
+            return random.choice(["Привет… день непростой.", "А, привет.", "Угу."])
+
+    # Вопросы о состоянии
+    if any(w in u for w in ["как ты", "как дела", "что делаешь", "чем занят", "всё хорошо", "ты как"]):
+        action_map = {
+            "move": "хожу, ищу чего-нибудь",
+            "gather": "собираю ресурсы",
+            "consume": "ем наконец-то",
+            "craft": "мастерю кое-что",
+            "rest": "отдыхаю немного",
+            "communicate": "разговариваю с другими",
+            "hunt": "охочусь",
+            "flee": "убегаю от опасности",
+        }
+        act_str = action_map.get(last_act, "просто существую")
+        if mood > 0.4:
+            return random.choice([
+                f"Хорошо! {act_str.capitalize()} сейчас.",
+                f"Неплохо. {act_str.capitalize()}.",
+                f"Всё отлично. {act_str.capitalize()}.",
+            ])
+        elif mood > -0.2:
+            return random.choice([
+                f"Бывало лучше. {act_str.capitalize()}.",
+                f"Так себе. {act_str.capitalize()}.",
+                f"Нормально. {act_str.capitalize()}.",
+            ])
+        else:
+            return random.choice([
+                "Тяжело. Устал.",
+                "Не очень. Но держусь.",
+                "Всё сложно сейчас.",
+            ])
+
+    # Команды / просьбы
+    if any(w in u for w in ["иди", "пойди", "найди", "принеси", "сделай", "помоги", "возьми", "атакуй", "беги",
+                             "отдохни", "восстановись", "попей", "поешь", "исследуй", "пообщайся", "поговори"]):
+        if agreeableness > 0.65:
+            return random.choice([
+                "Попробую! Не обещаю, но постараюсь.",
+                "Хорошо, посмотрю что смогу.",
+                "Ладно, попытаюсь.",
+                "Хорошо! Сделаю что могу.",
+            ])
+        elif agreeableness > 0.35:
+            return random.choice([
+                "Может быть.",
+                "Посмотрим.",
+                "Я сам знаю что делать.",
+                "Возможно.",
+            ])
+        else:
+            return random.choice([
+                "Не командуй мне.",
+                "Я сам решаю.",
+                "Не твоё дело.",
+                "Нет.",
+            ])
+
+    # Вопросы о мире / философия
+    if any(w in u for w in ["почему", "зачем", "что такое", "кто ты", "кто я", "смысл", "думаешь", "мир"]):
+        if openness > 0.6:
+            return random.choice([
+                "Интересный вопрос. Я сам часто думаю об этом.",
+                "Мир большой и непонятный. Хочется всё исследовать.",
+                "Не знаю точно. Но думать об этом интересно.",
+                "Хороший вопрос. Нет ответа, но это само по себе интересно.",
+            ])
+        else:
+            return random.choice([
+                "Не знаю.",
+                "Сложный вопрос.",
+                "Об этом не думал.",
+                "Мм.",
+            ])
+
+    # Похвала / поддержка
+    if any(w in u for w in ["молодец", "хорошо", "умница", "отлично", "класс", "супер", "ты лучший"]):
+        if agreeableness > 0.5:
+            return random.choice([
+                "Спасибо! Приятно слышать.",
+                "Стараюсь!",
+                "Это значит для меня много.",
+                "Правда? Рад.",
+            ])
+        else:
+            return random.choice([
+                "Знаю.",
+                "Угу.",
+                "Просто делаю своё дело.",
+            ])
+
+    # Негатив / угрозы
+    if any(w in u for w in ["плохой", "глупый", "ужасный", "дурак", "ненавижу", "уйди"]):
+        if neuroticism > 0.6:
+            return random.choice([
+                "Это больно слышать…",
+                "Зачем так?",
+                "Я стараюсь как могу.",
+            ])
+        elif agreeableness > 0.5:
+            return random.choice([
+                "Ладно. Буду стараться лучше.",
+                "Понял. Постараюсь.",
+            ])
+        else:
+            return random.choice([
+                "Мне всё равно.",
+                "Сам такой.",
+                "Ладно.",
+            ])
+
+    # Настроение-ориентированные ответы (нет ключевых слов)
+    if mood > 0.5:
+        return random.choice([
+            "День неплохой!",
+            "Всё хорошо, спасибо что написал.",
+            "Чувствую себя хорошо сейчас.",
+        ])
+    if neuroticism > 0.6 and mood < 0:
+        return random.choice([
+            "Не знаю… всё как-то тревожно.",
+            "Беспокоюсь немного.",
+            "Неспокойно на душе.",
+        ])
+    if openness > 0.6:
+        return random.choice([
+            "Интересно… я часто думаю о мире вокруг.",
+            "Любопытная мысль.",
+            "Есть над чем подумать.",
+        ])
+
+    # Дефолт по темпераменту
+    if extraversion < 0.3:
+        return random.choice(["…", "Мм.", "Ладно."])
+    return random.choice(["Угу.", "Понял.", "Ладно.", "Интересно.", "Мм."])
+
+
 _CHAT_DB_PATH = os.environ.get(
     "EVOSIM_CHAT_DB",
     str((Path(__file__).resolve().parents[2] / "data" / "chat.sqlite3").resolve()),
@@ -2180,6 +2422,48 @@ async def api_auth_me(token: str):
             "has_agent": bool(has_agent),
         }
     )
+
+
+@app.post("/api/agents/message")
+async def api_agents_message(request: Request, token: str, payload: Dict[str, Any]):
+    """Пользователь пишет своему агенту; агент решает — ответить или нет."""
+    ip = _get_client_ip(request)
+    if not _rate_limit(f"agentmsg:{ip}", 10, 30):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_requests")
+
+    user = _auth_from_token(token)
+    uid = int(user["uid"])
+
+    text = str((payload.get("text") or "")).strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="empty_message")
+    if len(text) > 300:
+        text = text[:300]
+
+    if not _user_has_agent(uid):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no_agent")
+
+    _agent_chat_push(uid, "user", text)
+
+    agent = _find_agent_by_owner(uid)
+    reply = None
+    ignored = True
+    if agent is not None:
+        reply = _generate_agent_reply(agent, text)
+        if reply:
+            ignored = False
+            _agent_chat_push(uid, "agent", reply)
+
+    return JSONResponse({"ok": True, "reply": reply, "ignored": ignored})
+
+
+@app.get("/api/agents/chat")
+async def api_agents_chat(token: str):
+    """Возвращает историю личного чата пользователя с его агентом."""
+    user = _auth_from_token(token)
+    uid = int(user["uid"])
+    messages = _agent_chat_get(uid)
+    return JSONResponse({"messages": messages})
 
 
 @app.post("/api/agents/create")

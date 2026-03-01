@@ -212,21 +212,98 @@
 
       <!-- TAB: My Agent -->
       <div class="sidebar-panel" id="tab-agent">
-        <div id="myAgent">
-          <div id="myAgentState" class="text-sm text-muted" style="padding:20px 0; text-align:center;">Войдите и создайте агента, чтобы следить за ним.</div>
-          <div id="myAgentBody" style="display:none;">
-            <div class="card">
-              <div style="font-weight:700; margin-bottom:6px; font-size:1rem;" id="myAgentName"></div>
-              <div class="text-xs text-muted" id="myAgentOwner" style="margin-bottom:10px;"></div>
-              <div class="divider"></div>
-              <div class="text-xs text-muted" style="margin-top:8px;">Статус</div>
-              <div id="myAgentStatus" style="margin-bottom:8px; font-size:13px;"></div>
-              <div class="text-xs text-muted">Нужды</div>
-              <div id="myAgentNeeds" style="font-size:13px; margin-bottom:8px;"></div>
-              <div class="text-xs text-muted">Возраст / здоровье / энергия</div>
-              <div id="myAgentVitals" style="font-size:13px;"></div>
-              <div id="myAgentExtra"></div>
+        <!-- Пустое состояние -->
+        <div id="myAgentState" class="agp-empty">
+          <div class="agp-empty-icon">🌱</div>
+          <div id="myAgentStateText" class="agp-empty-text">Войдите и создайте агента,<br>чтобы следить за ним.</div>
+        </div>
+        <!-- Тело панели -->
+        <div id="myAgentBody" style="display:none">
+          <!-- Шапка: аватар, имя, статус-бейдж -->
+          <div class="agp-header">
+            <div class="agp-avatar" id="agpAvatar"></div>
+            <div class="agp-hinfo">
+              <div class="agp-hname" id="agpName"></div>
+              <div class="agp-hsub"  id="agpSub"></div>
             </div>
+            <span id="agpBadge" class="badge badge-success">живёт</span>
+          </div>
+          <!-- ЭКРАН 1: Главное меню (показатели + выбор раздела) -->
+          <div class="agp-screen active" id="agpMainScreen">
+            <div class="agp-vitals">
+              <div class="agp-vrow">
+                <span class="agp-vi">❤️</span>
+                <div class="progress-bar agp-bar"><div class="fill green"  id="agpHpBar"  style="width:0%"></div></div>
+                <span class="agp-vv" id="agpHpVal"></span>
+              </div>
+              <div class="agp-vrow">
+                <span class="agp-vi">⚡</span>
+                <div class="progress-bar agp-bar"><div class="fill accent" id="agpNrgBar" style="width:0%"></div></div>
+                <span class="agp-vv" id="agpNrgVal"></span>
+              </div>
+              <div class="agp-vrow">
+                <span class="agp-vi">🍖</span>
+                <div class="progress-bar agp-bar"><div class="fill yellow" id="agpHngBar" style="width:0%"></div></div>
+                <span class="agp-vv" id="agpHngVal"></span>
+              </div>
+              <div class="agp-vrow">
+                <span class="agp-vi">💧</span>
+                <div class="progress-bar agp-bar"><div class="fill accent" id="agpThrBar" style="width:0%"></div></div>
+                <span class="agp-vv" id="agpThrVal"></span>
+              </div>
+            </div>
+            <div class="agp-menu">
+              <div class="agp-menu-item" data-goto="agpInfoScreen">
+                <span class="agp-menu-icon">🧬</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Информация об агенте</div>
+                  <div class="agp-menu-sub">Состояние, навыки, дневник жизни</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
+              <div class="agp-menu-item" data-goto="agpChatScreen">
+                <span class="agp-menu-icon">⚡</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Дать команду</div>
+                  <div class="agp-menu-sub">Отправьте сообщение своему агенту</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ЭКРАН 2: Информация об агенте -->
+          <div class="agp-screen" id="agpInfoScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
+              <span class="agp-screen-title">Информация об агенте</span>
+            </div>
+            <div class="agp-screen-body" id="myAgentExtra"></div>
+          </div>
+
+          <!-- ЭКРАН 3: Дать команду -->
+          <div class="agp-screen" id="agpChatScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
+              <span class="agp-screen-title">Дать команду</span>
+            </div>
+            <div class="agp-cmds">
+              <div class="agp-cmd-title">Быстрые команды</div>
+              <div class="agp-cmd-chips">
+                <button class="agp-chip" data-cmd="Найди еду">🍖 Найди еду</button>
+                <button class="agp-chip" data-cmd="Попей воды">💧 Попей воды</button>
+                <button class="agp-chip" data-cmd="Отдохни и восстановись">💤 Отдохни</button>
+                <button class="agp-chip" data-cmd="Исследуй территорию вокруг">🗺️ Исследуй</button>
+                <button class="agp-chip" data-cmd="Пообщайся с другими агентами">🤝 Общение</button>
+                <button class="agp-chip" data-cmd="Как ты себя чувствуешь?">💬 Как ты?</button>
+              </div>
+            </div>
+            <div id="agentChatMessages"></div>
+            <div class="agp-chat-input">
+              <input id="agentChatInput" placeholder="Написать команду агенту…" maxlength="300" />
+              <button id="btnAgentChatSend" class="btn btn-primary btn-sm">↑</button>
+            </div>
+            <div id="agentChatStatus" class="agp-chat-status"></div>
           </div>
         </div>
       </div>
@@ -1522,70 +1599,96 @@
   }
 
   function renderMyAgent(snapshot) {
-    if (!myAgentState || !myAgentBody) return;
+    const agentBody  = document.getElementById('myAgentBody');
+    const agentEmpty = document.getElementById('myAgentState');
+    if (!agentEmpty || !agentBody) return;
+
+    function _show(body) {
+      agentBody.style.display = body ? 'flex' : 'none';
+      agentEmpty.style.display = body ? 'none' : 'flex';
+    }
+
+    function _vital(barId, valId, v01) {
+      const pct = (v01 != null) ? Math.round(v01 * 100) : 0;
+      const b = document.getElementById(barId); if (b) b.style.width = pct + '%';
+      const v = document.getElementById(valId); if (v) v.textContent = fmtPct01(v01);
+    }
+
     const agent = findMyAgent(snapshot);
     if (!agent) {
-      // Проверяем, умер ли агент пользователя
       const dead = findMyDeadAgent(snapshot);
       if (dead) {
-        myAgentBody.style.display = '';
-        myAgentState.style.display = 'none';
-        myAgentName.textContent = `☠ ${dead.name || dead.id}`;
-        myAgentOwner.textContent = `user: ${dead.owner_username || '—'}`;
-        myAgentStatus.textContent = `Умер на t=${dead.died_at} · (${dead.x},${dead.y})`;
-        myAgentNeeds.textContent = `причина: ${dead.cause_ru || dead.cause}`;
-        myAgentVitals.textContent = `прожил: ${dead.age} тиков`;
+        _show(true);
+        const av = document.getElementById('agpAvatar');
+        if (av) { av.textContent = '☠'; av.className = 'agp-avatar dead'; }
+        const nm = document.getElementById('agpName'); if (nm) nm.textContent = dead.name || dead.id;
+        const sb = document.getElementById('agpSub');
+        if (sb) sb.textContent = `погиб на t=${dead.died_at} · прожил ${dead.age} тиков`;
+        const bg = document.getElementById('agpBadge');
+        if (bg) { bg.textContent = 'погиб'; bg.className = 'badge badge-danger'; }
+        _vital('agpHpBar',  'agpHpVal',  0);
+        _vital('agpNrgBar', 'agpNrgVal', 0);
+        _vital('agpHngBar', 'agpHngVal', dead.hunger);
+        _vital('agpThrBar', 'agpThrVal', dead.thirst);
         const extraEl = document.getElementById('myAgentExtra');
         if (extraEl) {
-          let html = '<div style="margin-top:8px;color:#e57373;font-weight:700;">Ваш агент погиб</div>';
-          if (dead.personality_ru) html += `<div class="text-xs text-muted" style="margin-top:6px;">Характер</div><div style="font-size:13px;">${escapeHtml(dead.personality_ru)}</div>`;
-          html += '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary);">Вы можете создать нового агента.</div>';
+          let html = '<div class="agp-dead-msg">☠ Ваш агент погиб</div>';
+          if (dead.cause_ru || dead.cause) html += `<div class="text-xs text-muted">Причина</div><div style="font-size:13px;margin-top:2px;">${escapeHtml(dead.cause_ru || dead.cause)}</div>`;
+          if (dead.personality_ru) html += `<div class="text-xs text-muted" style="margin-top:8px;">Характер</div><div style="font-size:13px;margin-top:2px;">${escapeHtml(dead.personality_ru)}</div>`;
+          html += `<div style="margin-top:12px;font-size:12px;color:var(--text-secondary);">Создайте нового агента, чтобы продолжить.</div>`;
           extraEl.innerHTML = html;
         }
         return;
       }
-      myAgentBody.style.display = 'none';
-      myAgentState.style.display = '';
-      myAgentState.textContent = localStorage.getItem('evosim_has_agent') === '1'
-        ? 'Ваш агент сейчас не найден в мире (возможно, ещё не заспавнился или погиб).'
-        : 'Войдите и создайте своего агента, чтобы следить за ним.';
+      _show(false);
+      const txt = document.getElementById('myAgentStateText');
+      if (txt) txt.innerHTML = localStorage.getItem('evosim_has_agent') === '1'
+        ? 'Ваш агент сейчас не найден в мире.<br><span style="font-size:0.78rem;">Возможно, ещё не заспавнился или погиб.</span>'
+        : 'Войдите и создайте своего агента,<br>чтобы следить за ним.';
       return;
     }
 
-    myAgentBody.style.display = '';
-    myAgentState.style.display = 'none';
+    _show(true);
 
-    myAgentName.textContent = agent.name || agent.id;
-    myAgentOwner.textContent = `user: ${agent.owner_username || '—'}`;
+    // Аватар — первая буква имени
+    const av = document.getElementById('agpAvatar');
+    if (av) { av.textContent = (agent.name || agent.id || '?')[0].toUpperCase(); av.className = 'agp-avatar'; }
 
-    const swim = agent.is_swimming ? ' · плавает' : '';
+    // Имя и строка с позицией/действием
+    const nm = document.getElementById('agpName'); if (nm) nm.textContent = agent.name || agent.id;
+    const sb = document.getElementById('agpSub');
+    const swim    = agent.is_swimming ? ' 🌊' : '';
     const lastAct = agent.last_action ? ` · ${actionToRu(agent.last_action)}` : '';
-    myAgentStatus.textContent = `t=${snapshot.timestep} · (${agent.x},${agent.y})${swim}${lastAct}`;
+    if (sb) sb.textContent = `(${agent.x}, ${agent.y}) · возраст ${agent.age}${swim}${lastAct}`;
 
-    const needs = `голод ${fmtPct01(agent.hunger)} · жажда ${fmtPct01(agent.thirst)} · сонливость ${fmtPct01(agent.sleepiness)}`;
-    myAgentNeeds.textContent = needs;
+    // Бейдж
+    const bg = document.getElementById('agpBadge');
+    if (bg) { bg.textContent = 'живёт'; bg.className = 'badge badge-success'; }
 
-    const vitals = `здоровье ${fmtPct01(agent.health)} · энергия ${fmtPct01(agent.energy)} · возраст ${agent.age}`;
-    myAgentVitals.textContent = vitals;
+    // Показатели
+    _vital('agpHpBar',  'agpHpVal',  agent.health);
+    _vital('agpNrgBar', 'agpNrgVal', agent.energy);
+    _vital('agpHngBar', 'agpHngVal', agent.hunger);
+    _vital('agpThrBar', 'agpThrVal', agent.thirst);
 
-    // Personality, mood, thought, social (dynamic section)
+    // Блок дополнительной информации
     let extraHtml = '';
     if (agent.personality_ru) {
-      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Характер</div><div style="font-size:13px;">${escapeHtml(agent.personality_ru)}</div>`;
+      extraHtml += `<div class="text-xs text-muted">Характер</div><div style="font-size:13px;margin:2px 0 8px;">${escapeHtml(agent.personality_ru)}</div>`;
     }
     if (agent.mood) {
       const emoRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
       const emo = agent.dominant_emotion ? (emoRu[agent.dominant_emotion] || '') : '';
-      extraHtml += `<div class="text-xs text-muted" style="margin-top:6px;">Настроение</div><div style="font-size:13px;">${escapeHtml(agent.mood)}${emo ? ' · ' + escapeHtml(emo) : ''}</div>`;
+      extraHtml += `<div class="text-xs text-muted">Настроение</div><div style="font-size:13px;margin:2px 0 8px;">${escapeHtml(agent.mood)}${emo ? ' · ' + escapeHtml(emo) : ''}</div>`;
     }
     if (agent.thought) {
-      extraHtml += `<div style="margin-top:6px;color:var(--accent);font-style:italic;font-size:13px;">💭 ${escapeHtml(agent.thought)}</div>`;
+      extraHtml += `<div style="margin-bottom:8px;padding:7px 10px;background:var(--accent-glow);border-radius:var(--radius-sm);color:var(--text-accent);font-style:italic;font-size:13px;">💭 ${escapeHtml(agent.thought)}</div>`;
     }
     if (agent.social) {
       const fam = (agent.social.family || []).length;
       const friends = (agent.social.friends || []).slice(0, 5);
       if (fam || friends.length) {
-        extraHtml += `<div class="text-xs text-muted" style="margin-top:6px;">Связи</div><div style="font-size:13px;">`;
+        extraHtml += `<div class="text-xs text-muted">Связи</div><div style="font-size:13px;margin:2px 0 8px;">`;
         if (fam) extraHtml += `семья: ${fam} `;
         for (const f of friends) {
           const n = findAgentName(f.id);
@@ -1594,11 +1697,9 @@
         extraHtml += `</div>`;
       }
     }
-
-    // Skills (graphical progress bars)
     if (agent.skills) {
       const skillRu = {gathering:'собирательство',crafting:'крафтинг',hunting:'охота',cooking:'кулинария',communication:'общение',survival:'выживание'};
-      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Навыки</div><div style="padding:2px 0;">`;
+      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">Навыки</div><div style="margin-bottom:8px;">`;
       for (const [sk, info] of Object.entries(agent.skills)) {
         if (!info || !info.level) continue;
         const pct = Math.round((info.value || 0) * 100);
@@ -1610,20 +1711,16 @@
       }
       extraHtml += `</div>`;
     }
-
-    // Achievements
     if (agent.achievements && agent.achievements.length) {
-      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">Достижения</div><div style="font-size:13px;">`;
+      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">Достижения</div><div style="font-size:13px;margin-bottom:8px;">`;
       for (const a of agent.achievements) {
         extraHtml += `<div>${a.icon || '⭐'} <b>${escapeHtml(a.name)}</b> — ${escapeHtml(a.desc)}</div>`;
       }
       extraHtml += `</div>`;
     }
-
-    // Life log (diary with emotional context)
     if (agent.life_log && agent.life_log.length) {
       const emotionRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
-      extraHtml += `<div class="text-xs text-muted" style="margin-top:8px;">📖 Дневник жизни</div><div class="diary-wrap">`;
+      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">📖 Дневник жизни</div><div class="diary-wrap">`;
       const entries = agent.life_log.slice(-12).reverse();
       for (const e of entries) {
         const cat = e.type || '';
@@ -1642,10 +1739,137 @@
       extraHtml += `</div>`;
     }
 
-    // Render extra section
     const extraEl = document.getElementById('myAgentExtra');
     if (extraEl) extraEl.innerHTML = extraHtml;
   }
+
+  // ── Личный чат с агентом ─────────────────────────────────────────────────
+  const agentChatMessages = document.getElementById('agentChatMessages');
+  const agentChatInput    = document.getElementById('agentChatInput');
+  const btnAgentChatSend  = document.getElementById('btnAgentChatSend');
+  const agentChatStatus   = document.getElementById('agentChatStatus');
+
+  function _renderAgentChat(messages) {
+    if (!agentChatMessages) return;
+    agentChatMessages.innerHTML = '';
+    if (!messages.length) {
+      const hint = document.createElement('div');
+      hint.className = 'text-xs text-muted';
+      hint.style.textAlign = 'center';
+      hint.style.padding = '12px 0';
+      hint.textContent = 'Напишите что-нибудь своему агенту…';
+      agentChatMessages.appendChild(hint);
+      return;
+    }
+    for (const m of messages) {
+      const el = document.createElement('div');
+      el.className = 'agent-bubble ' + m.role;
+      el.textContent = m.text;
+      agentChatMessages.appendChild(el);
+    }
+    agentChatMessages.scrollTop = agentChatMessages.scrollHeight;
+  }
+
+  async function loadAgentChat() {
+    const token = getToken ? getToken() : localStorage.getItem('evosim_token');
+    if (!token) return;
+    try {
+      const res = await fetch('/api/agents/chat?token=' + encodeURIComponent(token));
+      if (!res.ok) return;
+      const data = await res.json();
+      _renderAgentChat(data.messages || []);
+    } catch (e) {}
+  }
+
+  async function sendAgentMessage() {
+    const token = getToken ? getToken() : localStorage.getItem('evosim_token');
+    if (!token || !agentChatInput) return;
+    const text = agentChatInput.value.trim();
+    if (!text) return;
+
+    agentChatInput.value = '';
+    if (btnAgentChatSend) btnAgentChatSend.disabled = true;
+    if (agentChatStatus) agentChatStatus.textContent = '…';
+
+    try {
+      const res = await fetch('/api/agents/message?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (agentChatStatus) agentChatStatus.textContent = data.detail === 'no_agent' ? 'нет агента' : 'ошибка';
+        return;
+      }
+      if (agentChatStatus) agentChatStatus.textContent = '';
+      // Добавляем в UI не дожидаясь reload
+      if (agentChatMessages) {
+        const uEl = document.createElement('div');
+        uEl.className = 'agent-bubble user';
+        uEl.textContent = text;
+        agentChatMessages.appendChild(uEl);
+        if (data.ignored) {
+          const ign = document.createElement('div');
+          ign.className = 'agent-bubble ignored';
+          ign.textContent = '(агент не ответил)';
+          agentChatMessages.appendChild(ign);
+        } else if (data.reply) {
+          const aEl = document.createElement('div');
+          aEl.className = 'agent-bubble agent';
+          aEl.textContent = data.reply;
+          agentChatMessages.appendChild(aEl);
+        }
+        agentChatMessages.scrollTop = agentChatMessages.scrollHeight;
+      }
+    } catch (e) {
+      if (agentChatStatus) agentChatStatus.textContent = 'ошибка сети';
+    } finally {
+      if (btnAgentChatSend) btnAgentChatSend.disabled = false;
+      if (agentChatInput) agentChatInput.focus();
+    }
+  }
+
+  if (btnAgentChatSend) btnAgentChatSend.addEventListener('click', sendAgentMessage);
+  if (agentChatInput) agentChatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAgentMessage(); }
+  });
+
+  // Загружаем чат при переключении на вкладку Агент
+  document.querySelectorAll('.sidebar-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      if (tab.dataset.tab === 'tab-agent') {
+        const active = document.getElementById('agpChatScreen');
+        if (active && active.classList.contains('active')) loadAgentChat();
+      }
+    });
+  });
+
+  // Навигация вперёд (меню → экран)
+  function agpGoto(screenId) {
+    document.querySelectorAll('.agp-screen').forEach(s => s.classList.remove('active'));
+    const s = document.getElementById(screenId);
+    if (s) s.classList.add('active');
+    if (screenId === 'agpChatScreen') loadAgentChat();
+  }
+  document.querySelectorAll('.agp-menu-item').forEach(item => {
+    item.addEventListener('click', () => agpGoto(item.dataset.goto));
+  });
+
+  // Кнопка "Назад"
+  document.querySelectorAll('.agp-back').forEach(btn => {
+    btn.addEventListener('click', () => agpGoto(btn.dataset.to));
+  });
+
+  // Быстрые команды — подставляют текст и сразу отправляют
+  document.querySelectorAll('.agp-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (!agentChatInput) return;
+      agentChatInput.value = chip.dataset.cmd;
+      sendAgentMessage();
+    });
+  });
+  // ─────────────────────────────────────────────────────────────────────────
 
   function hasAgent() {
     return localStorage.getItem('evosim_has_agent') === '1';
