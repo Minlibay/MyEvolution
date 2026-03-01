@@ -2129,6 +2129,7 @@ async def api_admin_chat_ban_by_name(token: str, payload: Dict[str, Any]):
 _SPRITE_SLOTS = [
     "ground", "ground_forest", "ground_desert", "ground_mountain", "ground_swamp",
     "ground_winter", "ground_winter_forest", "ground_winter_desert",
+    "water",
 ]
 
 

@@ -441,6 +441,13 @@
   groundSprite.onload = () => { groundReady = true; };
   groundSprite.onerror = () => { groundReady = false; };
 
+  // Water sprite (loaded dynamically from admin uploads)
+  const waterSprite = new Image();
+  waterSprite.src = '/api/sprites/water?_=' + Date.now();
+  let waterReady = false;
+  waterSprite.onload = () => { waterReady = true; };
+  waterSprite.onerror = () => { waterReady = false; };
+
   const agentRenderState = new Map();
 
   let worldMapCache = {
@@ -476,7 +483,19 @@
       off.height = Math.max(1, h);
       const octx = off.getContext('2d');
       octx.clearRect(0, 0, off.width, off.height);
-      octx.fillStyle = 'rgba(46, 107, 255, 0.35)';
+      
+      // Use water texture if available, otherwise fallback to blue color
+      if (waterReady && waterSprite.naturalWidth > 0) {
+        const pat = octx.createPattern(waterSprite, 'repeat');
+        if (pat) {
+          octx.fillStyle = pat;
+        } else {
+          octx.fillStyle = 'rgba(46, 107, 255, 0.35)';
+        }
+      } else {
+        octx.fillStyle = 'rgba(46, 107, 255, 0.35)';
+      }
+      
       for (const c of (water || [])) {
         try {
           const x = c[0] | 0;
