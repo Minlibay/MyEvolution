@@ -1517,26 +1517,34 @@
 
     // ── Ягодные кусты ──────────────────────────────────────────────────────
     const berryBushes = snapshot.berry_bushes || [];
+    const berryImg = sprites.berry;
+    const berryImgReady = berryImg && berryImg.complete && berryImg.naturalWidth > 0;
     for (const bb of berryBushes) {
       const px = (bb.x + 0.5) * sx;
       const py = (bb.y + 0.5) * sy;
       ctx.save();
-      // Куст: зелёный круг
+      // Куст — зелёный круг (фон всегда)
       ctx.shadowColor = bb.ripe ? '#22cc44' : '#226622';
       ctx.shadowBlur = bb.ripe ? 8 : 3;
       ctx.fillStyle = bb.ripe ? '#33dd55' : '#2a7a2a';
       ctx.beginPath();
       ctx.arc(px, py, Math.max(sx, sy) * 0.38, 0, Math.PI * 2);
       ctx.fill();
-      // Если спелый — маленькие красные ягоды
+      ctx.shadowBlur = 0;
+      // Спелый: рисуем спрайт ягод поверх куста
       if (bb.ripe) {
-        const br = Math.max(sx, sy) * 0.12;
-        const offsets = [[-0.18, -0.15], [0.18, -0.1], [0, 0.18], [-0.12, 0.12], [0.15, 0.15]];
-        ctx.fillStyle = '#dd2244';
-        for (const [ox, oy] of offsets) {
-          ctx.beginPath();
-          ctx.arc(px + ox * sx, py + oy * sy, br, 0, Math.PI * 2);
-          ctx.fill();
+        if (berryImgReady) {
+          const sz = Math.max(sx, sy) * 0.9;
+          ctx.drawImage(berryImg, px - sz * 0.5, py - sz * 0.5, sz, sz);
+        } else {
+          // Fallback: красные точки
+          const br = Math.max(sx, sy) * 0.12;
+          ctx.fillStyle = '#dd2244';
+          for (const [ox, oy] of [[-0.18, -0.15], [0.18, -0.1], [0, 0.18], [-0.12, 0.12], [0.15, 0.15]]) {
+            ctx.beginPath();
+            ctx.arc(px + ox * sx, py + oy * sy, br, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
       ctx.restore();
