@@ -92,6 +92,7 @@ class SimulationState:
             
             agent = AgentFactory.create_random_agent(f"agent_{i}", position)
             agent.birth_time = 0
+            agent.display_name = agent.invent_name()
             self.agents[agent.id] = agent
     
     def _initialize_systems(self):

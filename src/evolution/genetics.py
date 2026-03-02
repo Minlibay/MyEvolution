@@ -123,11 +123,15 @@ class GeneticAlgorithm:
         child = AgentFactory.create_offspring(
             parent1, parent2, child_id, birth_time
         )
-        
+
+        # Имя придумывает один из родителей (тот у кого богаче лексикон)
+        name_source = parent1 if len(parent1.lexicon_out) >= len(parent2.lexicon_out) else parent2
+        child.display_name = name_source.invent_name()
+
         # Обновляем счетчики
         self.total_births += 1
         self.crossover_count += 1
-        
+
         return child
     
     def _get_birth_position(self, parent: Agent, environment) -> Tuple[int, int]:
