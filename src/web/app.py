@@ -2452,9 +2452,38 @@ async def privacy_page():
 
 
 @app.get("/robots.txt")
-async def robots_txt():
-    content = "User-agent: *\nDisallow: /adminkins\n"
+async def robots_txt(request: Request):
+    base = str(request.base_url).rstrip("/")
+    content = f"User-agent: *\nDisallow: /adminkins\nSitemap: {base}/sitemap.xml\n"
     return PlainTextResponse(content, media_type="text/plain")
+
+
+@app.get("/sitemap.xml")
+async def sitemap_xml(request: Request):
+    base = str(request.base_url).rstrip("/")
+    urls = [
+        {"loc": f"{base}/", "changefreq": "always", "priority": "1.0"},
+        {"loc": f"{base}/privacy", "changefreq": "monthly", "priority": "0.3"},
+    ]
+    items = "\n".join(
+        f"  <url>\n    <loc>{u['loc']}</loc>\n"
+        f"    <changefreq>{u['changefreq']}</changefreq>\n"
+        f"    <priority>{u['priority']}</priority>\n  </url>"
+        for u in urls
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{items}\n"
+        "</urlset>"
+    )
+    return PlainTextResponse(xml, media_type="application/xml")
+
+
+@app.get("/yandex_794014909bf2333b.html")
+async def yandex_verification():
+    path = Path(__file__).parent / "static" / "yandex_794014909bf2333b.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"))
 
 
 @app.get("/adminkins")
