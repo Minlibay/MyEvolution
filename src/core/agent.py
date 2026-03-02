@@ -651,7 +651,7 @@ class Agent:
     pregnant: bool = False
     pregnancy_father_id: Optional[str] = None
     pregnancy_remaining: int = 0
-    gestation_length: int = 300
+    gestation_length: int = 500
     mother_id: Optional[str] = None
     father_id: Optional[str] = None
 
@@ -851,8 +851,8 @@ class Agent:
         hunger_increase = self.genes.metabolism_speed * 0.01
         self.hunger = min(1.0, self.hunger + hunger_increase)
 
-        # Увеличение жажды (чуть медленнее, но критичнее)
-        thirst_increase = 0.006 + self.genes.metabolism_speed * 0.004
+        # Увеличение жажды (сравнимо с голодом)
+        thirst_increase = 0.003 + self.genes.metabolism_speed * 0.002
         self.thirst = min(1.0, self.thirst + thirst_increase)
 
         # Сонливость накапливается: базово растёт, но учитывает цикл день/ночь

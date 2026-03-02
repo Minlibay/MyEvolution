@@ -1023,6 +1023,10 @@
       ? `<div class="muted">создатель: <span class="mono">${escapeHtml(agent.owner_username)}</span></div>`
       : '';
 
+    const pregnantLine = (agent.sex === 'female' && agent.pregnant)
+      ? `<div style="color:#f8a4c8;font-size:11px;margin-top:2px">🤰 Беременна — осталось ${agent.pregnancy_remaining || 0} тик.</div>`
+      : '';
+
     const swimLine = agent.is_swimming
       ? `<div class="muted">статус: <span class="mono">плавает</span> (${escapeHtml(agent.water_ticks ?? 0)})</div>`
       : '';
@@ -1081,6 +1085,7 @@
 
     agentTooltip.innerHTML = `
       <div class="title">${title}</div>
+      ${pregnantLine}
       ${ownerLine}
       ${personalityLine}
       ${moodLine}

@@ -347,7 +347,7 @@ class SimulationState:
                         action = decision_maker.select_action(local_env, available_actions)
                 # Сон: ночью при высокой сонливости
                 elif (not getattr(self.environment, 'is_daytime', True)) and getattr(agent, 'sleepiness', 0.0) > 0.65 and 'sleep' in available_actions:
-                    if not (getattr(agent, 'hunger', 0.0) > 0.85 or getattr(agent, 'thirst', 0.0) > 0.85):
+                    if not (getattr(agent, 'hunger', 0.0) > 0.95 or getattr(agent, 'thirst', 0.0) > 0.95):
                         action = 'sleep'
                     else:
                         action = decision_maker.select_action(local_env, available_actions)

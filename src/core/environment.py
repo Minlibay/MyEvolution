@@ -17,7 +17,7 @@ class EnvironmentConfig:
     width: int = 100
     height: int = 100
     seed: int = 42
-    resource_spawn_rate: float = 0.1
+    resource_spawn_rate: float = 0.25
     max_objects_per_cell: int = 10
     season_length: int = 1000
     initial_resource_density: float = 0.05

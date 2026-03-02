@@ -31,7 +31,7 @@ class AgentActions:
     @staticmethod
     def _night_multiplier(environment: Environment, position: Tuple[int, int], radius: int = 1) -> float:
         local_env = environment.get_local_environment(position, radius=radius)
-        return 1.25 if not local_env.get('is_daytime', True) else 1.0
+        return 1.1 if not local_env.get('is_daytime', True) else 1.0
     
     @staticmethod
     def execute_move(agent: Agent, environment: Environment, 
@@ -208,14 +208,18 @@ class AgentActions:
                 memory_key = f"object_{obj.type}"
                 agent.statistical_memory.update_statistic(memory_key, 1.0)
         
+        # Тратим энергию только если что-то собрали
+        if not gathered_objects:
+            return ActionResult('gather', False, -0.01, 0.0, {'reason': 'nothing_gathered'})
+
         agent.energy -= energy_cost
-        
+
         # Награда за собранные объекты
         reward = len(gathered_objects) * 0.05
-        
+
         return ActionResult(
             'gather',
-            len(gathered_objects) > 0,
+            True,
             reward,
             energy_cost,
             {'gathered_objects': gathered_objects}
