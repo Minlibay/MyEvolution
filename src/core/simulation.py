@@ -296,10 +296,20 @@ class SimulationState:
 
             wants_tool_materials = (
                 has_inventory_space
-                and tool_material_in_inventory < 2
+                and tool_material_in_inventory < 3
                 and getattr(agent, 'energy', 0.0) > 0.25
                 and getattr(agent, 'hunger', 0.0) < 0.65
                 and getattr(agent, 'thirst', 0.0) < 0.65
+            )
+
+            # Сколько дерева в инвентаре (для костра)
+            wood_in_inventory = sum(
+                1 for oid in inventory
+                if (wo := self.environment.objects.get(oid)) and wo.type == 'wood'
+            )
+            wood_visible_here = any(
+                getattr(o, 'type', None) == 'wood'
+                for o in local_env.get('perceived_objects', []) or []
             )
 
             tool_material_visible_here = False
@@ -344,6 +354,21 @@ class SimulationState:
                 # Personality-driven spontaneous actions (when not in urgent need)
                 elif not (hungry_self or thirsty_self) and pers:
                     chosen = False
+                    is_night_now = not getattr(self.environment, 'is_daytime', True)
+
+                    # ── Костёр: высокий приоритет когда уже есть 3 дерева ──────────
+                    if not chosen and 'light_fire' in available_actions:
+                        prob_fire = (0.75 if is_night_now else 0.40) + 0.2 * getattr(pers, 'industriousness', 0.5)
+                        if random.random() < prob_fire:
+                            action = 'light_fire'
+                            chosen = True
+
+                    # Добор дерева до 3 штук для костра (если уже начали)
+                    if not chosen and 0 < wood_in_inventory < 3 and wood_visible_here and 'gather' in available_actions:
+                        if random.random() < 0.55 + 0.3 * getattr(pers, 'industriousness', 0.5):
+                            action = 'gather'
+                            chosen = True
+
                     # Social agents spontaneously communicate
                     if not chosen and 'communicate' in available_actions and nearby_agents:
                         if random.random() < 0.03 * pers.sociability:
@@ -376,13 +401,6 @@ class SimulationState:
                         if random.random() < 0.04 * pers.bravery:
                             action = 'attack'
                             chosen = True
-                    # Industrious/curious agents light fire ночью или когда холодно
-                    is_night_now = not getattr(self.environment, 'is_daytime', True)
-                    if not chosen and 'light_fire' in available_actions and is_night_now:
-                        prob_fire = 0.03 + 0.05 * getattr(pers, 'industriousness', 0.5)
-                        if random.random() < prob_fire:
-                            action = 'light_fire'
-                            chosen = True
                     # Plant berries occasionally
                     if not chosen and 'plant_berry' in available_actions:
                         prob_plant = 0.02 + 0.04 * getattr(pers, 'industriousness', 0.5)
@@ -391,6 +409,12 @@ class SimulationState:
                             chosen = True
                     if not chosen:
                         action = decision_maker.select_action(local_env, available_actions)
+                # Костёр: если есть 3 дерева — жечь немедленно
+                elif 'light_fire' in available_actions:
+                    action = 'light_fire'
+                # Добор дерева до 3 штук для костра
+                elif 0 < wood_in_inventory < 3 and wood_visible_here and 'gather' in available_actions:
+                    action = 'gather'
                 # Сбор материалов для инструментов
                 elif wants_tool_materials and tool_material_visible_here and 'gather' in available_actions:
                     action = 'gather'
