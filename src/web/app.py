@@ -1996,6 +1996,7 @@ class SimulationController:
                         "is_swimming": bool(getattr(agent, 'is_swimming', False)),
                         "water_ticks": int(getattr(agent, 'water_ticks', 0) or 0),
                         "age": int(agent.age),
+                        "adulthood_age": int(getattr(agent, 'adulthood_age', 18)),
                         "is_child": bool(getattr(agent, 'is_child', lambda: False)()),
                         "pregnant": bool(getattr(agent, 'pregnant', False)),
                         "pregnancy_remaining": int(getattr(agent, 'pregnancy_remaining', 0) or 0),

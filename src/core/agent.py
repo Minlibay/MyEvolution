@@ -708,9 +708,17 @@ class Agent:
         return syl() + syl()
 
     def invent_name(self) -> str:
-        """Придумывает имя (фонетически похоже на токены языка агента)."""
-        name = self._invent_token()
-        return name.capitalize()
+        """Придумывает имя: берёт самое известное слово из лексикона агента, иначе случайный токен."""
+        best_token = None
+        best_weight = 0.0
+        for token_map in self.lexicon_out.values():
+            for token, weight in token_map.items():
+                if weight > best_weight:
+                    best_weight = weight
+                    best_token = token
+        if best_token and best_weight >= 0.5:
+            return best_token.capitalize()
+        return self._invent_token().capitalize()
 
     def is_child(self) -> bool:
         return self.age < self.adulthood_age

@@ -278,6 +278,14 @@
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
+              <div class="agp-menu-item" data-goto="agpFamilyScreen">
+                <span class="agp-menu-icon">👨‍👩‍👦</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Семейное дерево</div>
+                  <div class="agp-menu-sub" id="agpFamilyMenuSub">Родители и дети</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
             </div>
           </div>
 
@@ -288,6 +296,15 @@
               <span class="agp-screen-title">Информация об агенте</span>
             </div>
             <div class="agp-screen-body" id="myAgentExtra"></div>
+          </div>
+
+          <!-- ЭКРАН 4: Семейное дерево -->
+          <div class="agp-screen" id="agpFamilyScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
+              <span class="agp-screen-title">Семейное дерево</span>
+            </div>
+            <div class="agp-screen-body" id="agpFamilyBody"></div>
           </div>
 
           <!-- ЭКРАН 3: Дать команду -->
@@ -1893,7 +1910,11 @@
     if (av) { av.textContent = (agent.name || agent.id || '?')[0].toUpperCase(); av.className = 'agp-avatar'; }
 
     // Имя и строка с позицией/действием
-    const nm = document.getElementById('agpName'); if (nm) nm.textContent = agent.name || agent.id;
+    const nm = document.getElementById('agpName');
+    if (nm) {
+      const childTag = agent.is_child ? ' <span style="font-size:11px;opacity:.65;font-weight:400;">(ребёнок)</span>' : '';
+      nm.innerHTML = escapeHtml(agent.name || agent.id) + childTag;
+    }
     const sb = document.getElementById('agpSub');
     const swim    = agent.is_swimming ? ' 🌊' : '';
     const lastAct = agent.last_action ? ` · ${actionToRu(agent.last_action)}` : '';
@@ -1986,6 +2007,81 @@
 
     const extraEl = document.getElementById('myAgentExtra');
     if (extraEl) extraEl.innerHTML = extraHtml;
+
+    // Обновляем подзаголовок меню семейного дерева
+    const allAgents = (lastSnapshot && lastSnapshot.agents) || [];
+    const children = allAgents.filter(a => a.mother_id === agent.id || a.father_id === agent.id);
+    const familyMenuSub = document.getElementById('agpFamilyMenuSub');
+    if (familyMenuSub) {
+      const childCount = children.length;
+      const parts = [];
+      if (agent.mother_id || agent.father_id) parts.push('есть родители');
+      if (childCount) parts.push(`${childCount} ${childCount === 1 ? 'ребёнок' : childCount < 5 ? 'детей' : 'детей'}`);
+      familyMenuSub.textContent = parts.length ? parts.join(' · ') : 'Родители и дети';
+    }
+
+    // Рендерим семейное дерево (если экран уже открыт)
+    renderFamilyTree(agent, allAgents);
+  }
+
+  function renderFamilyTree(agent, allAgents) {
+    const body = document.getElementById('agpFamilyBody');
+    if (!body) return;
+
+    const byId = new Map(allAgents.map(a => [a.id, a]));
+
+    const agentCard = (a, role) => {
+      if (!a) return '';
+      const childTag = a.is_child ? ' <span class="ft-child-tag">ребёнок</span>' : '';
+      const sexIcon = a.sex === 'female' ? '♀' : a.sex === 'male' ? '♂' : '?';
+      const ageLabel = `возраст ${a.age}`;
+      const pos = `(${a.x}, ${a.y})`;
+      const hpPct = Math.round((a.health || 0) * 100);
+      return `
+        <div class="ft-card">
+          <div class="ft-card-top">
+            <span class="ft-role">${escapeHtml(role)}</span>
+            <span class="ft-sex">${sexIcon}</span>
+          </div>
+          <div class="ft-name">${escapeHtml(a.name || a.id)}${childTag}</div>
+          <div class="ft-meta">${ageLabel} · ${pos}</div>
+          <div class="ft-hp-bar"><div class="ft-hp-fill" style="width:${hpPct}%"></div></div>
+        </div>`;
+    };
+
+    let html = '';
+
+    // Родители
+    const mother = byId.get(agent.mother_id);
+    const father = byId.get(agent.father_id);
+    if (mother || father || agent.mother_id || agent.father_id) {
+      html += `<div class="ft-section-title">👨‍👩‍👦 Родители</div>`;
+      if (mother) {
+        html += agentCard(mother, 'Мать');
+      } else if (agent.mother_id) {
+        html += `<div class="ft-card ft-card-dead"><div class="ft-name muted">Мать (погибла)</div></div>`;
+      }
+      if (father) {
+        html += agentCard(father, 'Отец');
+      } else if (agent.father_id) {
+        html += `<div class="ft-card ft-card-dead"><div class="ft-name muted">Отец (погиб)</div></div>`;
+      }
+    } else {
+      html += `<div class="ft-section-title">👨‍👩‍👦 Родители</div><div class="ft-empty">Информация о родителях отсутствует</div>`;
+    }
+
+    // Дети
+    const children = allAgents.filter(a => a.mother_id === agent.id || a.father_id === agent.id);
+    html += `<div class="ft-section-title" style="margin-top:16px;">👶 Дети <span class="ft-count">${children.length}</span></div>`;
+    if (children.length === 0) {
+      html += `<div class="ft-empty">Нет детей</div>`;
+    } else {
+      for (const child of children) {
+        html += agentCard(child, child.sex === 'female' ? 'Дочь' : 'Сын');
+      }
+    }
+
+    body.innerHTML = html;
   }
 
   // ── Личный чат с агентом ─────────────────────────────────────────────────
