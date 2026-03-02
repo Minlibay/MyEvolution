@@ -163,15 +163,47 @@ class AgentActions:
         for obj in cell_objects[:]:  # Копия для безопасного удаления
             if len(agent.inventory) >= agent.inventory_capacity:
                 break
-            
+
+            # Нельзя собирать: незрелый куст, костёр, воду, кампфайр
+            if obj.type in ('campfire', 'water'):
+                continue
+            if obj.type == 'berry_bush' and not getattr(obj, 'ripe', False):
+                continue
+
             # Вероятность успешного сбора зависит от веса объекта и силы агента
             success_prob = 1.0 - obj.weight * 0.5 + agent.genes.strength * 0.3
-            
+
             if random.random() < success_prob:
+                # Дерево — ресурсный узел: берём 1 единицу, оставляем объект в мире
+                if obj.type == 'wood' and obj.quantity > 1:
+                    import uuid as _uuid
+                    piece_id = f"wood_piece_{_uuid.uuid4().hex[:8]}"
+                    piece = ObjectFactory.create_object('wood', obj.position, piece_id, obj.created_at)
+                    piece.quantity = 1
+                    environment.objects[piece_id] = piece  # в мире не появляется, сразу в инвентарь
+                    agent.add_to_inventory(piece_id)
+                    obj.quantity -= 1
+                    if obj.quantity <= 0:
+                        environment.detach_object_from_world(obj.id)
+                # Спелый ягодный куст — собираем 20 ягод, куст сбрасывается и растёт снова
+                elif obj.type == 'berry_bush' and getattr(obj, 'ripe', False):
+                    import uuid as _uuid
+                    berry_id = f"berry_harvest_{_uuid.uuid4().hex[:8]}"
+                    berry_piece = ObjectFactory.create_object('berry', obj.position, berry_id, obj.created_at)
+                    berry_piece.quantity = 20
+                    environment.objects[berry_id] = berry_piece
+                    agent.add_to_inventory(berry_id)
+                    # Куст становится не спелым, цикл роста начинается снова
+                    setattr(obj, 'ripe', False)
+                    obj.nutrition = 0.15
+                    setattr(obj, 'planted_at', environment.timestep)
+                    agent.life_log.add(environment.timestep, 'craft', 'Собрал ягоды с куста 🍓', icon='🍓')
+                else:
+                    agent.add_to_inventory(obj.id)
+                    environment.detach_object_from_world(obj.id)
+
                 gathered_objects.append(obj.id)
-                agent.add_to_inventory(obj.id)
-                environment.detach_object_from_world(obj.id)
-                
+
                 # Обновление статистической памяти
                 memory_key = f"object_{obj.type}"
                 agent.statistical_memory.update_statistic(memory_key, 1.0)
@@ -195,32 +227,38 @@ class AgentActions:
         if not agent.inventory:
             return ActionResult('consume', False, -0.1, 0.0, {'reason': 'empty_inventory'})
         
-        # Выбираем объект для потребления (самый питательный)
+        # Выбираем объект для потребления (самый питательный за 1 единицу)
         best_obj_id = None
         best_energy_value = 0.0
-        
+
         for obj_id in agent.inventory:
             obj = environment.objects.get(obj_id)
             if obj and obj.is_edible():
-                energy_value = obj.get_energy_value()
-                if energy_value > best_energy_value:
-                    best_energy_value = energy_value
+                # Для стаков оцениваем 1 единицу, а не весь стак
+                unit_value = obj.nutrition * (1.0 - obj.toxicity)
+                if unit_value > best_energy_value:
+                    best_energy_value = unit_value
                     best_obj_id = obj_id
-        
+
         if best_obj_id is None:
             return ActionResult('consume', False, -0.1, 0.0, {'reason': 'no_edible_objects'})
-        
+
         obj = environment.objects[best_obj_id]
-        
-        # Потребление объекта
-        agent.remove_from_inventory(best_obj_id)
-        environment.remove_object(best_obj_id)
-        
+
+        # Потребление объекта — стаки (ягоды) едим по 1 штуке
+        if obj.type == 'berry' and obj.quantity > 1:
+            energy_gain = obj.nutrition * (1.0 - obj.toxicity)
+            obj.quantity -= 1
+            # объект остаётся в инвентаре
+        else:
+            energy_gain = obj.nutrition * (1.0 - obj.toxicity)
+            agent.remove_from_inventory(best_obj_id)
+            environment.remove_object(best_obj_id)
+
         # Восстановление энергии и уменьшение голода
-        energy_gain = obj.get_energy_value()
         agent.energy = min(1.0, agent.energy + energy_gain)
         agent.hunger = max(0.0, agent.hunger - energy_gain * 0.8)
-        
+
         # Награда за потребление
         reward = energy_gain * 2.0
         
@@ -860,9 +898,158 @@ class AgentActions:
         )
 
 
+    @staticmethod
+    def execute_light_fire(agent: Agent, environment: Environment) -> ActionResult:
+        """Разводит костёр из 3 дерева на текущей позиции."""
+        energy_cost = 0.15
+        if agent.energy < energy_cost:
+            return ActionResult('light_fire', False, -0.1, 0.0, {'reason': 'insufficient_energy'})
+
+        # Нельзя на воде
+        if environment.is_water(agent.position):
+            return ActionResult('light_fire', False, -0.1, 0.0, {'reason': 'on_water'})
+
+        # Уже есть костёр здесь?
+        cell = environment.get_objects_at_position(agent.position)
+        if any(o.type == 'campfire' for o in cell):
+            return ActionResult('light_fire', False, -0.05, 0.0, {'reason': 'fire_exists'})
+
+        # Найти 3 дерева в инвентаре
+        wood_ids = [
+            oid for oid in agent.inventory
+            if (o := environment.objects.get(oid)) and o.type == 'wood'
+        ]
+        if len(wood_ids) < 3:
+            return ActionResult('light_fire', False, -0.1, 0.0, {'reason': 'not_enough_wood'})
+
+        agent.energy -= energy_cost
+
+        # Убрать 3 дерева из инвентаря
+        for oid in wood_ids[:3]:
+            agent.remove_from_inventory(oid)
+            environment.remove_object(oid)
+
+        # Создать костёр
+        ts = getattr(environment, 'timestep', 0)
+        fire_id = f"campfire_{agent.id}_{ts}"
+        fire = ObjectFactory.create_object('campfire', agent.position, fire_id, ts)
+        setattr(fire, 'fuel_ticks', 500)
+        environment.add_object(fire)
+
+        # Дневник
+        try:
+            agent.life_log.add(ts, 'craft', 'Развёл костёр 🔥', icon='🔥')
+        except Exception:
+            pass
+
+        return ActionResult('light_fire', True, 1.5, energy_cost, {'fire_id': fire_id})
+
+    @staticmethod
+    def execute_plant_berry(agent: Agent, environment: Environment) -> ActionResult:
+        """Сажает ягодный куст из ягоды в инвентаре."""
+        energy_cost = 0.05
+        if agent.energy < energy_cost:
+            return ActionResult('plant_berry', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        if environment.is_water(agent.position):
+            return ActionResult('plant_berry', False, -0.05, 0.0, {'reason': 'on_water'})
+
+        cell = environment.get_objects_at_position(agent.position)
+        if any(o.type == 'berry_bush' for o in cell):
+            return ActionResult('plant_berry', False, -0.02, 0.0, {'reason': 'bush_exists'})
+
+        berry_ids = [
+            oid for oid in agent.inventory
+            if (o := environment.objects.get(oid)) and o.type == 'berry'
+        ]
+        if not berry_ids:
+            return ActionResult('plant_berry', False, -0.05, 0.0, {'reason': 'no_berry'})
+
+        agent.energy -= energy_cost
+        # Из стака ягод тратим 1 штуку, не удаляя весь объект
+        berry_obj = environment.objects.get(berry_ids[0])
+        if berry_obj and berry_obj.quantity > 1:
+            berry_obj.quantity -= 1
+        else:
+            agent.remove_from_inventory(berry_ids[0])
+            environment.remove_object(berry_ids[0])
+
+        ts = getattr(environment, 'timestep', 0)
+        bush_id = f"berry_bush_{agent.id}_{ts}"
+        bush = ObjectFactory.create_object('berry_bush', agent.position, bush_id, ts)
+        setattr(bush, 'planted_at', ts)
+        setattr(bush, 'ripe', False)
+        environment.add_object(bush)
+
+        try:
+            agent.life_log.add(ts, 'craft', 'Посадил ягодный куст 🌿', icon='🌿')
+        except Exception:
+            pass
+
+        return ActionResult('plant_berry', True, 0.8, energy_cost, {'bush_id': bush_id})
+
+    @staticmethod
+    def execute_share(agent: Agent, environment: Environment,
+                      other_agents: List[Agent]) -> ActionResult:
+        """Поделиться ягодами с соседним агентом."""
+        energy_cost = 0.02
+        if agent.energy < energy_cost:
+            return ActionResult('share', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        if not other_agents:
+            return ActionResult('share', False, 0.0, 0.0, {'reason': 'no_agents_nearby'})
+
+        # Ищем ягоды в инвентаре
+        berry_ids = [
+            oid for oid in agent.inventory
+            if (bo := environment.objects.get(oid)) and bo.type == 'berry' and bo.quantity > 0
+        ]
+        if not berry_ids:
+            return ActionResult('share', False, 0.0, 0.0, {'reason': 'no_berries'})
+
+        berry_obj = environment.objects.get(berry_ids[0])
+        if not berry_obj or berry_obj.quantity <= 0:
+            return ActionResult('share', False, 0.0, 0.0, {'reason': 'invalid_berry'})
+
+        # Делимся с самым голодным соседом
+        target = max(other_agents, key=lambda a: getattr(a, 'hunger', 0.0))
+
+        # Отдаём половину, минимум 1
+        share_count = max(1, berry_obj.quantity // 2)
+
+        import uuid as _uuid
+        gift_id = f"berry_gift_{_uuid.uuid4().hex[:8]}"
+        gift = ObjectFactory.create_object('berry', agent.position, gift_id, berry_obj.created_at)
+        gift.quantity = share_count
+        environment.objects[gift_id] = gift
+
+        if len(target.inventory) < target.inventory_capacity:
+            target.add_to_inventory(gift_id)
+        else:
+            # Инвентарь полный — просто уменьшаем стак без передачи
+            del environment.objects[gift_id]
+            return ActionResult('share', False, 0.0, 0.0, {'reason': 'target_inventory_full'})
+
+        berry_obj.quantity -= share_count
+        if berry_obj.quantity <= 0:
+            agent.remove_from_inventory(berry_ids[0])
+            environment.remove_object(berry_ids[0])
+
+        agent.energy -= energy_cost
+
+        ts = getattr(environment, 'timestep', 0)
+        try:
+            agent.life_log.add(ts, 'social', f'Поделился {share_count} ягодами 🍓', icon='🤝')
+        except Exception:
+            pass
+
+        return ActionResult('share', True, 0.3, energy_cost,
+                            {'target_id': target.id, 'amount': share_count})
+
+
 class ActionExecutor:
     """Основной класс для выполнения действий агента"""
-    
+
     def __init__(self):
         self.actions = {
             'move': AgentActions.execute_move,
@@ -876,7 +1063,10 @@ class ActionExecutor:
             'attack': AgentActions.execute_attack,
             'break': AgentActions.execute_break,
             'rest': AgentActions.execute_rest,
-            'sleep': AgentActions.execute_sleep
+            'sleep': AgentActions.execute_sleep,
+            'light_fire': AgentActions.execute_light_fire,
+            'plant_berry': AgentActions.execute_plant_berry,
+            'share': AgentActions.execute_share,
         }
     
     def execute_action(self, agent: Agent, environment: Environment, 
@@ -926,5 +1116,23 @@ class ActionExecutor:
             )
             if has_breakable:
                 actions.append('break')
-        
+
+            # Костёр: нужно 3 дерева и клетка не на воде и нет уже костра
+            if not environment.is_water(agent.position):
+                wood_count = sum(
+                    1 for oid in agent.inventory
+                    if (wo := environment.objects.get(oid)) and wo.type == 'wood'
+                )
+                cell_here = environment.get_objects_at_position(agent.position)
+                if wood_count >= 3 and not any(o.type == 'campfire' for o in cell_here):
+                    actions.append('light_fire')
+
+                # Посадить ягоду: нужна хотя бы 1 ягода и нет куста здесь
+                has_berry_inv = any(
+                    (bo := environment.objects.get(oid)) and bo.type == 'berry'
+                    for oid in agent.inventory
+                )
+                if has_berry_inv and not any(o.type == 'berry_bush' for o in cell_here):
+                    actions.append('plant_berry')
+
         return actions

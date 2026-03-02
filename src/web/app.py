@@ -199,6 +199,79 @@ def _agent_chat_get(uid: int) -> list:
         conn.close()
 
 
+# ── Сохранение событий агента (механика «что случилось пока меня не было») ──
+_agent_last_saved_tick: Dict[str, int] = {}  # agent_id → последний сохранённый тик
+_last_event_save_wall: float = 0.0
+_EVENT_SAVE_INTERVAL_SEC: float = 8.0
+_NOTABLE_EVENT_TYPES: frozenset = frozenset({
+    'craft', 'social', 'love', 'family', 'danger', 'fight',
+    'achievement', 'birth', 'skill_up', 'discovery',
+})
+_AGENT_EVENTS_MAX = 300
+
+
+def _save_agent_events_batch(state) -> None:
+    """Сохраняет новые notable-события из life_log всех агентов с владельцем."""
+    global _last_event_save_wall
+    now = time.time()
+    rows_by_uid: Dict[int, list] = {}
+
+    for agent in state.agents.values():
+        uid = int(getattr(agent, "owner_uid", -1))
+        if uid < 0:
+            continue
+        life_log = getattr(agent, "life_log", None)
+        if life_log is None:
+            continue
+
+        last_tick = _agent_last_saved_tick.get(agent.id, -1)
+        new_entries = [
+            e for e in life_log.entries
+            if e.get("t", 0) > last_tick and e.get("type") in _NOTABLE_EVENT_TYPES
+        ]
+        if not new_entries:
+            continue
+
+        if uid not in rows_by_uid:
+            rows_by_uid[uid] = []
+        for e in new_entries:
+            rows_by_uid[uid].append((
+                uid,
+                int(e.get("t", 0)),
+                str(e.get("type", "")),
+                str(e.get("icon", "") or ""),
+                str(e.get("text", "")),
+                now,
+            ))
+        _agent_last_saved_tick[agent.id] = max(e.get("t", 0) for e in new_entries)
+
+    if not rows_by_uid:
+        return
+
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        for uid, rows in rows_by_uid.items():
+            cur.executemany(
+                "INSERT INTO agent_events(user_id, sim_tick, event_type, icon, text, ts) "
+                "VALUES(?,?,?,?,?,?)",
+                rows,
+            )
+            cur.execute(
+                """DELETE FROM agent_events WHERE user_id = ? AND id NOT IN (
+                    SELECT id FROM agent_events WHERE user_id = ? ORDER BY id DESC LIMIT ?
+                )""",
+                (uid, uid, _AGENT_EVENTS_MAX),
+            )
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+    _last_event_save_wall = now
+
+
 def _find_agent_by_owner(uid: int):
     """Возвращает объект Agent по owner_uid из живой симуляции."""
     try:
@@ -457,6 +530,20 @@ _TOOL_RECIPES_PATH = str((Path(__file__).resolve().parents[2] / "data" / "tool_r
 _LEARNING_STATE_PATH = str((Path(__file__).resolve().parents[2] / "data" / "learning_state.json").resolve())
 _SPRITES_DIR = Path(__file__).resolve().parents[2] / "data" / "sprites"
 _SPRITES_DIR.mkdir(parents=True, exist_ok=True)
+
+# Форматы спрайтов: порядок важен — gif проверяется первым (анимация)
+_SPRITE_MIME_MAP = {
+    "image/gif": ".gif",
+    "image/png": ".png",
+}
+
+def _find_sprite_path(slot: str):
+    """Возвращает (Path, mime) найденного файла спрайта или (None, None)."""
+    for mime, ext in _SPRITE_MIME_MAP.items():
+        p = _SPRITES_DIR / f"{slot}{ext}"
+        if p.exists():
+            return p, mime
+    return None, None
 _ANIMALS_DIR = Path(__file__).resolve().parents[2] / "data" / "animals"
 _ANIMALS_DIR.mkdir(parents=True, exist_ok=True)
 _ANIMALS_JSON = _ANIMALS_DIR / "animals.json"
@@ -595,6 +682,23 @@ def _db_init() -> None:
             """
         )
 
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                sim_tick INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                icon TEXT,
+                text TEXT NOT NULL,
+                ts REAL NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_events_uid_ts ON agent_events(user_id, ts)"
+        )
+
         # Lightweight migrations for existing DBs
         try:
             cur.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
@@ -607,6 +711,11 @@ def _db_init() -> None:
 
         try:
             cur.execute("ALTER TABLE user_agents ADD COLUMN stats_json TEXT NOT NULL DEFAULT '{}' ")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN last_agent_view_ts REAL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
 
@@ -1925,6 +2034,14 @@ class SimulationController:
                     }
                 )
 
+            # Периодически сохраняем notable-события агентов в SQLite
+            _wall_now = time.time()
+            if _wall_now - _last_event_save_wall >= _EVENT_SAVE_INTERVAL_SEC:
+                try:
+                    _save_agent_events_batch(state)
+                except Exception:
+                    pass
+
             # Objects: RTS-style full sync + deltas.
             current_objects: Dict[str, Dict[str, Any]] = {}
             for obj in env.objects.values():
@@ -2050,6 +2167,18 @@ class SimulationController:
                     "is_daytime": bool(getattr(env, 'is_daytime', True)),
                 },
                 "agents": agents_payload,
+                "campfires": [
+                    {"x": int(o.position[0]), "y": int(o.position[1]),
+                     "fuel": int(getattr(o, 'fuel_ticks', 0))}
+                    for o in env.objects.values()
+                    if o.type == 'campfire' and getattr(o, 'fuel_ticks', 0) > 0
+                ],
+                "berry_bushes": [
+                    {"x": int(o.position[0]), "y": int(o.position[1]),
+                     "ripe": bool(getattr(o, 'ripe', False))}
+                    for o in env.objects.values()
+                    if o.type == 'berry_bush'
+                ],
                 "dead_agents": list(state.dead_agents) if hasattr(state, 'dead_agents') else [],
                 "objects": (objects_full if objects_full is not None else []),
                 "objects_full": objects_full,
@@ -2523,6 +2652,49 @@ async def api_agents_chat(token: str):
     return JSONResponse({"messages": messages})
 
 
+@app.get("/api/agent/missed")
+async def api_agent_missed(token: str):
+    """Возвращает события агента с момента последнего просмотра (механика 'пока тебя не было')."""
+    user = _auth_from_token(token)
+    uid = int(user["uid"])
+
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        row = cur.execute(
+            "SELECT last_agent_view_ts FROM users WHERE id = ?", (uid,)
+        ).fetchone()
+        last_view = 0.0
+        if row:
+            try:
+                last_view = float(row["last_agent_view_ts"] or 0)
+            except Exception:
+                last_view = 0.0
+
+        events = cur.execute(
+            "SELECT event_type, icon, text, ts FROM agent_events "
+            "WHERE user_id = ? AND ts > ? ORDER BY ts ASC LIMIT 50",
+            (uid, last_view),
+        ).fetchall()
+
+        cur.execute(
+            "UPDATE users SET last_agent_view_ts = ? WHERE id = ?",
+            (time.time(), uid),
+        )
+        conn.commit()
+
+        return JSONResponse({
+            "count": len(events),
+            "since_ts": last_view,
+            "events": [
+                {"type": e["event_type"], "icon": e["icon"], "text": e["text"], "ts": e["ts"]}
+                for e in events
+            ],
+        })
+    finally:
+        conn.close()
+
+
 @app.post("/api/agents/create")
 async def api_agents_create(token: str, payload: Dict[str, Any]):
     user = _auth_from_token(token)
@@ -2655,20 +2827,20 @@ async def api_admin_chat_ban_by_name(token: str, payload: Dict[str, Any]):
 _SPRITE_SLOTS = [
     "ground", "ground_forest", "ground_desert", "ground_mountain", "ground_swamp",
     "ground_winter", "ground_winter_forest", "ground_winter_desert",
-    "water",
+    "water", "campfire",
 ]
 
 
 @app.get("/api/sprites/{slot}")
 async def api_sprite_get(slot: str):
-    """Отдаёт загруженный спрайт по слоту (ground, ground_forest, ...)."""
+    """Отдаёт загруженный спрайт по слоту (ground, ground_forest, campfire, ...)."""
     slot = slot.strip().lower()
     if slot not in _SPRITE_SLOTS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown_slot")
-    path = _SPRITES_DIR / f"{slot}.png"
-    if not path.exists():
+    path, mime = _find_sprite_path(slot)
+    if not path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="sprite_not_found")
-    return FileResponse(str(path), media_type="image/png")
+    return FileResponse(str(path), media_type=mime)
 
 
 @app.get("/api/banner/image")
@@ -2719,36 +2891,46 @@ async def api_admin_banner_image_delete(token: str):
 async def api_sprite_list():
     """Список загруженных слотов спрайтов."""
     loaded = {}
+    formats = {}
     for s in _SPRITE_SLOTS:
-        p = _SPRITES_DIR / f"{s}.png"
-        loaded[s] = p.exists()
-    return JSONResponse({"slots": _SPRITE_SLOTS, "loaded": loaded})
+        p, mime = _find_sprite_path(s)
+        loaded[s] = p is not None
+        formats[s] = mime  # None если не загружен
+    return JSONResponse({"slots": _SPRITE_SLOTS, "loaded": loaded, "formats": formats})
 
 
 @app.post("/api/admin/sprites/{slot}")
 async def api_admin_sprite_upload(slot: str, token: str, file: UploadFile = File(...)):
-    """Загрузка спрайта текстуры (только PNG, ≤2MB)."""
+    """Загрузка спрайта текстуры (PNG или GIF, ≤2MB)."""
     _require_admin(token)
     slot = slot.strip().lower()
     if slot not in _SPRITE_SLOTS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown_slot")
-    if not file.content_type or "png" not in file.content_type.lower():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="only_png")
+    mime = (file.content_type or "").lower().split(";")[0].strip()
+    ext = _SPRITE_MIME_MAP.get(mime)
+    if not ext:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="only_png_or_gif")
     data = await file.read()
     if len(data) > 2 * 1024 * 1024:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file_too_large")
-    dest = _SPRITES_DIR / f"{slot}.png"
+    # Удаляем старый файл другого формата (если был)
+    for old_ext in _SPRITE_MIME_MAP.values():
+        old = _SPRITES_DIR / f"{slot}{old_ext}"
+        if old.exists() and old_ext != ext:
+            old.unlink()
+    dest = _SPRITES_DIR / f"{slot}{ext}"
     dest.write_bytes(data)
-    return JSONResponse({"ok": True, "slot": slot, "size": len(data)})
+    return JSONResponse({"ok": True, "slot": slot, "size": len(data), "mime": mime})
 
 
 @app.delete("/api/admin/sprites/{slot}")
 async def api_admin_sprite_delete(slot: str, token: str):
     _require_admin(token)
     slot = slot.strip().lower()
-    dest = _SPRITES_DIR / f"{slot}.png"
-    if dest.exists():
-        dest.unlink()
+    for ext in _SPRITE_MIME_MAP.values():
+        dest = _SPRITES_DIR / f"{slot}{ext}"
+        if dest.exists():
+            dest.unlink()
     return JSONResponse({"ok": True})
 
 

@@ -231,6 +231,14 @@
           </div>
           <!-- ЭКРАН 1: Главное меню (показатели + выбор раздела) -->
           <div class="agp-screen active" id="agpMainScreen">
+            <!-- Карточка «Что случилось пока тебя не было» -->
+            <div id="agpMissedCard" class="agp-missed-card" style="display:none">
+              <div class="agp-missed-header">
+                <span id="agpMissedTitle" class="agp-missed-title">📬 Пока вас не было:</span>
+                <button id="agpMissedClose" class="agp-missed-close">✕</button>
+              </div>
+              <div id="agpMissedList" class="agp-missed-list"></div>
+            </div>
             <div class="agp-vitals">
               <div class="agp-vrow">
                 <span class="agp-vi">❤️</span>
@@ -545,6 +553,13 @@
   waterSprite.onload = () => { waterReady = true; };
   waterSprite.onerror = () => { waterReady = false; };
 
+  // Campfire sprite (admin-uploadable)
+  const campfireSprite = new Image();
+  let campfireReady = false;
+  campfireSprite.src = '/api/sprites/campfire?_=' + Date.now();
+  campfireSprite.onload = () => { campfireReady = true; };
+  campfireSprite.onerror = () => { campfireReady = false; };
+
   const agentRenderState = new Map();
 
   let worldMapCache = {
@@ -691,6 +706,9 @@
     break: 'ломает',
     attack: 'охотится',
     rest: 'отдыхает',
+    light_fire: 'разводит костёр',
+    plant_berry: 'сажает куст',
+    share: 'делится ягодами',
   };
 
   function actionToRu(action) {
@@ -1410,12 +1428,117 @@
       ctx.restore();
     }
 
-    // Night overlay
+    // ── Костры: свечение + спрайт/fallback ──────────────────────────────
+    const campfires = snapshot.campfires || [];
+    const _tick = snapshot.timestep || 0;
+
+    // Glow pass (рисуем ДО ночного оверлея, чтобы свет «пробивался»)
+    for (const cf of campfires) {
+      const px = (cf.x + 0.5) * sx;
+      const py = (cf.y + 0.5) * sy;
+      const intensity = Math.min(1, (cf.fuel || 0) / 500);
+      // мерцание: небольшая синусоидальная пульсация по времени
+      const flicker = 1 + 0.08 * Math.sin(_tick * 0.4 + cf.x * 1.3);
+      const glowR = Math.max(sx, sy) * 4.5 * flicker;
+      const grad = ctx.createRadialGradient(px, py, sx * 0.3, px, py, glowR);
+      grad.addColorStop(0,   `rgba(255,180,60,${0.45 * intensity})`);
+      grad.addColorStop(0.3, `rgba(255,100,20,${0.20 * intensity})`);
+      grad.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(px, py, glowR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Night overlay (с вырезом вокруг костров)
     if (snapshot.world && snapshot.world.is_daytime === false) {
       ctx.save();
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = '#02040d';
-      ctx.fillRect(0, 0, cv.width, cv.height);
+      if (campfires.length > 0) {
+        // Создаём маску: тёмный прямоугольник с «дырами» вокруг каждого костра
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(2,4,13,0.52)';
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        // Вырезаем освещённые зоны через destination-out
+        ctx.globalCompositeOperation = 'destination-out';
+        for (const cf of campfires) {
+          const px = (cf.x + 0.5) * sx;
+          const py = (cf.y + 0.5) * sy;
+          const litR = Math.max(sx, sy) * 4;
+          const litGrad = ctx.createRadialGradient(px, py, 0, px, py, litR);
+          litGrad.addColorStop(0,   'rgba(0,0,0,0.85)');
+          litGrad.addColorStop(0.6, 'rgba(0,0,0,0.5)');
+          litGrad.addColorStop(1,   'rgba(0,0,0,0)');
+          ctx.fillStyle = litGrad;
+          ctx.beginPath();
+          ctx.arc(px, py, litR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = '#02040d';
+        ctx.fillRect(0, 0, cv.width, cv.height);
+      }
+      ctx.restore();
+    }
+
+    // Спрайт / fallback пламя (рисуем ПОСЛЕ ночного оверлея, поверх темноты)
+    for (const cf of campfires) {
+      const px = (cf.x + 0.5) * sx;
+      const py = (cf.y + 0.5) * sy;
+      const intensity = Math.min(1, (cf.fuel || 0) / 500);
+      const flicker2 = 1 + 0.06 * Math.sin(_tick * 0.5 + cf.y * 1.7);
+      if (campfireReady) {
+        const sz = Math.max(sx, sy) * flicker2;
+        ctx.save();
+        ctx.globalAlpha = 0.92 * intensity;
+        ctx.drawImage(campfireSprite, px - sz * 0.5, py - sz * 0.55, sz, sz);
+        ctx.restore();
+      } else {
+        // Fallback: простое пламя из кругов
+        ctx.save();
+        ctx.shadowColor = '#ff8800';
+        ctx.shadowBlur = 14 * intensity;
+        // Основание — оранжевый
+        ctx.fillStyle = `rgba(255,100,20,${0.9 * intensity})`;
+        ctx.beginPath();
+        ctx.ellipse(px, py + sy * 0.1, sx * 0.35, sy * 0.32, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Язык пламени — жёлтый
+        ctx.fillStyle = `rgba(255,220,60,${0.85 * intensity * flicker2})`;
+        ctx.beginPath();
+        ctx.ellipse(px, py - sy * 0.1, sx * 0.18, sy * 0.3 * flicker2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // ── Ягодные кусты ──────────────────────────────────────────────────────
+    const berryBushes = snapshot.berry_bushes || [];
+    for (const bb of berryBushes) {
+      const px = (bb.x + 0.5) * sx;
+      const py = (bb.y + 0.5) * sy;
+      ctx.save();
+      // Куст: зелёный круг
+      ctx.shadowColor = bb.ripe ? '#22cc44' : '#226622';
+      ctx.shadowBlur = bb.ripe ? 8 : 3;
+      ctx.fillStyle = bb.ripe ? '#33dd55' : '#2a7a2a';
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(sx, sy) * 0.38, 0, Math.PI * 2);
+      ctx.fill();
+      // Если спелый — маленькие красные ягоды
+      if (bb.ripe) {
+        const br = Math.max(sx, sy) * 0.12;
+        const offsets = [[-0.18, -0.15], [0.18, -0.1], [0, 0.18], [-0.12, 0.12], [0.15, 0.15]];
+        ctx.fillStyle = '#dd2244';
+        for (const [ox, oy] of offsets) {
+          ctx.beginPath();
+          ctx.arc(px + ox * sx, py + oy * sy, br, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
       ctx.restore();
     }
   }
@@ -1949,12 +2072,65 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAgentMessage(); }
   });
 
+  // ── «Что случилось пока тебя не было» ───────────────────────────────────
+  let _missedFetched = false;
+
+  function _formatAwayTime(sinceTs) {
+    if (!sinceTs || sinceTs <= 0) return null;
+    const secs = Math.floor(Date.now() / 1000 - sinceTs);
+    if (secs < 120) return null; // меньше 2 минут — не показываем «было»
+    if (secs < 3600) return `${Math.floor(secs / 60)} мин`;
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+    return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
+  }
+
+  async function fetchMissedEvents() {
+    if (_missedFetched) return;
+    _missedFetched = true;
+    const token = localStorage.getItem('evosim_token');
+    if (!token) return;
+    try {
+      const r = await fetch(`/api/agent/missed?token=${encodeURIComponent(token)}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!data.count || data.count === 0) return;
+
+      const card  = document.getElementById('agpMissedCard');
+      const title = document.getElementById('agpMissedTitle');
+      const list  = document.getElementById('agpMissedList');
+      if (!card || !list) return;
+
+      const awayStr = _formatAwayTime(data.since_ts);
+      title.textContent = awayStr
+        ? `📬 За ${awayStr} пока вас не было:`
+        : '📬 За время жизни агента:';
+
+      const shown = data.events.slice(-5).reverse(); // последние 5, новые сверху
+      const extra = data.count > 5 ? data.count - 5 : 0;
+      let html = '';
+      for (const ev of shown) {
+        html += `<div class="agp-missed-item">${escapeHtml(ev.icon || '📝')} ${escapeHtml(ev.text)}</div>`;
+      }
+      if (extra > 0) {
+        html += `<div class="agp-missed-more">+ ещё ${extra} событи${extra === 1 ? 'е' : extra < 5 ? 'я' : 'й'}</div>`;
+      }
+      list.innerHTML = html;
+      card.style.display = '';
+
+      document.getElementById('agpMissedClose')?.addEventListener('click', () => {
+        card.style.opacity = '0';
+        setTimeout(() => { card.style.display = 'none'; card.style.opacity = ''; }, 250);
+      });
+    } catch (e) {}
+  }
+
   // Загружаем чат при переключении на вкладку Агент
   document.querySelectorAll('.sidebar-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       if (tab.dataset.tab === 'tab-agent') {
         const active = document.getElementById('agpChatScreen');
         if (active && active.classList.contains('active')) loadAgentChat();
+        fetchMissedEvents();
       }
     });
   });

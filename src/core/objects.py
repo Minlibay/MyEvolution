@@ -170,7 +170,15 @@ class ObjectFactory:
         'water': {
             'hardness': 0.0, 'nutrition': 0.0, 'toxicity': 0.0,
             'weight': 0.0, 'durability': 1.0, 'flammability': 0.0, 'energy_cost': 0.0
-        }
+        },
+        'campfire': {
+            'hardness': 0.1, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 2.0, 'durability': 1.0, 'flammability': 1.0, 'energy_cost': 0.0
+        },
+        'berry_bush': {
+            'hardness': 0.1, 'nutrition': 0.15, 'toxicity': 0.2,
+            'weight': 0.3, 'durability': 1.0, 'flammability': 0.5, 'energy_cost': 0.05
+        },
     }
     
     @classmethod

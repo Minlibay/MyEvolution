@@ -9,6 +9,7 @@ import time
 from .environment import Environment, EnvironmentConfig
 from .agent import Agent, AgentFactory, generate_thought, ACTION_TO_SKILL, Skills
 from .agent_actions import ActionExecutor, ActionResult
+from .objects import ObjectFactory
 from .tools import ToolLibrary
 from ..learning.q_learning import LearningManager
 from ..evolution.genetics import EvolutionManager
@@ -123,17 +124,20 @@ class SimulationState:
         
         # Обновление среды
         self.environment.update(self.timestep)
-        
+
+        # Обновление костров и ягодных кустов
+        self._update_campfires_and_bushes()
+
         # Обработка агентов
         self._process_agents()
-        
+
         # Эволюционные процессы
         if self.evolution_manager.should_evolve(self.timestep):
             self._process_evolution()
-        
+
         # Сбор метрик
         self._collect_metrics()
-        
+
         # Обновление времени
         self.timestep += 1
         
@@ -215,6 +219,15 @@ class SimulationState:
 
             if nearby_agents:
                 available_actions.append('communicate')
+
+            # Поделиться ягодами: нужны ягоды в инвентаре и соседи рядом
+            if nearby_agents:
+                has_berries_to_share = any(
+                    (bo := self.environment.objects.get(oid)) and bo.type == 'berry' and bo.quantity > 1
+                    for oid in agent.inventory
+                )
+                if has_berries_to_share:
+                    available_actions.append('share')
 
             # mate only when a valid close partner exists
             if mate_candidates:
@@ -335,6 +348,12 @@ class SimulationState:
                         if random.random() < 0.03 * pers.sociability:
                             action = 'communicate'
                             chosen = True
+                    # Эмпатичные/социальные агенты делятся ягодами
+                    if not chosen and 'share' in available_actions:
+                        prob_share = 0.02 + 0.06 * getattr(pers, 'empathy', 0.5) + 0.02 * pers.sociability
+                        if random.random() < prob_share:
+                            action = 'share'
+                            chosen = True
                     # Curious agents explore more
                     if not chosen and 'move' in available_actions:
                         if random.random() < 0.02 * pers.curiosity:
@@ -355,6 +374,19 @@ class SimulationState:
                     if not chosen and 'attack' in available_actions:
                         if random.random() < 0.04 * pers.bravery:
                             action = 'attack'
+                            chosen = True
+                    # Industrious/curious agents light fire ночью или когда холодно
+                    is_night_now = not getattr(self.environment, 'is_daytime', True)
+                    if not chosen and 'light_fire' in available_actions and is_night_now:
+                        prob_fire = 0.03 + 0.05 * getattr(pers, 'industriousness', 0.5)
+                        if random.random() < prob_fire:
+                            action = 'light_fire'
+                            chosen = True
+                    # Plant berries occasionally
+                    if not chosen and 'plant_berry' in available_actions:
+                        prob_plant = 0.02 + 0.04 * getattr(pers, 'industriousness', 0.5)
+                        if random.random() < prob_plant:
+                            action = 'plant_berry'
                             chosen = True
                     if not chosen:
                         action = decision_maker.select_action(local_env, available_actions)
@@ -381,6 +413,18 @@ class SimulationState:
             else:
                 action = "rest"
             
+            # Тяга к костру ночью / при сонливости
+            if 'move' in available_actions and not (hungry_self or thirsty_self):
+                is_night = not getattr(self.environment, 'is_daytime', True)
+                is_sleepy = getattr(agent, 'sleepiness', 0.0) > 0.4
+                if is_night or is_sleepy:
+                    for obj in local_env.get('perceived_objects', []) or []:
+                        if getattr(obj, 'type', '') == 'campfire' and \
+                                getattr(obj, 'fuel_ticks', 0) > 0:
+                            action = 'move'
+                            setattr(agent, '_move_target', obj.position)
+                            break
+
             # Команда владельца — переопределяет выбранное действие
             _pending = getattr(agent, 'pending_command', None)
             _pending_ticks = int(getattr(agent, 'pending_command_ticks', 0))
@@ -395,7 +439,7 @@ class SimulationState:
                     setattr(agent, 'pending_command_ticks', 0)
 
             # Исполнение действия
-            if action in ('communicate', 'mate', 'care'):
+            if action in ('communicate', 'mate', 'care', 'share'):
                 result = self.action_executor.execute_action(
                     agent,
                     self.environment,
@@ -420,6 +464,23 @@ class SimulationState:
             # Передаем агенту информацию о времени суток для физиологии
             setattr(agent, 'is_daytime', getattr(self.environment, 'is_daytime', True))
             agent.update_physiology()
+
+            # Тепло от ближайшего костра (радиус 3)
+            try:
+                ax, ay = agent.position
+                for _dx in range(-3, 4):
+                    for _dy in range(-3, 4):
+                        _fire_objs = self.environment.get_objects_at_position((ax + _dx, ay + _dy))
+                        if any(o.type == 'campfire' and getattr(o, 'fuel_ticks', 0) > 0
+                               for o in _fire_objs):
+                            agent.sleepiness = max(0.0, agent.sleepiness - 0.002)
+                            agent.energy = min(1.0, agent.energy + 0.001)
+                            break
+                    else:
+                        continue
+                    break
+            except Exception:
+                pass
 
             try:
                 in_water = bool(self.environment.is_water(agent.position))
@@ -546,6 +607,15 @@ class SimulationState:
                     'child_id': result.data.get('child_id'),
                     'token': result.data.get('token'),
                     'meaning': result.data.get('meaning'),
+                })
+
+            if action == 'share' and result.success and result.data:
+                self.events_log.append({
+                    'timestamp': self.timestep,
+                    'type': 'social',
+                    'actor_id': agent.id,
+                    'target_id': result.data.get('target_id'),
+                    'amount': result.data.get('amount'),
                 })
 
             # ── Emotions, social, thoughts ──────────────────────────
@@ -935,6 +1005,61 @@ class SimulationState:
         # Обновляем счетчики
         self.total_births = self.evolution_manager.genetic_algorithm.total_births
     
+    def _update_campfires_and_bushes(self):
+        """Обновляет состояние костров (топливо, пожар) и ягодных кустов (созревание)."""
+        ts = self.timestep
+        to_remove = []
+
+        for obj_id, obj in list(self.environment.objects.items()):
+
+            # ── Костёр ──────────────────────────────────────────────────────
+            if obj.type == 'campfire':
+                fuel = int(getattr(obj, 'fuel_ticks', 500))
+                fuel -= 1
+                if fuel <= 0:
+                    to_remove.append(obj_id)
+                    continue
+                setattr(obj, 'fuel_ticks', fuel)
+
+                # Распространение огня: раз в ~250 тиков на костёр
+                if random.random() < 0.004:
+                    x, y = obj.position
+                    for dx in (-1, 0, 1):
+                        for dy in (-1, 0, 1):
+                            if dx == 0 and dy == 0:
+                                continue
+                            npos = (x + dx, y + dy)
+                            if self.environment.is_water(npos):
+                                continue
+                            neighbors = self.environment.get_objects_at_position(npos)
+                            for n in neighbors:
+                                if n.type in ('wood', 'plant', 'berry_bush') and \
+                                        getattr(n, 'flammability', 0) > 0.4 and \
+                                        random.random() < getattr(n, 'flammability', 0) * 0.1:
+                                    self.environment.detach_object_from_world(n.id)
+                                    new_id = f"fire_{ts}_{dx}_{dy}_{obj_id[:6]}"
+                                    try:
+                                        new_fire = ObjectFactory.create_object('campfire', npos, new_id, ts)
+                                        setattr(new_fire, 'fuel_ticks', 300)
+                                        self.environment.add_object(new_fire)
+                                    except Exception:
+                                        pass
+                                    break
+
+            # ── Ягодный куст ────────────────────────────────────────────────
+            elif obj.type == 'berry_bush':
+                if not getattr(obj, 'ripe', False):
+                    planted_at = int(getattr(obj, 'planted_at', ts))
+                    if ts - planted_at >= 100:
+                        setattr(obj, 'ripe', True)
+                        obj.nutrition = 0.8  # теперь edible
+
+        for obj_id in to_remove:
+            try:
+                self.environment.remove_object(obj_id)
+            except Exception:
+                pass
+
     def _collect_metrics(self):
         """Собирает метрики симуляции"""
         agents_list = list(self.agents.values())

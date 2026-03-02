@@ -485,7 +485,8 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
           <div class="pad">
             <div class="muted" style="line-height:1.6;">
               <b>Требования к текстурам:</b><br>
-              • Формат: <b>PNG</b> (прозрачность поддерживается)<br>
+              • Формат: <b>PNG</b> (прозрачность поддерживается) или <b>GIF</b> (анимация)<br>
+              • GIF-анимация поддерживается для слота <b>campfire 🔥</b><br>
               • Размер файла: до <b>2 МБ</b><br>
               • Рекомендуемый размер: <b>64×64 px</b> или <b>128×128 px</b> (тайлится по карте)<br>
               • Текстура земли — основной фон мира, заменяет чёрный цвет<br>
@@ -494,6 +495,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
               <b>Слоты текстур:</b><br>
               • <b>ground</b> — основная земля (обязательная)<br>
               • <b>water</b> — вода (озёра, реки)<br>
+              • <b>campfire</b> — костёр 🔥 (PNG или анимированный GIF)<br>
               • <b>ground_forest</b> — лесной биом<br>
               • <b>ground_desert</b> — пустыня<br>
               • <b>ground_mountain</b> — горы<br>
@@ -760,6 +762,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       invalid_user_id: 'Некорректный user_id',
       unknown_slot: 'Неизвестный слот текстуры',
       only_png: 'Поддерживается только формат PNG',
+      only_png_or_gif: 'Поддерживаются форматы PNG и GIF',
       unsupported_image_type: 'Формат не поддерживается (PNG, JPG, GIF, WebP)',
       file_too_large: 'Файл слишком большой (макс. 1 МБ для баннера, 2 МБ для спрайтов)',
       banner_not_found: 'Баннер-изображение не найдено',
@@ -2081,7 +2084,11 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     ground_winter_forest: 'Зимний лес',
     ground_winter_desert: 'Зимняя пустыня',
     water: 'Вода',
+    campfire: 'Костёр 🔥 (PNG / GIF)',
   };
+
+  // Слоты, поддерживающие GIF-анимацию
+  const gifSlots = new Set(['campfire']);
 
   async function loadSpriteSlots() {
     if (!spriteSlotsList) return;
@@ -2095,6 +2102,11 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       spriteSlotsList.innerHTML = '';
       for (const slot of slots) {
         const isLoaded = loaded[slot];
+        const fmt = (data.formats || {})[slot];  // 'image/gif' | 'image/png' | null
+        const supportsGif = gifSlots.has(slot);
+        const acceptAttr = supportsGif ? 'image/png,image/gif' : 'image/png';
+        const fmtLabel = fmt === 'image/gif' ? 'GIF ✓' : fmt === 'image/png' ? 'PNG ✓' : '— не загружен';
+        const fmtHint = supportsGif ? 'PNG или GIF' : 'PNG';
         const div = document.createElement('div');
         div.className = 'item';
         div.innerHTML = `
@@ -2103,12 +2115,12 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
               <span class="dot ${isLoaded ? 'ok' : ''}"></span>
               <div>
                 <b>${escapeHtml(spriteSlotNames[slot] || slot)}</b>
-                <div class="muted mono">${escapeHtml(slot)}.png ${isLoaded ? '✓ загружен' : '— не загружен'}</div>
+                <div class="muted mono">${escapeHtml(slot)} · ${fmtHint} · ${fmtLabel}</div>
               </div>
               ${isLoaded ? `<img src="/api/sprites/${slot}?_=${Date.now()}" style="height:40px; border-radius:4px; border:1px solid var(--border-subtle);" />` : ''}
             </div>
             <div class="row" style="gap:6px;">
-              <input type="file" accept="image/png" style="max-width:160px; font-size:11px;" data-slot="${escapeHtml(slot)}" class="sprite-file-input" />
+              <input type="file" accept="${acceptAttr}" style="max-width:160px; font-size:11px;" data-slot="${escapeHtml(slot)}" class="sprite-file-input" />
               <button class="btn btn-primary btn-xs sprite-upload-btn" data-slot="${escapeHtml(slot)}">Загрузить</button>
               ${isLoaded ? `<button class="btn btn-danger btn-xs sprite-delete-btn" data-slot="${escapeHtml(slot)}">Удалить</button>` : ''}
             </div>
@@ -2132,9 +2144,18 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     const token = getToken();
     if (!token) return;
     const input = spriteSlotsList.querySelector(`.sprite-file-input[data-slot="${slot}"]`);
-    if (!input || !input.files.length) { alert('Выберите PNG файл'); return; }
+    const supportsGif = gifSlots.has(slot);
+    if (!input || !input.files.length) {
+      alert(supportsGif ? 'Выберите PNG или GIF файл' : 'Выберите PNG файл');
+      return;
+    }
     const file = input.files[0];
-    if (!file.type.includes('png')) { alert('Только PNG файлы'); return; }
+    const isGif = file.type === 'image/gif';
+    const isPng = file.type === 'image/png';
+    if (!isPng && !(isGif && supportsGif)) {
+      alert(supportsGif ? 'Поддерживаются только PNG и GIF файлы' : 'Только PNG файлы');
+      return;
+    }
     if (file.size > 2 * 1024 * 1024) { alert('Файл слишком большой (макс. 2 МБ)'); return; }
     const fd = new FormData();
     fd.append('file', file);

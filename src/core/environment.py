@@ -251,7 +251,14 @@ class Environment:
         obj = ObjectFactory.create_object(
             obj_type, position, obj_id, timestamp, self.season
         )
-        
+
+        # Дерево — крупный ресурс, содержит несколько единиц
+        if obj_type == 'wood':
+            obj.quantity = self.random.randint(10, 20)
+        # Куст ягод — даёт пачку ягод при сборе
+        elif obj_type == 'berry':
+            obj.quantity = 20
+
         # Добавление в среду
         self.objects[obj.id] = obj
         if position not in self.grid:
