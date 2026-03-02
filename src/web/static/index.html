@@ -1472,33 +1472,36 @@
 
     // Night overlay (с вырезом вокруг костров)
     if (snapshot.world && snapshot.world.is_daytime === false) {
-      ctx.save();
+      // Рисуем тёмный слой на отдельном canvas, чтобы destination-out
+      // не трогал основной canvas (иначе вырезались бы пиксели карты и агентов)
+      const nightCanvas = document.createElement('canvas');
+      nightCanvas.width  = cv.width;
+      nightCanvas.height = cv.height;
+      const nctx = nightCanvas.getContext('2d');
+
+      nctx.fillStyle = campfires.length > 0 ? 'rgba(2,4,13,0.78)' : 'rgba(2,4,13,0.32)';
+      nctx.fillRect(0, 0, nightCanvas.width, nightCanvas.height);
+
       if (campfires.length > 0) {
-        // Создаём маску: тёмный прямоугольник с «дырами» вокруг каждого костра
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = 'rgba(2,4,13,0.52)';
-        ctx.fillRect(0, 0, cv.width, cv.height);
-        // Вырезаем освещённые зоны через destination-out
-        ctx.globalCompositeOperation = 'destination-out';
+        // Вырезаем освещённые зоны — операция применяется только к nightCanvas
+        nctx.globalCompositeOperation = 'destination-out';
         for (const cf of campfires) {
           const px = (cf.x + 0.5) * sx;
           const py = (cf.y + 0.5) * sy;
-          const litR = Math.max(sx, sy) * 4;
-          const litGrad = ctx.createRadialGradient(px, py, 0, px, py, litR);
-          litGrad.addColorStop(0,   'rgba(0,0,0,0.85)');
-          litGrad.addColorStop(0.6, 'rgba(0,0,0,0.5)');
-          litGrad.addColorStop(1,   'rgba(0,0,0,0)');
-          ctx.fillStyle = litGrad;
-          ctx.beginPath();
-          ctx.arc(px, py, litR, 0, Math.PI * 2);
-          ctx.fill();
+          const litR = Math.max(sx, sy) * 5;
+          const litGrad = nctx.createRadialGradient(px, py, 0, px, py, litR);
+          litGrad.addColorStop(0,   'rgba(0,0,0,1)');    // полностью прозрачно у костра
+          litGrad.addColorStop(0.5, 'rgba(0,0,0,0.65)');
+          litGrad.addColorStop(1,   'rgba(0,0,0,0)');    // плавно темнеет к краям
+          nctx.fillStyle = litGrad;
+          nctx.beginPath();
+          nctx.arc(px, py, litR, 0, Math.PI * 2);
+          nctx.fill();
         }
-      } else {
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = '#02040d';
-        ctx.fillRect(0, 0, cv.width, cv.height);
       }
-      ctx.restore();
+
+      // Накладываем готовый ночной слой (с дырками) на основной canvas
+      ctx.drawImage(nightCanvas, 0, 0);
     }
 
     // Спрайт / fallback пламя (рисуем ПОСЛЕ ночного оверлея, поверх темноты)
