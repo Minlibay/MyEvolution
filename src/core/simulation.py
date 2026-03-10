@@ -691,6 +691,7 @@ class SimulationState:
 
                         self.agents[child.id] = child
                         self.learning_manager.register_agent(child)
+                        self.total_births += 1
 
                         self.events_log.append({
                             'timestamp': self.timestep,
@@ -1148,15 +1149,17 @@ class SimulationState:
     def _process_evolution(self):
         """Обрабатывает эволюционные процессы"""
         alive_agents = list(self.agents.values())
-        
+
         if len(alive_agents) < 2:
             return
-        
+
+        ga_births_before = self.evolution_manager.genetic_algorithm.total_births
+
         # Эволюция популяции
         new_agents = self.evolution_manager.evolve(
             alive_agents, self.environment, self.timestep
         )
-        
+
         # Обновление агентов
         self.agents.clear()
         for agent in new_agents:
@@ -1164,9 +1167,9 @@ class SimulationState:
             # Регистрируем в системе обучения, если новый агент
             if agent.id not in [dm.agent_id for dm in self.learning_manager.learners.values()]:
                 self.learning_manager.register_agent(agent)
-        
-        # Обновляем счетчики
-        self.total_births = self.evolution_manager.genetic_algorithm.total_births
+
+        # Прибавляем только дельту GA-рождений, не перезаписывая естественные
+        self.total_births += self.evolution_manager.genetic_algorithm.total_births - ga_births_before
     
     def _update_campfires_and_bushes(self):
         """Обновляет состояние костров (топливо, пожар) и ягодных кустов (созревание)."""

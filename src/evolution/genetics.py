@@ -184,10 +184,14 @@ class GeneticAlgorithm:
         
         # Ограничиваем размер популяции
         if len(new_population) > self.population_size:
-            # Сортируем по приспособленности и оставляем лучших
             new_fitness = self.calculate_fitness(new_population)
-            sorted_indices = sorted(range(len(new_population)), 
-                                 key=lambda i: new_fitness[i], reverse=True)
+            # Player-агентов (с owner_uid) всегда сохраняем — не даём GA их удалить
+            protected = {a.id for a in new_population if getattr(a, 'owner_uid', None) is not None}
+            sorted_indices = sorted(
+                range(len(new_population)),
+                key=lambda i: (1 if new_population[i].id in protected else 0, new_fitness[i]),
+                reverse=True,
+            )
             new_population = [new_population[i] for i in sorted_indices[:self.population_size]]
         
         return new_population
