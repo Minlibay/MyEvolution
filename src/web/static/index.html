@@ -894,10 +894,6 @@
     return { col: 0, row: 1, flip: agent.facing === 'right' };
   }
 
-  function ping() {
-    try { ws.send('ping'); } catch (e) {}
-  }
-
   function colorForObject(type) {
     const map = { stone:'#8b8f9f', wood:'#9b6b3d', plant:'#2bd46a', berry:'#ff3b3b', bone:'#e7e7e7', fiber:'#ffd35c', animal:'#ff9a3b' };
     return map[type] || '#4aa3ff';
@@ -1823,6 +1819,7 @@
 
   ws.onclose = () => {
     status.innerHTML = '<b>WS disconnected</b>';
+    setTimeout(() => location.reload(), 3000);
   };
 
   const authUser = document.getElementById('authUser');

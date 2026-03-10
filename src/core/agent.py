@@ -824,8 +824,8 @@ class Agent:
     
     def get_available_actions(self, local_env: Dict[str, Any]) -> List[str]:
         """Возвращает доступные действия в текущей ситуации"""
-        actions = ['move', 'rest']
-        
+        actions = ['rest']
+
         # Проверяем наличие энергии для действий
         if self.energy > 0.1:
             actions.append('move')

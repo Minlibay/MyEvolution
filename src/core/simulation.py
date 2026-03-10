@@ -129,6 +129,16 @@ class SimulationState:
         # Обновление костров и ягодных кустов
         self._update_campfires_and_bushes()
 
+        # Закон Ферхюльста: коэффициент ёмкости среды (раз в тик, хранится на environment)
+        _n = len(self.agents)
+        _food = sum(
+            int(getattr(o, 'quantity', 1))
+            for o in self.environment.objects.values()
+            if getattr(o, 'nutrition', 0.0) > 0.3 and getattr(o, 'toxicity', 0.0) < 0.4
+        )
+        _K = max(float(_n + 5), _food / 3.0)
+        self.environment._logistic_factor = max(0.2, 1.0 - _n / _K)
+
         # Обработка агентов
         self._process_agents()
 
@@ -706,6 +716,7 @@ class SimulationState:
                     setattr(agent, 'pregnant', False)
                     setattr(agent, 'pregnancy_father_id', None)
                     setattr(agent, 'pregnancy_remaining', 0)
+                    setattr(agent, '_just_gave_birth', True)  # флаг для эмоций
             
             # Логирование события
             self._log_agent_action(agent, action, result)
@@ -802,7 +813,7 @@ class SimulationState:
                             soc.add_interaction(listener_id, 0.05)
                             # Слушатель тоже получает XP — общение двустороннее (Меткалф)
                             if result.success:
-                                _listener_ag = self.state.agents.get(listener_id)
+                                _listener_ag = self.agents.get(listener_id)
                                 if _listener_ag and hasattr(_listener_ag, 'social'):
                                     _l_n = sum(1 for t in _listener_ag.social.relationships.values() if t > 0.3)
                                     _l_xp = (0.004 + 0.003 * getattr(_listener_ag.genes, 'intelligence', 0.5)) * 0.5
@@ -840,11 +851,11 @@ class SimulationState:
                 if action == 'move':
                     emo.add('curiosity', 0.02 * pers.curiosity)
 
-                # Birth: family bonds + emotions
-                # (handled in birth section above, but also add parent emotions)
-                if getattr(agent, 'pregnant', False) and int(getattr(agent, 'pregnancy_remaining', 1)) <= 1:
+                # Birth: family bonds + emotions (happiness при рождении ребёнка)
+                if getattr(agent, '_just_gave_birth', False):
                     emo.add('happiness', 0.25)
                     emo.add('pride', 0.15)
+                    setattr(agent, '_just_gave_birth', False)
 
                 # Generate thought for UI (every 5 ticks to avoid spam)
                 if self.timestep % 5 == 0:
@@ -864,6 +875,13 @@ class SimulationState:
                     if skill_name == 'communication' and hasattr(agent, 'social'):
                         n_conn = sum(1 for t in agent.social.relationships.values() if t > 0.3)
                         _xp_mult *= 1.0 + min(1.5, (n_conn / 8.0) ** 2)
+                    # Закон Йеркса-Додсона: обучение эффективнее при умеренном возбуждении (~0.35)
+                    _arousal = (
+                        getattr(agent, 'hunger', 0.0) +
+                        getattr(agent, 'thirst', 0.0) +
+                        getattr(agent, 'sleepiness', 0.0)
+                    ) / 3.0
+                    _xp_mult *= max(0.5, 1.0 - 2.0 * (_arousal - 0.35) ** 2)
                     val_before = agent.skills.get(skill_name)
                     agent.skills.add_xp(skill_name, xp * _xp_mult)
                     val_after = agent.skills.get(skill_name)

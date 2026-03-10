@@ -118,8 +118,7 @@ class GeneticAlgorithm:
         
         # Создание потомка
         child_id = f"agent_gen{self.generation}_{self.total_births}"
-        child_position = self._get_birth_position(parent1, environment)
-        
+
         child = AgentFactory.create_offspring(
             parent1, parent2, child_id, birth_time
         )

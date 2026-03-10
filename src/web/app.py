@@ -567,7 +567,7 @@ def _update_quests(agent, uid: int, ts: int) -> None:
         ))
         progress_map = {
             'survive_300':    int(agent.age),
-            'make_3_friends': len(getattr(agent.social, 'friends', [])),
+            'make_3_friends': len(agent.social.best_friends(10)) if hasattr(agent.social, 'best_friends') else 0,
             'gather_50':      agent.achievements.get_counter('total_gathered'),
             'light_campfire': fire_done,
             'have_child':     min(1, int(agent.offspring_count)),
@@ -774,10 +774,10 @@ def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
     p = getattr(agent, "personality", None)
     es = getattr(agent, "emotional_state", None)
 
-    agreeableness  = float(getattr(p, "agreeableness",  0.5)) if p else 0.5
-    extraversion   = float(getattr(p, "extraversion",   0.5)) if p else 0.5
-    neuroticism    = float(getattr(p, "neuroticism",    0.5)) if p else 0.5
-    openness       = float(getattr(p, "openness",       0.5)) if p else 0.5
+    agreeableness  = float(getattr(p, "empathy",        0.5)) if p else 0.5  # эмпатия ≈ agreeableness
+    extraversion   = float(getattr(p, "sociability",   0.5)) if p else 0.5  # общительность ≈ extraversion
+    neuroticism    = float(1.0 - getattr(p, "patience", 0.5)) if p else 0.5  # импульсивность ≈ neuroticism
+    openness       = float(getattr(p, "curiosity",     0.5)) if p else 0.5  # любопытство ≈ openness
 
     mood = 0.0
     try:
@@ -1244,10 +1244,6 @@ def _db_init() -> None:
 
         cur.execute(
             "INSERT OR IGNORE INTO settings(key, value) VALUES('registration_open', '1')"
-        )
-
-        cur.execute(
-            "INSERT OR REPLACE INTO settings(key, value) VALUES('registration_open', '1')"
         )
         conn.commit()
     finally:
@@ -2084,11 +2080,15 @@ class SimulationController:
 
             final_details: Dict[str, Any] = reason_details or {}
             try:
-                final_details.setdefault("remaining_food", int(env.count_objects_by_type("berry") + env.count_objects_by_type("plant")))
+                final_details.setdefault("remaining_food", sum(
+                    1 for o in env.objects.values() if o.type in ('berry', 'plant')
+                ))
             except Exception:
                 pass
             try:
-                final_details.setdefault("remaining_water", int(env.count_water_cells()))
+                final_details.setdefault("remaining_water", sum(
+                    1 for o in env.objects.values() if o.type == 'water'
+                ))
             except Exception:
                 pass
             try:
@@ -2102,12 +2102,9 @@ class SimulationController:
             except Exception:
                 pass
 
-        # Stop old simulation
+        # Dereference old simulation (stop не реализован)
         if self.simulation is not None:
-            try:
-                self.simulation.stop()
-            except Exception:
-                pass
+            self.simulation = None
 
         # New run → fresh dead-agent tracking set
         self._processed_dead_agent_ids = set()
@@ -3727,8 +3724,6 @@ async def api_leaderboard():
 async def api_quests(token: str):
     """Возвращает прогресс квестов текущего пользователя."""
     user = _auth_from_token(token)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     uid = int(user["uid"])
     conn = _db_connect()
     try:

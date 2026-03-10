@@ -32,7 +32,18 @@ class AgentActions:
     def _night_multiplier(environment: Environment, position: Tuple[int, int], radius: int = 1) -> float:
         local_env = environment.get_local_environment(position, radius=radius)
         return 1.1 if not local_env.get('is_daytime', True) else 1.0
-    
+
+    @staticmethod
+    def _performance_mult(agent) -> float:
+        """Закон Либиха: производительность ограничена самым критичным физиологическим показателем.
+        worst=0 → 1.0 (полная); worst=0.5 → 0.5; worst=0.9 → 0.15 (почти заблокировано)."""
+        worst = max(
+            getattr(agent, 'hunger', 0.0),
+            getattr(agent, 'thirst', 0.0),
+            getattr(agent, 'sleepiness', 0.0),
+        )
+        return max(0.15, 1.0 - worst)
+
     @staticmethod
     def execute_move(agent: Agent, environment: Environment, 
                     target_position: Optional[Tuple[int, int]] = None) -> ActionResult:
@@ -199,7 +210,8 @@ class AgentActions:
                 continue
 
             # Вероятность успешного сбора зависит от веса объекта, силы агента и бонусов
-            success_prob = min(0.98, 1.0 - obj.weight * 0.5 + agent.genes.strength * 0.3 + _gs)
+            success_prob = min(0.98, (1.0 - obj.weight * 0.5 + agent.genes.strength * 0.3 + _gs)
+                               * AgentActions._performance_mult(agent))
 
             if random.random() < success_prob:
                 # Дерево — ресурсный узел: берём 1 единицу, оставляем объект в мире
@@ -423,7 +435,11 @@ class AgentActions:
             return ActionResult('mate', False, -0.01, 0.0, {'reason': 'bad_condition'})
 
         # Chance of conception
-        conception_chance = 0.15 + 0.15 * min(male.genes.social_tendency, female.genes.social_tendency)
+        # Закон Ферхюльста: вероятность зачатия падает по мере насыщения среды
+        logistic_factor = getattr(environment, '_logistic_factor', 1.0)
+        conception_chance = (
+            0.15 + 0.15 * min(male.genes.social_tendency, female.genes.social_tendency)
+        ) * logistic_factor
         success = random.random() < conception_chance
 
         agent.energy -= energy_cost
@@ -749,30 +765,32 @@ class AgentActions:
         if tool:
             base_success_prob *= tool.calculate_effectiveness('attack')
         
-        success_prob = base_success_prob + agent.genes.strength * 0.2
-        
-        if random.random() < success_prob:
+        success_prob = (base_success_prob + agent.genes.strength * 0.2) \
+            * AgentActions._performance_mult(agent)
+
+        _hit = random.random() < success_prob
+        if _hit:
             # Успешная охота
             environment.remove_object(target.id)
             agent.add_to_inventory(target.id)
-            
+
             # Использование инструмента
             if tool:
                 tool.use('attack')
                 if tool.is_broken():
                     agent.remove_tool(tool.id)
                     environment.remove_tool(tool.id)
-            
+
             reward = 1.5
             result_data = {'success': True, 'prey_id': target.id, 'tool_used': tool_id}
         else:
             # Неудачная охота
             reward = -0.3
             result_data = {'success': False, 'prey_id': target.id, 'tool_used': tool_id}
-        
+
         agent.energy -= energy_cost
-        
-        return ActionResult('attack', success_prob > 0.5, reward, energy_cost, result_data)
+
+        return ActionResult('attack', _hit, reward, energy_cost, result_data)
     
     @staticmethod
     def execute_break(agent: Agent, environment: Environment) -> ActionResult:
@@ -806,24 +824,24 @@ class AgentActions:
             base_success_prob *= tool.calculate_effectiveness('break')
         
         success_prob = base_success_prob + agent.genes.strength * 0.15
-        
-        if random.random() < success_prob:
+
+        _hit = random.random() < success_prob
+        if _hit:
             # Успешное разрушение
-            # Создаем новые ресурсы из разрушенного объекта
             new_resources = AgentActions._create_resources_from_break(target, environment)
-            
+
             environment.remove_object(target.id)
-            
+
             # Использование инструмента
             if tool:
                 tool.use('break')
                 if tool.is_broken():
                     agent.remove_tool(tool.id)
                     environment.remove_tool(tool.id)
-            
+
             reward = len(new_resources) * 0.3
             result_data = {
-                'success': True, 
+                'success': True,
                 'broken_object': target.id,
                 'new_resources': new_resources,
                 'tool_used': tool_id
@@ -832,10 +850,10 @@ class AgentActions:
             # Неудачная попытка
             reward = -0.2
             result_data = {'success': False, 'target_id': target.id, 'tool_used': tool_id}
-        
+
         agent.energy -= energy_cost
-        
-        return ActionResult('break', success_prob > 0.5, reward, energy_cost, result_data)
+
+        return ActionResult('break', _hit, reward, energy_cost, result_data)
     
     @staticmethod
     def _create_resources_from_break(broken_obj: Object, environment: Environment) -> List[str]:
