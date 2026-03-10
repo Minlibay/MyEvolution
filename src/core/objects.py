@@ -179,6 +179,10 @@ class ObjectFactory:
             'hardness': 0.1, 'nutrition': 0.15, 'toxicity': 0.2,
             'weight': 0.3, 'durability': 1.0, 'flammability': 0.5, 'energy_cost': 0.05
         },
+        'shelter': {
+            'hardness': 0.8, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 5.0, 'durability': 1.0, 'flammability': 0.3, 'energy_cost': 0.0
+        },
     }
     
     @classmethod

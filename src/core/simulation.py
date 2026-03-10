@@ -230,6 +230,24 @@ class SimulationState:
                 if has_berries_to_share:
                     available_actions.append('share')
 
+            # Лечение травами: survival lv4+ (>= 0.3) + есть plant/berry + здоровье < 0.8
+            _inv = getattr(agent, 'inventory', []) or []
+            _has_herb = any(
+                (ho := self.environment.objects.get(oid)) and ho.type in ('plant', 'berry')
+                for oid in _inv
+            )
+            if agent.skills.get('survival') >= 0.3 and _has_herb and agent.health < 0.8:
+                available_actions.append('treat')
+
+            # Убежище: crafting lv5+ (>= 0.4) + 5 wood + 3 stone + не на воде
+            _wood_cnt  = sum(1 for oid in _inv if (wo := self.environment.objects.get(oid)) and wo.type == 'wood')
+            _stone_cnt = sum(1 for oid in _inv if (so := self.environment.objects.get(oid)) and so.type == 'stone')
+            _no_shelter = not any(o.type == 'shelter'
+                                  for o in self.environment.get_objects_at_position(agent.position))
+            if (agent.skills.get('crafting') >= 0.4 and _wood_cnt >= 5 and _stone_cnt >= 3
+                    and not self.environment.is_water(agent.position) and _no_shelter):
+                available_actions.append('build_shelter')
+
             # mate only when a valid close partner exists
             if mate_candidates:
                 available_actions.append('mate')
@@ -356,6 +374,18 @@ class SimulationState:
                     chosen = False
                     is_night_now = not getattr(self.environment, 'is_daytime', True)
 
+                    # ── Убежище: высочайший приоритет (строим как только можем) ─────
+                    if not chosen and 'build_shelter' in available_actions:
+                        if random.random() < 0.90:
+                            action = 'build_shelter'
+                            chosen = True
+
+                    # ── Лечение: при низком здоровье ────────────────────────────────
+                    if not chosen and 'treat' in available_actions and agent.health < 0.5:
+                        if random.random() < 0.80:
+                            action = 'treat'
+                            chosen = True
+
                     # ── Костёр: высокий приоритет когда уже есть 3 дерева ──────────
                     if not chosen and 'light_fire' in available_actions:
                         prob_fire = (0.75 if is_night_now else 0.40) + 0.2 * getattr(pers, 'industriousness', 0.5)
@@ -409,6 +439,12 @@ class SimulationState:
                             chosen = True
                     if not chosen:
                         action = decision_maker.select_action(local_env, available_actions)
+                # Убежище: строим при первой возможности
+                elif 'build_shelter' in available_actions:
+                    action = 'build_shelter'
+                # Лечение: при низком здоровье
+                elif 'treat' in available_actions and agent.health < 0.5:
+                    action = 'treat'
                 # Костёр: если есть 3 дерева — жечь немедленно
                 elif 'light_fire' in available_actions:
                     action = 'light_fire'
@@ -504,6 +540,77 @@ class SimulationState:
                     else:
                         continue
                     break
+            except Exception:
+                pass
+
+            # Бонус от своего убежища (зависит от shelter_bonus_mult / shelter_radius)
+            try:
+                _rb = getattr(agent, 'research_bonuses', {})
+                _sh_radius = int(2 + _rb.get('shelter_radius', 0))
+                _sh_bonus  = 0.002 * (1.0 + _rb.get('shelter_bonus_mult', 0.0))
+                ax, ay = agent.position
+                _agent_id = agent.id
+                for _dx in range(-_sh_radius, _sh_radius + 1):
+                    for _dy in range(-_sh_radius, _sh_radius + 1):
+                        _sh_objs = self.environment.get_objects_at_position((ax + _dx, ay + _dy))
+                        if any(o.type == 'shelter' and getattr(o, 'shelter_owner_id', None) == _agent_id
+                               for o in _sh_objs):
+                            agent.energy = min(1.0, agent.energy + _sh_bonus)
+                            agent.sleepiness = max(0.0, agent.sleepiness - _sh_bonus)
+                            break
+                    else:
+                        continue
+                    break
+            except Exception:
+                pass
+
+            # ── Термодинамика ─────────────────────────────────────────────────────
+            try:
+                env_temp = self.environment.get_local_temperature(agent.position)
+
+                # 1-й закон: метаболизм и действия генерируют тепло тела
+                metabolic_heat = 0.05   # °C/тик базовое тепло жизнедеятельности
+                action_heat = {
+                    'move': 0.04, 'gather': 0.03, 'attack': 0.06,
+                    'combine': 0.04, 'build_shelter': 0.05,
+                    'sleep': -0.02, 'rest': -0.01,
+                }.get(getattr(agent, 'last_action', ''), 0.02)
+
+                # Теплопередача: Закон Ньютона об охлаждении
+                # ΔT = -λ*(T_body - T_env)*(1 - insulation) + Q_metabolic
+                LAMBDA = 0.003
+                insulation = 0.0
+                _rb = getattr(agent, 'research_bonuses', {})
+                _sh_r = 2 + int(_rb.get('shelter_radius', 0))
+                ax, ay = agent.position
+                for _dx in range(-_sh_r, _sh_r + 1):
+                    for _dy in range(-_sh_r, _sh_r + 1):
+                        _sh_objs = self.environment.get_objects_at_position((ax + _dx, ay + _dy))
+                        if any(o.type == 'shelter' and getattr(o, 'shelter_owner_id', None) == agent.id for o in _sh_objs):
+                            insulation = max(insulation, 0.50)
+                            break
+                    else:
+                        continue
+                    break
+                insulation = min(insulation + _rb.get('insulation', 0.0), 0.80)
+
+                heat_loss = LAMBDA * (agent.body_temp - env_temp) * (1.0 - insulation)
+                agent.body_temp = max(20.0, min(45.0,
+                    agent.body_temp - heat_loss + metabolic_heat + action_heat))
+
+                # Эффекты на физиологию
+                _dmg_red = min(0.80, getattr(agent, 'research_bonuses', {}).get('damage_reduction', 0.0))
+                if agent.body_temp < 35.0:
+                    sev = (35.0 - agent.body_temp) / 3.0
+                    agent.hunger   = min(1.0, agent.hunger   + 0.006 * sev)
+                    agent.thirst   = min(1.0, agent.thirst   + 0.002 * sev)
+                    if agent.body_temp < 33.0:
+                        agent.health = max(0.0, agent.health - 0.012 * sev * (1.0 - _dmg_red))
+                elif agent.body_temp > 39.0:
+                    sev = (agent.body_temp - 39.0) / 3.0
+                    agent.thirst = min(1.0, agent.thirst + 0.009 * sev)
+                    if agent.body_temp > 40.5:
+                        agent.health = max(0.0, agent.health - 0.008 * sev * (1.0 - _dmg_red))
             except Exception:
                 pass
 
@@ -692,6 +799,14 @@ class SimulationState:
                         listener_id = result.data.get('listener_id') if result.data else None
                         if listener_id:
                             soc.add_interaction(listener_id, 0.05)
+                            # Слушатель тоже получает XP — общение двустороннее (Меткалф)
+                            if result.success:
+                                _listener_ag = self.state.agents.get(listener_id)
+                                if _listener_ag and hasattr(_listener_ag, 'social'):
+                                    _l_n = sum(1 for t in _listener_ag.social.relationships.values() if t > 0.3)
+                                    _l_xp = (0.004 + 0.003 * getattr(_listener_ag.genes, 'intelligence', 0.5)) * 0.5
+                                    _l_mult = 1.0 + min(1.5, (_l_n / 8.0) ** 2)
+                                    _listener_ag.skills.add_xp('communication', _l_xp * _l_mult)
                     elif action == 'mate':
                         emo.add('happiness', 0.15)
                         partner_id = result.data.get('father_id') or result.data.get('mother_id') if result.data else None
@@ -738,11 +853,30 @@ class SimulationState:
                 # Update mood label
                 agent.last_mood = emo.mood_ru()
 
-                # ── Skills XP ────────────────────────────────────────
+                # ── Skills XP + разблокировка ──────────────────────────
                 skill_name = ACTION_TO_SKILL.get(action)
                 if skill_name and result.success:
                     xp = 0.004 + 0.003 * getattr(agent.genes, 'intelligence', 0.5)
-                    agent.skills.add_xp(skill_name, xp)
+                    _rb = getattr(agent, 'research_bonuses', {})
+                    _xp_mult = 1.0 + _rb.get('xp_mult_all', 0.0) + _rb.get(f'xp_mult_{skill_name}', 0.0)
+                    # Закон Меткалфа: ценность коммуникации растёт с n² связей
+                    if skill_name == 'communication' and hasattr(agent, 'social'):
+                        n_conn = sum(1 for t in agent.social.relationships.values() if t > 0.3)
+                        _xp_mult *= 1.0 + min(1.5, (n_conn / 8.0) ** 2)
+                    val_before = agent.skills.get(skill_name)
+                    agent.skills.add_xp(skill_name, xp * _xp_mult)
+                    val_after = agent.skills.get(skill_name)
+                    # Уведомление о разблокировке нового умения
+                    _SKILL_UNLOCKS = {
+                        'survival': [(0.3, '🌿 Навык выживания lv4 — разблокировано: лечение травами')],
+                        'crafting': [(0.4, '🏠 Навык крафта lv5 — разблокировано: постройка убежища')],
+                    }
+                    for threshold, msg in _SKILL_UNLOCKS.get(skill_name, []):
+                        if val_before < threshold <= val_after:
+                            try:
+                                agent.life_log.add(self.timestep, 'skill_up', msg, icon='⬆️')
+                            except Exception:
+                                pass
 
                 # Track visited cells for explorer achievement
                 if action == 'move' and result.success:
@@ -989,6 +1123,7 @@ class SimulationState:
             'name': getattr(agent, 'display_name', agent.id),
             'sex': getattr(agent, 'sex', 'unknown'),
             'owner_username': getattr(agent, 'owner_username', None),
+            'owner_uid': getattr(agent, 'owner_uid', None),
             'x': int(agent.position[0]),
             'y': int(agent.position[1]),
             'age': int(agent.age),
@@ -996,6 +1131,9 @@ class SimulationState:
             'cause_ru': cause_ru_map.get(cause, cause),
             'died_at': int(self.timestep),
             'personality_ru': agent.personality.describe_ru() if hasattr(agent, 'personality') and hasattr(agent.personality, 'describe_ru') else None,
+            # Навыки для сохранения в dynasty_skills
+            'skills': {s: agent.skills.get(s) for s in ['gathering','crafting','hunting','cooking','communication','survival']}
+            if hasattr(agent, 'skills') else {},
         })
         # Ограничиваем количество надгробий (не больше 50)
         if len(self.dead_agents) > 50:

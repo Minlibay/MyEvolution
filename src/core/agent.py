@@ -3,7 +3,7 @@ Agent module - defines agents with their genetics and behavior
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Set
 import random
 import numpy as np
 
@@ -211,17 +211,17 @@ SKILL_RU = {
 # Маппинг действий → навык
 ACTION_TO_SKILL = {
     'gather': 'gathering', 'consume': 'gathering',
-    'combine': 'crafting', 'break': 'crafting',
+    'combine': 'crafting', 'break': 'crafting', 'build_shelter': 'crafting',
     'attack': 'hunting',
     'communicate': 'communication', 'mate': 'communication',
-    'move': 'survival', 'drink': 'survival', 'sleep': 'survival',
+    'move': 'survival', 'drink': 'survival', 'sleep': 'survival', 'treat': 'survival',
     'care': 'communication',
 }
 
 
 @dataclass
 class Skills:
-    """Навыки агента (0.0 → 1.0). Растут при успешных действиях."""
+    """Навыки агента (0.0 → ∞). Растут без ограничений, но всё медленнее."""
     gathering: float = 0.0
     crafting: float = 0.0
     hunting: float = 0.0
@@ -230,24 +230,24 @@ class Skills:
     survival: float = 0.0
 
     def add_xp(self, skill_name: str, amount: float = 0.005):
-        """Прибавляет опыт к навыку (с замедлением на высоких уровнях)."""
+        """Прибавляет опыт. Нет предела — каждый следующий уровень требует больше."""
         cur = getattr(self, skill_name, None)
         if cur is None:
             return
-        # Замедление: чем выше уровень, тем медленнее рост
-        gain = amount * (1.0 - cur * 0.7)
-        setattr(self, skill_name, min(1.0, cur + gain))
+        # Квадратичное замедление: на высоких уровнях рост всё медленнее
+        gain = amount / (1.0 + cur * 2.0)
+        setattr(self, skill_name, max(0.0, cur + gain))
 
     def get(self, skill_name: str) -> float:
         return float(getattr(self, skill_name, 0.0))
 
     def level(self, skill_name: str) -> int:
-        """Уровень навыка 1–10."""
-        return max(1, min(10, int(self.get(skill_name) * 10) + 1))
+        """Уровень навыка без ограничений: 0.1 ≈ lv2, 1.0 ≈ lv11, 2.0 ≈ lv21, ..."""
+        return max(1, int(self.get(skill_name) * 10) + 1)
 
     def bonus(self, skill_name: str) -> float:
-        """Бонус к успеху действия (0.0 → 0.3)."""
-        return self.get(skill_name) * 0.3
+        """Бонус к успеху действия (растёт с уровнем, до ~0.6 при очень высоких)."""
+        return min(0.6, self.get(skill_name) * 0.25)
 
     def to_dict(self) -> Dict[str, Any]:
         return {s: {"value": round(getattr(self, s), 3),
@@ -263,12 +263,12 @@ class Skills:
 
     @staticmethod
     def inherit(parent1: 'Skills', parent2: 'Skills') -> 'Skills':
-        """Ребёнок получает часть навыков родителей (культурная передача)."""
+        """Ребёнок наследует 65% навыков (культурная передача знаний)."""
         child = Skills()
         for s in SKILL_NAMES:
             avg = (parent1.get(s) + parent2.get(s)) / 2.0
-            inherited = avg * 0.25  # 25% от среднего родителей
-            setattr(child, s, min(1.0, inherited + random.gauss(0, 0.02)))
+            inherited = avg * 0.65  # 65%: существенное наследование умений
+            setattr(child, s, max(0.0, inherited + random.gauss(0, 0.02)))
         return child
 
 
@@ -614,6 +614,7 @@ class Agent:
     thirst: float = 0.0      # Жажда [0,1]
     sleepiness: float = 0.0  # Сонливость [0,1]
     health: float = 1.0      # Здоровье [0,1]
+    body_temp: float = 37.0  # Температура тела °C. Норма 37, опасность <35 и >39
     energy: float = 1.0      # Энергия [0,1]
     age: int = 0             # Возраст в шагах симуляции
     max_age: int = 5000      # Максимальный возраст
@@ -676,6 +677,8 @@ class Agent:
     skills: Skills = field(default_factory=Skills)
     life_log: LifeLog = field(default_factory=LifeLog)
     achievements: AchievementTracker = field(default_factory=AchievementTracker)
+    research_unlocks: Set[str] = field(default_factory=set)   # разблокированные узлы дерева развития
+    research_bonuses: Dict[str, float] = field(default_factory=dict)  # суммарные бонусы от узлов
     visited_cells: int = 0                   # счётчик уникальных посещённых клеток
     _visited_set: set = field(default_factory=set, repr=False)
 
@@ -849,11 +852,19 @@ class Agent:
         """Обновляет физиологическое состояние"""
         # Увеличение голода based on метаболизм
         hunger_increase = self.genes.metabolism_speed * 0.01
-        self.hunger = min(1.0, self.hunger + hunger_increase)
+        _hunger_mult = max(0.1, 1.0 + self.research_bonuses.get('hunger_rate_mult', 0.0))
+        self.hunger = min(1.0, self.hunger + hunger_increase * _hunger_mult)
 
         # Увеличение жажды (сравнимо с голодом)
         thirst_increase = 0.003 + self.genes.metabolism_speed * 0.002
-        self.thirst = min(1.0, self.thirst + thirst_increase)
+        _thirst_mult = max(0.1, 1.0 + self.research_bonuses.get('thirst_rate_mult', 0.0))
+        self.thirst = min(1.0, self.thirst + thirst_increase * _thirst_mult)
+
+        # Реген здоровья от исследовательских бонусов (железная воля / неугасимый)
+        _regen_thr = min(1.0, self.research_bonuses.get('health_regen_threshold', 0.0))
+        _regen_rate = self.research_bonuses.get('health_regen_rate', 0.0)
+        if _regen_thr > 0 and _regen_rate > 0 and self.health < _regen_thr:
+            self.health = min(_regen_thr, self.health + _regen_rate)
 
         # Сонливость накапливается: базово растёт, но учитывает цикл день/ночь
         # (само действие sleep будет резко снижать sleepiness)
@@ -866,14 +877,15 @@ class Agent:
         self.sleepiness = min(1.0, self.sleepiness + sleep_increase)
         
         # Влияние голода на здоровье
+        _dmg_red = min(0.80, self.research_bonuses.get('damage_reduction', 0.0))
         if self.hunger > 0.8:
-            self.health -= 0.02
+            self.health -= 0.02 * (1.0 - _dmg_red)
         elif self.hunger < 0.2:
             self.health = min(1.0, self.health + 0.01)
 
         # Влияние жажды на здоровье
         if self.thirst > 0.8:
-            self.health -= 0.03
+            self.health -= 0.03 * (1.0 - _dmg_red)
 
         # Влияние сильной сонливости на здоровье
         if self.sleepiness > 0.9:

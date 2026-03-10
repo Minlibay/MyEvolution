@@ -39,7 +39,15 @@ class AgentActions:
         """Выполняет движение агента"""
         # Энергетическая стоимость движения
         energy_cost = 0.05 * (1 + len(agent.inventory) * 0.1)
-        energy_cost *= AgentActions._night_multiplier(environment, agent.position, radius=1)
+        _bonuses = getattr(agent, 'research_bonuses', {})
+        # Ночной штраф с учётом бонуса night_penalty_mult
+        _nm = AgentActions._night_multiplier(environment, agent.position, radius=1)
+        if _nm > 1.0:
+            _nr = min(0.9, -_bonuses.get('night_penalty_mult', 0.0))
+            _nm = 1.0 + (_nm - 1.0) * (1.0 - _nr)
+        energy_cost *= _nm
+        # Бонус move_energy_mult (отрицательный = дешевле)
+        energy_cost *= max(0.2, 1.0 + _bonuses.get('move_energy_mult', 0.0))
         
         if agent.energy < energy_cost:
             return ActionResult('move', False, -0.2, 0.0, {'reason': 'insufficient_energy'})
@@ -147,21 +155,41 @@ class AgentActions:
     @staticmethod
     def execute_gather(agent: Agent, environment: Environment) -> ActionResult:
         """Выполняет сбор объектов"""
+        _bonuses = getattr(agent, 'research_bonuses', {})
         energy_cost = 0.1
-        energy_cost *= AgentActions._night_multiplier(environment, agent.position, radius=1)
-        
+        # Ночной штраф с учётом бонуса night_penalty_mult
+        _nm = AgentActions._night_multiplier(environment, agent.position, radius=1)
+        if _nm > 1.0:
+            _nr = min(0.9, -_bonuses.get('night_penalty_mult', 0.0))
+            _nm = 1.0 + (_nm - 1.0) * (1.0 - _nr)
+        energy_cost *= _nm
+        # Бонус gather_energy_mult
+        energy_cost *= max(0.2, 1.0 + _bonuses.get('gather_energy_mult', 0.0))
+
         if agent.energy < energy_cost:
             return ActionResult('gather', False, -0.2, 0.0, {'reason': 'insufficient_energy'})
-        
+
         # Получаем локальную среду
         local_env = environment.get_local_environment(agent.position, agent.perception_radius)
-        
-        # Поиск объектов в текущей клетке
+
+        # Радиус сбора: gather_radius=0 только текущая клетка, =1 соседние, =2 ещё дальше
+        _gr = int(_bonuses.get('gather_radius', 0))
         cell_objects = environment.get_objects_at_position(agent.position)
+        if _gr >= 1:
+            for _dx, _dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                _np = (agent.position[0] + _dx, agent.position[1] + _dy)
+                cell_objects = cell_objects + environment.get_objects_at_position(_np)
+        if _gr >= 2:
+            for _dx, _dy in [(-2, 0), (2, 0), (0, -2), (0, 2), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
+                _np = (agent.position[0] + _dx, agent.position[1] + _dy)
+                cell_objects = cell_objects + environment.get_objects_at_position(_np)
         gathered_objects = []
-        
+        _inv_cap = agent.inventory_capacity + int(_bonuses.get('inventory_bonus', 0))
+        _bc = _bonuses.get('bountiful_chance', 0.0)
+        _gs = _bonuses.get('gather_success', 0.0)
+
         for obj in cell_objects[:]:  # Копия для безопасного удаления
-            if len(agent.inventory) >= agent.inventory_capacity:
+            if len(agent.inventory) >= _inv_cap:
                 break
 
             # Нельзя собирать: незрелый куст, костёр, воду, кампфайр
@@ -170,8 +198,8 @@ class AgentActions:
             if obj.type == 'berry_bush' and not getattr(obj, 'ripe', False):
                 continue
 
-            # Вероятность успешного сбора зависит от веса объекта и силы агента
-            success_prob = 1.0 - obj.weight * 0.5 + agent.genes.strength * 0.3
+            # Вероятность успешного сбора зависит от веса объекта, силы агента и бонусов
+            success_prob = min(0.98, 1.0 - obj.weight * 0.5 + agent.genes.strength * 0.3 + _gs)
 
             if random.random() < success_prob:
                 # Дерево — ресурсный узел: берём 1 единицу, оставляем объект в мире
@@ -201,6 +229,16 @@ class AgentActions:
                 else:
                     agent.add_to_inventory(obj.id)
                     environment.detach_object_from_world(obj.id)
+                    # bountiful_chance: шанс получить копию ресурса
+                    if (_bc > 0 and random.random() < _bc
+                            and len(agent.inventory) < _inv_cap):
+                        import uuid as _uuid_b
+                        _bid = f"bonus_{obj.type}_{_uuid_b.uuid4().hex[:8]}"
+                        _bobj = ObjectFactory.create_object(
+                            obj.type, obj.position, _bid, getattr(environment, 'timestep', 0))
+                        environment.objects[_bid] = _bobj
+                        agent.add_to_inventory(_bid)
+                        gathered_objects.append(_bid)
 
                 gathered_objects.append(obj.id)
 
@@ -311,6 +349,7 @@ class AgentActions:
         """
         energy_cost = 0.02
         energy_cost *= AgentActions._night_multiplier(environment, agent.position, radius=1)
+        energy_cost *= max(0.1, 1.0 + getattr(agent, 'research_bonuses', {}).get('comm_energy_mult', 0.0))
         if agent.energy < energy_cost:
             return ActionResult('communicate', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
 
@@ -486,7 +525,8 @@ class AgentActions:
         
         energy_cost = 0.2
         energy_cost *= AgentActions._night_multiplier(environment, agent.position, radius=1)
-        
+        energy_cost *= max(0.2, 1.0 + getattr(agent, 'research_bonuses', {}).get('craft_energy_mult', 0.0))
+
         if agent.energy < energy_cost:
             return ActionResult('combine', False, -0.2, 0.0, {'reason': 'insufficient_energy'})
         
@@ -885,8 +925,9 @@ class AgentActions:
         # Здоровье восстанавливается лучше чем при rest
         agent.health = min(1.0, agent.health + 0.02 * eff)
 
-        # Сонливость снижается
-        agent.sleepiness = max(0.0, sleepiness_before - 0.45 * eff)
+        # Сонливость снижается (sleep_efficiency увеличивает восстановление)
+        _sleep_eff = 1.0 + getattr(agent, 'research_bonuses', {}).get('sleep_efficiency', 0.0)
+        agent.sleepiness = max(0.0, sleepiness_before - 0.45 * eff * _sleep_eff)
 
         reward = 0.04
         return ActionResult(
@@ -993,6 +1034,79 @@ class AgentActions:
         return ActionResult('plant_berry', True, 0.8, energy_cost, {'bush_id': bush_id})
 
     @staticmethod
+    def execute_build_shelter(agent: Agent, environment: Environment) -> ActionResult:
+        """Строит убежище из 5 дерева + 3 камня. Требует crafting lv5 (>= 0.4)."""
+        import uuid as _uuid
+        energy_cost = 0.25
+        energy_cost *= max(0.2, 1.0 + getattr(agent, 'research_bonuses', {}).get('craft_energy_mult', 0.0))
+        if agent.energy < energy_cost:
+            return ActionResult('build_shelter', False, -0.1, 0.0, {'reason': 'insufficient_energy'})
+        if environment.is_water(agent.position):
+            return ActionResult('build_shelter', False, -0.1, 0.0, {'reason': 'on_water'})
+        cell = environment.get_objects_at_position(agent.position)
+        if any(o.type == 'shelter' for o in cell):
+            return ActionResult('build_shelter', False, -0.05, 0.0, {'reason': 'shelter_exists'})
+
+        wood_ids  = [oid for oid in agent.inventory
+                     if (o := environment.objects.get(oid)) and o.type == 'wood']
+        stone_ids = [oid for oid in agent.inventory
+                     if (o := environment.objects.get(oid)) and o.type == 'stone']
+        if len(wood_ids) < 5 or len(stone_ids) < 3:
+            return ActionResult('build_shelter', False, -0.1, 0.0, {'reason': 'not_enough_materials'})
+
+        agent.energy -= energy_cost
+        for oid in wood_ids[:5]:
+            agent.remove_from_inventory(oid)
+            environment.remove_object(oid)
+        for oid in stone_ids[:3]:
+            agent.remove_from_inventory(oid)
+            environment.remove_object(oid)
+
+        ts = getattr(environment, 'timestep', 0)
+        sh_id = f"shelter_{agent.id}_{ts}"
+        shelter = ObjectFactory.create_object('shelter', agent.position, sh_id, ts)
+        setattr(shelter, 'shelter_owner_id', agent.id)
+        setattr(shelter, 'shelter_owner_name', getattr(agent, 'display_name', agent.id))
+        setattr(shelter, 'permanent', True)
+        environment.add_object(shelter)
+
+        try:
+            agent.life_log.add(ts, 'craft', 'Построил убежище 🏠', icon='🏠')
+        except Exception:
+            pass
+        return ActionResult('build_shelter', True, 3.0, energy_cost, {'shelter_id': sh_id})
+
+    @staticmethod
+    def execute_treat(agent: Agent, environment: Environment) -> ActionResult:
+        """Лечит себя травами (plant или berry). Требует survival lv4 (>= 0.3)."""
+        energy_cost = 0.03
+        if agent.energy < energy_cost:
+            return ActionResult('treat', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        herb_ids = [oid for oid in agent.inventory
+                    if (o := environment.objects.get(oid)) and o.type in ('plant', 'berry')]
+        if not herb_ids:
+            return ActionResult('treat', False, -0.05, 0.0, {'reason': 'no_herbs'})
+
+        herb = environment.objects.get(herb_ids[0])
+        if herb and getattr(herb, 'quantity', 1) > 1:
+            herb.quantity -= 1
+        else:
+            agent.remove_from_inventory(herb_ids[0])
+            environment.remove_object(herb_ids[0])
+
+        agent.energy -= energy_cost
+        agent.health  = min(1.0, agent.health + 0.15)
+        agent.hunger  = min(1.0, agent.hunger + 0.05)
+
+        ts = getattr(environment, 'timestep', 0)
+        try:
+            agent.life_log.add(ts, 'craft', 'Вылечил себя травами 🌿', icon='🌿')
+        except Exception:
+            pass
+        return ActionResult('treat', True, 0.5, energy_cost, {})
+
+    @staticmethod
     def execute_share(agent: Agent, environment: Environment,
                       other_agents: List[Agent]) -> ActionResult:
         """Поделиться ягодами с соседним агентом."""
@@ -1071,6 +1185,8 @@ class ActionExecutor:
             'light_fire': AgentActions.execute_light_fire,
             'plant_berry': AgentActions.execute_plant_berry,
             'share': AgentActions.execute_share,
+            'build_shelter': AgentActions.execute_build_shelter,
+            'treat': AgentActions.execute_treat,
         }
     
     def execute_action(self, agent: Agent, environment: Environment, 

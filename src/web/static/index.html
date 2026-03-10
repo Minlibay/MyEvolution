@@ -87,6 +87,7 @@
       <span>{{PROJECT_NAME}}</span>
     </div>
     <div class="navbar-right">
+      <button id="leaderboardBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;" title="Лидерборд">🏆 Лидеры</button>
       <div class="navbar-status">
         <span class="status-dot" id="statusDot"></span>
         <span id="onlineCount">0</span> онлайн
@@ -286,6 +287,22 @@
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
+              <div class="agp-menu-item" data-goto="agpQuestsScreen">
+                <span class="agp-menu-icon">🎯</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Задания</div>
+                  <div class="agp-menu-sub" id="agpQuestsMenuSub">Цели агента</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
+              <div class="agp-menu-item" id="researchTreeBtn">
+                <span class="agp-menu-icon">🌳</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Дерево развития</div>
+                  <div class="agp-menu-sub">Улучшения и способности агента</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
             </div>
           </div>
 
@@ -305,6 +322,17 @@
               <span class="agp-screen-title">Семейное дерево</span>
             </div>
             <div class="agp-screen-body" id="agpFamilyBody"></div>
+          </div>
+
+          <!-- ЭКРАН 5: Задания -->
+          <div class="agp-screen" id="agpQuestsScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
+              <span class="agp-screen-title">🎯 Задания</span>
+            </div>
+            <div class="agp-screen-body" id="agpQuestsBody">
+              <div class="text-xs text-muted" style="padding:12px 0 4px">Загрузка...</div>
+            </div>
           </div>
 
           <!-- ЭКРАН 3: Дать команду -->
@@ -470,6 +498,42 @@
       </div>
     </div>
     <button id="btnOnboardingStart" class="btn btn-primary" style="width:100%; padding:12px;">Начать →</button>
+  </div>
+</div>
+
+<!-- ── Дерево развития ──────────────────────────────────────────────── -->
+<div id="researchPanel" class="lb-panel rt-panel">
+  <div class="lb-header">
+    <span>🌳 Дерево развития</span>
+    <span id="rtPointsBadge" class="rt-points-badge"><span>✦</span><span id="rtPtsNum">—</span></span>
+    <button id="rtClose" class="lb-close">✕</button>
+  </div>
+  <div id="rtBody" class="rt-body"></div>
+</div>
+
+<!-- ── Лидерборд-панель ─────────────────────────────────────────────── -->
+<div id="leaderboardPanel" class="lb-panel">
+  <div class="lb-header">
+    <span>🏆 Лидеры симуляции</span>
+    <button id="lbClose" class="lb-close">✕</button>
+  </div>
+  <div class="lb-tabs">
+    <button class="lb-tab active" data-tab="age">По возрасту</button>
+    <button class="lb-tab" data-tab="family">По семье</button>
+    <button class="lb-tab" data-tab="skills">По навыкам</button>
+  </div>
+  <div id="lbBody" class="lb-body"></div>
+</div>
+
+<!-- ── Легаси-модал ─────────────────────────────────────────────────── -->
+<div id="legacyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(6px);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#111827;border:1px solid rgba(239,68,68,0.25);border-radius:16px;padding:28px 24px 20px;max-width:340px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.8),0 0 0 1px rgba(239,68,68,0.08);">
+    <div id="legacyTitle" style="font-size:19px;font-weight:700;margin-bottom:12px;color:#f87171;display:flex;align-items:center;gap:8px;">☠ Агент погиб</div>
+    <div id="legacyBody" style="font-size:13px;margin-bottom:20px;line-height:1.6;color:#c9cdd8;"></div>
+    <div style="display:flex;gap:8px;flex-direction:column;">
+      <button id="legacyInheritBtn" style="background:#6366f1;color:#fff;border:none;border-radius:10px;padding:11px;cursor:pointer;font-size:14px;font-weight:600;transition:background 0.15s;">👶 Перейти к ребёнку</button>
+      <button id="legacyNewBtn" style="background:rgba(255,255,255,0.05);color:#9ca3b4;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px;cursor:pointer;font-size:13px;transition:background 0.15s;">Понятно</button>
+    </div>
   </div>
 </div>
 
@@ -741,11 +805,12 @@
 
     const reasonRu = {
       'смерть Адама и Евы': 'все агенты погибли',
-      'перезапуск': 'перезапуск',
+      'перезапуск': 'ручной перезапуск',
       'ошибка симуляции': 'ошибка симуляции',
-      'применение карты': 'применение карты',
+      'применение карты': 'применение новой карты',
       'перезапуск сервера': 'перезапуск сервера',
     };
+    const rruFallback = (r) => r && r.trim() ? r : 'причина неизвестна';
 
     if (!items.length) {
       const div = document.createElement('div');
@@ -786,7 +851,7 @@
           extra = `; ${d.note}`;
         }
       }
-      const rru = reasonRu[h.reason] || h.reason || 'завершён';
+      const rru = reasonRu[h.reason] || rruFallback(h.reason);
       const dur = h.duration_sec_wall ? ` · ${h.duration_sec_wall.toFixed(1)}s` : '';
       const ts = h.ended_at_timestep ? `t=${h.ended_at_timestep}` : '';
       const dy = h.ended_at_day ? `день ${h.ended_at_day}` : '';
@@ -1574,6 +1639,21 @@
       }
       ctx.restore();
     }
+
+    // ── Убежища ──────────────────────────────────────────────────────────
+    const shelters = snapshot.shelters || [];
+    for (const sh of shelters) {
+      const px = (sh.x + 0.5) * sx;
+      const py = (sh.y + 0.5) * sy;
+      ctx.save();
+      ctx.font = `${Math.max(sx, sy) * 0.9}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur = 6;
+      ctx.fillText('🏠', px, py);
+      ctx.restore();
+    }
   }
 
   function renderEvents(snapshot) {
@@ -1958,6 +2038,30 @@
     if (agent.thought) {
       extraHtml += `<div style="margin-bottom:8px;padding:7px 10px;background:var(--accent-glow);border-radius:var(--radius-sm);color:var(--text-accent);font-style:italic;font-size:13px;">💭 ${escapeHtml(agent.thought)}</div>`;
     }
+    {
+      const bt = agent.body_temp ?? 37.0;
+      const btColor = bt < 35 ? '#60a5fa' : bt > 39 ? '#f87171' : '#34d399';
+      const btIcon  = bt < 35 ? '❄️' : bt > 39 ? '🔥' : '🌡️';
+      const btLabel = bt < 35 ? 'Переохлаждение' : bt > 39 ? 'Перегрев' : 'Норма';
+      extraHtml += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+  <span>${btIcon}</span>
+  <span style="font-size:12px;color:var(--text-muted);">Темп. тела</span>
+  <span style="font-size:13px;font-weight:600;color:${btColor};margin-left:auto;">${bt.toFixed(1)}°C</span>
+  <span style="font-size:11px;color:${btColor};opacity:.8;">${btLabel}</span>
+</div>`;
+    }
+    {
+      const ns = agent.network_size ?? 0;
+      const nv = ns * ns;
+      const nMult = (1.0 + Math.min(1.5, Math.pow(ns / 8.0, 2))).toFixed(2);
+      const nsColor = ns === 0 ? 'var(--text-muted)' : ns < 3 ? '#fbbf24' : '#34d399';
+      extraHtml += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+  <span>🌐</span>
+  <span style="font-size:12px;color:var(--text-muted);">Сеть (Меткалф)</span>
+  <span style="font-size:13px;font-weight:600;color:${nsColor};margin-left:auto;">${ns} связей · n²=${nv}</span>
+  <span style="font-size:11px;color:${nsColor};opacity:.8;">×${nMult} XP</span>
+</div>`;
+    }
     if (agent.social) {
       const fam = (agent.social.family || []).length;
       const friends = (agent.social.friends || []).slice(0, 5);
@@ -2254,7 +2358,7 @@
     if (s) s.classList.add('active');
     if (screenId === 'agpChatScreen') loadAgentChat();
   }
-  document.querySelectorAll('.agp-menu-item').forEach(item => {
+  document.querySelectorAll('.agp-menu-item[data-goto]').forEach(item => {
     item.addEventListener('click', () => agpGoto(item.dataset.goto));
   });
 
@@ -2286,7 +2390,7 @@
     }
   }
   // Перепривязываем пункты меню и кнопки назад на версию с поллингом
-  document.querySelectorAll('.agp-menu-item').forEach(item => {
+  document.querySelectorAll('.agp-menu-item[data-goto]').forEach(item => {
     item.onclick = () => agpGotoWithPoll(item.dataset.goto);
   });
   document.querySelectorAll('.agp-back').forEach(btn => {
@@ -2306,18 +2410,65 @@
     }, 4500);
   }
 
-  // Уведомление о смерти агента (срабатывает один раз)
+  // Уведомление о смерти агента — показываем легаси-попап
   let _notifiedDeadAgentId = null;
+  let _legacyModalRunNumber = null;
+
   function _checkAgentDeathNotify(snapshot) {
     const u = localStorage.getItem('evosim_username') || '';
     if (!u) return;
+
+    const curRun = snapshot.run_number ?? (snapshot.run_info ? snapshot.run_info.number : null);
+
+    // Авто-закрытие: симуляция перезапустилась пока модал был открыт
+    const modal = document.getElementById('legacyModal');
+    if (modal && modal.style.display !== 'none'
+        && _legacyModalRunNumber !== null && curRun !== null
+        && curRun !== _legacyModalRunNumber) {
+      modal.style.display = 'none';
+      _notifiedDeadAgentId = null;
+      _legacyModalRunNumber = null;
+      return;
+    }
+
     if (!snapshot.dead_agents) return;
     const dead = snapshot.dead_agents.find(d => d.owner_username === u);
     if (dead && dead.id !== _notifiedDeadAgentId) {
       _notifiedDeadAgentId = dead.id;
-      const name = dead.name || dead.id;
-      const cause = dead.cause_ru || dead.cause || '';
-      showToast(`☠ Ваш агент ${name} погиб${cause ? ': ' + cause : ''}`, 'danger');
+      _legacyModalRunNumber = curRun;
+
+      const children = (snapshot.agents || []).filter(a =>
+        a.mother_id === dead.id || a.father_id === dead.id
+      );
+      if (modal) {
+        const lTitle = document.getElementById('legacyTitle');
+        const lBody  = document.getElementById('legacyBody');
+        const lInherit = document.getElementById('legacyInheritBtn');
+        const lNewBtn = document.getElementById('legacyNewBtn');
+        if (lTitle) lTitle.innerHTML = `☠ ${escapeHtml(dead.name || dead.id)} погиб(ла)`;
+        if (lBody) {
+          const causeRu = dead.cause_ru || dead.cause || '';
+          let html = `<div style="color:#6b7280;margin-bottom:10px;">Причина: <b style="color:#9ca3b4;">${escapeHtml(causeRu)}</b> · ${dead.age} тиков</div>`;
+          if (children.length) {
+            _legacyChildId = children[0].id;
+            html += `<div style="margin-bottom:6px;">Живых потомков: <b style="color:#e7e9f0;">${children.length}</b></div>`;
+            html += `<div style="color:#a5b4fc;font-weight:500;">👶 ${escapeHtml(children[0].name || children[0].id)}</div>`;
+            if (lInherit) lInherit.style.display = '';
+            if (lNewBtn) lNewBtn.style.display = 'none';
+          } else {
+            _legacyChildId = null;
+            html += `<div style="color:#9ca3b4;line-height:1.6;">Потомков не осталось.<br>Ожидайте следующей симуляции или наблюдайте за происходящим.</div>`;
+            if (lInherit) lInherit.style.display = 'none';
+            if (lNewBtn) lNewBtn.style.display = '';
+          }
+          lBody.innerHTML = html;
+        }
+        modal.style.display = 'flex';
+      } else {
+        const name = dead.name || dead.id;
+        const cause = dead.cause_ru || dead.cause || '';
+        showToast(`☠ Ваш агент ${name} погиб${cause ? ': ' + cause : ''}`, 'danger');
+      }
     }
   }
   // ─────────────────────────────────────────────────────────────────────────
@@ -2892,6 +3043,297 @@
   connectChat();
   loadNews();
   loadWorldMap();
+
+  // ── Лидерборд ────────────────────────────────────────────────────────────
+  const lbPanel = document.getElementById('leaderboardPanel');
+  const lbBtn   = document.getElementById('leaderboardBtn');
+  const lbClose = document.getElementById('lbClose');
+  let _lbTab = 'age';
+
+  function renderLbRows(rows) {
+    if (!rows || !rows.length) return '<div class="text-muted" style="padding:8px 0">Нет данных</div>';
+    const sexIcon = s => s === 'female' ? '♀' : s === 'male' ? '♂' : '?';
+    return rows.map((r, i) => {
+      const medal = ['🥇','🥈','🥉'][i] || `${i+1}.`;
+      const owner = r.owner ? `<span style="color:var(--accent);font-size:10px"> @${escapeHtml(r.owner)}</span>` : '';
+      return `<div class="lb-row">
+        <span class="lb-medal">${medal}</span>
+        <span class="lb-name">${sexIcon(r.sex)} ${escapeHtml(r.name)}${owner}</span>
+        <span class="lb-val">${
+          _lbTab === 'age'    ? r.age + ' тик' :
+          _lbTab === 'family' ? r.offspring + ' детей' :
+                                r.skills_sum.toFixed(1) + ' XP'
+        }</span>
+      </div>`;
+    }).join('');
+  }
+
+  async function loadLeaderboard() {
+    const body = document.getElementById('lbBody');
+    if (!body) return;
+    body.innerHTML = '<div class="text-muted">Загрузка...</div>';
+    try {
+      const r = await fetch('/api/leaderboard');
+      const d = await r.json();
+      body.innerHTML = renderLbRows(d[_lbTab] || []);
+    } catch(e) {
+      body.innerHTML = '<div class="text-muted">Ошибка загрузки</div>';
+    }
+  }
+
+  if (lbBtn) lbBtn.addEventListener('click', () => {
+    if (lbPanel) { lbPanel.classList.toggle('lb-open'); loadLeaderboard(); }
+  });
+  if (lbClose) lbClose.addEventListener('click', () => {
+    if (lbPanel) lbPanel.classList.remove('lb-open');
+  });
+  document.querySelectorAll('.lb-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      _lbTab = tab.dataset.tab;
+      loadLeaderboard();
+    });
+  });
+
+  // ── Дерево развития ──────────────────────────────────────────────────────
+  const rtPanel = document.getElementById('researchPanel');
+  const rtClose = document.getElementById('rtClose');
+  const rtTreeBtn = document.getElementById('researchTreeBtn');
+
+  if (rtTreeBtn) rtTreeBtn.addEventListener('click', () => {
+    if (rtPanel) { rtPanel.classList.add('lb-open'); loadResearchTree(); }
+  });
+  if (rtClose) rtClose.addEventListener('click', () => {
+    if (rtPanel) rtPanel.classList.remove('lb-open');
+  });
+
+  async function loadResearchTree() {
+    const body   = document.getElementById('rtBody');
+    const badge  = document.getElementById('rtPointsBadge');
+    if (!body) return;
+    const token = getToken();
+    if (!token) { body.innerHTML = '<div class="text-muted" style="padding:12px">Войдите в аккаунт</div>'; return; }
+    body.innerHTML = '<div class="text-muted" style="padding:12px">Загрузка...</div>';
+    try {
+      const r = await fetch('/api/research?token=' + encodeURIComponent(token));
+      const d = await r.json();
+      const ptsNum = document.getElementById('rtPtsNum');
+      if (ptsNum) ptsNum.textContent = d.available ?? '—';
+      renderResearchTree(d.tree || [], d.available || 0, token);
+    } catch(e) {
+      body.innerHTML = '<div class="text-muted" style="padding:12px">Ошибка загрузки</div>';
+    }
+  }
+
+  function renderResearchTree(tree, available, token) {
+    const body = document.getElementById('rtBody');
+    if (!body) return;
+
+    const branchOrder = ['survival', 'gathering', 'crafting', 'communication'];
+    const branchMeta = {
+      survival:      { label: 'Выживание',      icon: '🛡️', color: '#0d9488', glow: 'rgba(13,148,136,0.35)' },
+      gathering:     { label: 'Собирательство', icon: '🌿', color: '#16a34a', glow: 'rgba(22,163,74,0.35)'  },
+      crafting:      { label: 'Крафтинг',       icon: '⚒️', color: '#d97706', glow: 'rgba(217,119,6,0.35)'  },
+      communication: { label: 'Общение',        icon: '🤝', color: '#7c3aed', glow: 'rgba(124,58,237,0.35)' },
+    };
+    const colNames = ['Ветвь I', 'Ветвь II', 'Ветвь III'];
+
+    // Определить колонки (цепочки) в ветви
+    function getBranchColumns(branchNodes) {
+      const roots = branchNodes.filter(n => !n.requires);
+      return roots.map(root => {
+        const col = [root];
+        let cur = root;
+        while (true) {
+          const next = branchNodes.find(n => n.requires === cur.id);
+          if (!next) break;
+          col.push(next); cur = next;
+        }
+        return col;
+      });
+    }
+
+    let activeBranch = branchOrder[0];
+
+    function renderTabsHtml() {
+      return `<div class="rt-tabs">${branchOrder.map(b => {
+        const m = branchMeta[b];
+        const cnt = tree.filter(n => n.branch === b && n.status === 'unlocked').length;
+        const tot = tree.filter(n => n.branch === b).length;
+        return `<button class="rt-tab${b === activeBranch ? ' rt-tab-active' : ''}"
+                        data-branch="${b}" style="--tab-clr:${m.color}">
+                  <span>${m.icon}</span>
+                  <span class="rt-tab-label">${m.label}</span>
+                  <span class="rt-tab-badge">${cnt}/${tot}</span>
+                </button>`;
+      }).join('')}</div>`;
+    }
+
+    function renderBranchHtml() {
+      const m = branchMeta[activeBranch];
+      const branchNodes = tree.filter(n => n.branch === activeBranch);
+      const columns = getBranchColumns(branchNodes);
+
+      let html = `<div class="rt-columns">`;
+      columns.forEach((col, ci) => {
+        html += `<div class="rt-col">
+          <div class="rt-col-title" style="color:${m.color}40;border-color:${m.color}25">${colNames[ci] || ''}</div>`;
+
+        col.forEach((node, i) => {
+          const st = node.status;
+          const canAfford = available >= node.cost;
+          const statusIcon = st === 'unlocked' ? '✓' : st === 'available' ? '✦' : '🔒';
+          const curLvl = node.cur_level || 1;
+          const reqLvl = node.min_level;
+          const lvProgress = Math.min(1, curLvl / reqLvl);
+          const tierLabel = `T${node.tier}`;
+
+          let costLine = '';
+          if (st === 'unlocked') {
+            costLine = `<div class="rt-node-cost unlocked-badge">✓ Активно</div>`;
+          } else {
+            const pts = `<span class="rt-pts ${canAfford ? 'can' : 'cant'}">${node.cost} ✦</span>`;
+            const lvl = `<span class="rt-lv ${curLvl >= reqLvl ? 'met' : ''}">${node.req_skill_label || node.req_skill} lv${reqLvl}</span>`;
+            costLine = `<div class="rt-node-cost">${pts}${lvl}</div>`;
+          }
+
+          const lvBar = st !== 'unlocked'
+            ? `<div class="rt-lv-bar"><div class="rt-lv-bar-fill" style="width:${Math.round(lvProgress*100)}%;background:${m.color}"></div></div>`
+            : '';
+
+          html += `
+          <div class="rt-node rt-${st} rt-b-${activeBranch}" data-node="${escapeHtml(node.id)}"
+               style="--nclr:${m.color};--nglow:${m.glow}">
+            <div class="rt-node-top">
+              <div class="rt-icon-wrap" style="background:${m.color}22;border-color:${m.color}55">
+                <span class="rt-icon">${node.icon}</span>
+              </div>
+              <div class="rt-tier-badge">${tierLabel}</div>
+              <div class="rt-status-badge rt-sb-${st}">${statusIcon}</div>
+            </div>
+            <div class="rt-node-name">${escapeHtml(node.name)}</div>
+            <div class="rt-node-desc">${escapeHtml(node.desc)}</div>
+            ${lvBar}
+            ${costLine}
+          </div>`;
+
+          if (i < col.length - 1) {
+            const connLit = col[i].status === 'unlocked' ? 'rt-conn-lit' : '';
+            html += `<div class="rt-connector ${connLit}" style="--nclr:${m.color}"></div>`;
+          }
+        });
+        html += `</div>`; // rt-col
+      });
+      html += `</div>`; // rt-columns
+      return html;
+    }
+
+    function fullRender() {
+      body.innerHTML = renderTabsHtml() + `<div class="rt-tab-content">${renderBranchHtml()}</div>`;
+
+      body.querySelectorAll('.rt-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          activeBranch = tab.dataset.branch;
+          fullRender();
+        });
+      });
+
+      body.querySelectorAll('.rt-node.rt-available').forEach(el => {
+        el.addEventListener('click', async () => {
+          const nodeId = el.dataset.node;
+          if (!nodeId || !token) return;
+          el.classList.add('rt-loading');
+          try {
+            const r = await fetch('/api/research/unlock?token=' + encodeURIComponent(token), {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({node_id: nodeId}),
+            });
+            const d = await r.json();
+            if (d.ok) {
+              showToast('🌳 Улучшение разблокировано!', 'success');
+              loadResearchTree();
+            } else {
+              const msgs = {not_enough_points:'Недостаточно очков', skill_level_too_low:'Нужен более высокий уровень навыка', parent_node_required:'Сначала разблокируйте предыдущий узел'};
+              showToast(msgs[d.detail] || 'Не удалось разблокировать', 'danger');
+              el.classList.remove('rt-loading');
+            }
+          } catch(e) { showToast('Ошибка сети', 'danger'); el.classList.remove('rt-loading'); }
+        });
+      });
+    }
+
+    fullRender();
+  }
+
+  // ── Квесты ───────────────────────────────────────────────────────────────
+  async function loadQuests() {
+    const body = document.getElementById('agpQuestsBody');
+    if (!body) return;
+    const token = localStorage.getItem('evosim_token');
+    if (!token) { body.innerHTML = '<div class="text-muted" style="padding:8px">Войдите в аккаунт</div>'; return; }
+    body.innerHTML = '<div class="text-muted" style="padding:8px">Загрузка...</div>';
+    try {
+      const r = await fetch('/api/quests?token=' + encodeURIComponent(token));
+      const d = await r.json();
+      let html = '';
+      for (const q of (d.quests || [])) {
+        const pct = Math.min(100, Math.round((q.progress / q.target) * 100));
+        const doneClass = q.done ? ' quest-done' : '';
+        html += `<div class="quest-item${doneClass}">
+          <div class="quest-header"><span>${q.icon} ${escapeHtml(q.title)}</span><span class="quest-prog">${q.progress}/${q.target}</span></div>
+          <div class="quest-bar-wrap"><div class="quest-bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+      }
+      body.innerHTML = html || '<div class="text-muted" style="padding:8px">Нет заданий</div>';
+    } catch(e) {
+      body.innerHTML = '<div class="text-muted" style="padding:8px">Ошибка загрузки</div>';
+    }
+  }
+
+  // Загружаем квесты при переходе на экран
+  document.querySelectorAll('.agp-menu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (item.dataset.goto === 'agpQuestsScreen') loadQuests();
+    });
+  });
+
+  // ── Легаси-попап ─────────────────────────────────────────────────────────
+  const legacyModal = document.getElementById('legacyModal');
+  const legacyInheritBtn = document.getElementById('legacyInheritBtn');
+  const legacyNewBtn = document.getElementById('legacyNewBtn');
+  let _legacyChildId = null;
+
+  if (legacyInheritBtn) legacyInheritBtn.addEventListener('click', async () => {
+    if (!_legacyChildId) return;
+    const token = localStorage.getItem('evosim_token');
+    if (!token) return;
+    try {
+      const r = await fetch('/api/agents/inherit?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({child_agent_id: _legacyChildId}),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        showToast(`👶 Вы продолжаете путь: ${d.agent_name}`, 'success');
+        if (legacyModal) legacyModal.style.display = 'none';
+      } else {
+        showToast('Не удалось перейти к ребёнку', 'danger');
+      }
+    } catch(e) {
+      showToast('Ошибка сети', 'danger');
+    }
+  });
+
+  if (legacyNewBtn) legacyNewBtn.addEventListener('click', () => {
+    if (legacyModal) legacyModal.style.display = 'none';
+  });
+
+
 </script>
+
+
 </body>
 </html>

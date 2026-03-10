@@ -276,7 +276,11 @@ class Environment:
             degradation_rate = 0.001
             if self.season == 3:  # Зима
                 degradation_rate *= 2.0
-            
+            # Органика гниёт быстрее в жару (2-й закон — энтропия)
+            if obj.type in ('plant', 'berry'):
+                temp_mod = 1.0 + max(0.0, (self.temperature - 15.0) * 0.04)
+                degradation_rate *= temp_mod
+
             obj.degrade(degradation_rate)
             
             # Удаление полностью деградированных объектов
@@ -287,7 +291,21 @@ class Environment:
         for obj_id in objects_to_remove:
             self.remove_object(obj_id)
     
-    def get_local_environment(self, position: Tuple[int, int], 
+    def get_local_temperature(self, pos: Tuple[int, int]) -> float:
+        """Температура клетки с учётом тепла от костров."""
+        base = float(self.temperature)   # -5…+25°C от сезона
+        bonus = 0.0
+        for obj in self.objects.values():
+            if obj.type == 'campfire' and getattr(obj, 'fuel_ticks', 0) > 0:
+                dx = obj.position[0] - pos[0]
+                dy = obj.position[1] - pos[1]
+                dist = (dx * dx + dy * dy) ** 0.5
+                if dist <= 4:
+                    intensity = min(1.0, getattr(obj, 'fuel_ticks', 0) / 500.0)
+                    bonus += 25.0 * intensity * max(0.0, 1.0 - dist / 4.0)
+        return base + bonus
+
+    def get_local_environment(self, position: Tuple[int, int],
                             radius: int = 2) -> Dict[str, Any]:
         """Возвращает локальную окружающую среду для агента"""
         local_objects = []

@@ -30,7 +30,7 @@ from starlette.responses import Response
 
 from ..utils.config_loader import load_config
 from ..core.simulation import Simulation
-from ..core.agent import AgentFactory
+from ..core.agent import AgentFactory, SKILL_RU
 from ..core.objects import ObjectFactory
 from ..core.tools import ToolFactory
 
@@ -205,9 +205,409 @@ _last_event_save_wall: float = 0.0
 _EVENT_SAVE_INTERVAL_SEC: float = 8.0
 _NOTABLE_EVENT_TYPES: frozenset = frozenset({
     'craft', 'social', 'love', 'family', 'danger', 'fight',
-    'achievement', 'birth', 'skill_up', 'discovery',
+    'achievement', 'birth', 'skill_up', 'discovery', 'quest_complete',
 })
 _AGENT_EVENTS_MAX = 300
+
+# ── Квесты ──────────────────────────────────────────────────────────────────
+QUESTS: Dict[str, Dict] = {
+    'survive_300':    {'title': 'Выживи 300 тиков',    'target': 300, 'icon': '⏳'},
+    'make_3_friends': {'title': 'Заведи 3 друзей',     'target': 3,   'icon': '🤝'},
+    'gather_50':      {'title': 'Собери 50 ресурсов',  'target': 50,  'icon': '🌿'},
+    'light_campfire': {'title': 'Разведи костёр',      'target': 1,   'icon': '🔥'},
+    'have_child':     {'title': 'Стань родителем',     'target': 1,   'icon': '👶'},
+}
+
+# ── Дерево развития (60 узлов, 15 на ветвь) ──────────────────────────────────
+RESEARCH_TREE: List[Dict] = [
+    # ═══ SURVIVAL — Колонка A: жажда / голод / реген ═══
+    {'id': 'sv_tough_body',    'name': 'Крепкий организм',  'icon': '💪',
+     'desc': 'Жажда растёт на 25% медленнее',
+     'branch': 'survival', 'tier': 1, 'cost': 1,
+     'req_skill': 'survival', 'min_level': 2, 'requires': None,
+     'bonus': {'thirst_rate_mult': -0.25}},
+    {'id': 'sv_hydration',     'name': 'Водный баланс',     'icon': '💧',
+     'desc': 'Жажда растёт ещё на 20% медленнее',
+     'branch': 'survival', 'tier': 2, 'cost': 2,
+     'req_skill': 'survival', 'min_level': 4, 'requires': 'sv_tough_body',
+     'bonus': {'thirst_rate_mult': -0.20}},
+    {'id': 'sv_desert_born',   'name': 'Дитя пустыни',     'icon': '🌵',
+     'desc': 'Голод растёт на 25% медленнее',
+     'branch': 'survival', 'tier': 3, 'cost': 3,
+     'req_skill': 'survival', 'min_level': 6, 'requires': 'sv_hydration',
+     'bonus': {'hunger_rate_mult': -0.25}},
+    {'id': 'sv_iron_will',     'name': 'Железная воля',     'icon': '⚔️',
+     'desc': 'Реген здоровья при < 15%',
+     'branch': 'survival', 'tier': 4, 'cost': 4,
+     'req_skill': 'survival', 'min_level': 8, 'requires': 'sv_desert_born',
+     'bonus': {'health_regen_threshold': 0.15, 'health_regen_rate': 0.0005}},
+    {'id': 'sv_undying',       'name': 'Неугасимый',        'icon': '♾️',
+     'desc': 'Постоянный медленный реген здоровья',
+     'branch': 'survival', 'tier': 5, 'cost': 5,
+     'req_skill': 'survival', 'min_level': 10, 'requires': 'sv_iron_will',
+     'bonus': {'health_regen_threshold': 0.85, 'health_regen_rate': 0.0003}},
+    # ═══ SURVIVAL — Колонка B: движение / сон ═══
+    {'id': 'sv_light_step',    'name': 'Лёгкий шаг',        'icon': '👟',
+     'desc': 'Движение на 20% дешевле',
+     'branch': 'survival', 'tier': 1, 'cost': 1,
+     'req_skill': 'survival', 'min_level': 2, 'requires': None,
+     'bonus': {'move_energy_mult': -0.20}},
+    {'id': 'sv_efficient_rest','name': 'Эффективный отдых', 'icon': '😴',
+     'desc': 'Сон снижает сонливость на 15% эффективнее',
+     'branch': 'survival', 'tier': 2, 'cost': 2,
+     'req_skill': 'survival', 'min_level': 4, 'requires': 'sv_light_step',
+     'bonus': {'sleep_efficiency': 0.15}},
+    {'id': 'sv_fast_walk',     'name': 'Быстроногий',       'icon': '🏃',
+     'desc': 'Движение ещё на 20% дешевле',
+     'branch': 'survival', 'tier': 3, 'cost': 3,
+     'req_skill': 'survival', 'min_level': 6, 'requires': 'sv_efficient_rest',
+     'bonus': {'move_energy_mult': -0.20}},
+    {'id': 'sv_steady_pace',   'name': 'Ровный ритм',       'icon': '⏱️',
+     'desc': 'Сон ещё на 20% эффективнее',
+     'branch': 'survival', 'tier': 4, 'cost': 4,
+     'req_skill': 'survival', 'min_level': 8, 'requires': 'sv_fast_walk',
+     'bonus': {'sleep_efficiency': 0.20}},
+    {'id': 'sv_endurance',     'name': 'Выносливость',      'icon': '💯',
+     'desc': 'Голод −20%, движение дешевле −15%',
+     'branch': 'survival', 'tier': 5, 'cost': 5,
+     'req_skill': 'survival', 'min_level': 10, 'requires': 'sv_steady_pace',
+     'bonus': {'hunger_rate_mult': -0.20, 'move_energy_mult': -0.15}},
+    # ═══ SURVIVAL — Колонка C: ночь / защита ═══
+    {'id': 'sv_night_owl',     'name': 'Совиный глаз',      'icon': '🦉',
+     'desc': 'Ночной штраф к энергии −25%',
+     'branch': 'survival', 'tier': 1, 'cost': 1,
+     'req_skill': 'survival', 'min_level': 2, 'requires': None,
+     'bonus': {'night_penalty_mult': -0.25}},
+    {'id': 'sv_adaptation',    'name': 'Адаптация',         'icon': '🌙',
+     'desc': 'Ночной штраф ещё −30%',
+     'branch': 'survival', 'tier': 2, 'cost': 2,
+     'req_skill': 'survival', 'min_level': 4, 'requires': 'sv_night_owl',
+     'bonus': {'night_penalty_mult': -0.30}},
+    {'id': 'sv_iron_skin',     'name': 'Железная кожа',     'icon': '🛡️',
+     'desc': 'Урон от атак −15%',
+     'branch': 'survival', 'tier': 3, 'cost': 3,
+     'req_skill': 'survival', 'min_level': 6, 'requires': 'sv_adaptation',
+     'bonus': {'damage_reduction': 0.15}},
+    {'id': 'sv_thick_skin',    'name': 'Толстая кожа',      'icon': '🐢',
+     'desc': 'Урон от атак ещё −15%',
+     'branch': 'survival', 'tier': 4, 'cost': 4,
+     'req_skill': 'survival', 'min_level': 8, 'requires': 'sv_iron_skin',
+     'bonus': {'damage_reduction': 0.15}},
+    {'id': 'sv_titan',         'name': 'Титан',             'icon': '🏆',
+     'desc': 'Урон −15%, ночной штраф −20%',
+     'branch': 'survival', 'tier': 5, 'cost': 5,
+     'req_skill': 'survival', 'min_level': 10, 'requires': 'sv_thick_skin',
+     'bonus': {'damage_reduction': 0.15, 'night_penalty_mult': -0.20}},
+
+    # ═══ GATHERING — Колонка A: радиус / щедрость ═══
+    {'id': 'ga_keen_eye',      'name': 'Зоркий глаз',       'icon': '👁️',
+     'desc': 'Сбор также с соседних клеток',
+     'branch': 'gathering', 'tier': 1, 'cost': 1,
+     'req_skill': 'gathering', 'min_level': 2, 'requires': None,
+     'bonus': {'gather_radius': 1}},
+    {'id': 'ga_wide_search',   'name': 'Широкий поиск',     'icon': '🔍',
+     'desc': 'Радиус сбора +1 клетка',
+     'branch': 'gathering', 'tier': 2, 'cost': 2,
+     'req_skill': 'gathering', 'min_level': 4, 'requires': 'ga_keen_eye',
+     'bonus': {'gather_radius': 1}},
+    {'id': 'ga_bountiful',     'name': 'Щедрая природа',    'icon': '🌾',
+     'desc': '25% шанс получить доп. ресурс',
+     'branch': 'gathering', 'tier': 3, 'cost': 3,
+     'req_skill': 'gathering', 'min_level': 6, 'requires': 'ga_wide_search',
+     'bonus': {'bountiful_chance': 0.25}},
+    {'id': 'ga_double_harvest','name': 'Двойной урожай',    'icon': '✌️',
+     'desc': 'Шанс доп. ресурса ещё +20%',
+     'branch': 'gathering', 'tier': 4, 'cost': 4,
+     'req_skill': 'gathering', 'min_level': 8, 'requires': 'ga_bountiful',
+     'bonus': {'bountiful_chance': 0.20}},
+    {'id': 'ga_abundance',     'name': 'Изобилие',          'icon': '🌟',
+     'desc': 'Доп. ресурс +20%, радиус ещё +1',
+     'branch': 'gathering', 'tier': 5, 'cost': 5,
+     'req_skill': 'gathering', 'min_level': 10, 'requires': 'ga_double_harvest',
+     'bonus': {'bountiful_chance': 0.20, 'gather_radius': 1}},
+    # ═══ GATHERING — Колонка B: энергия / инвентарь ═══
+    {'id': 'ga_nimble_fingers','name': 'Ловкие руки',       'icon': '🖐️',
+     'desc': 'Сбор на 20% дешевле',
+     'branch': 'gathering', 'tier': 1, 'cost': 1,
+     'req_skill': 'gathering', 'min_level': 2, 'requires': None,
+     'bonus': {'gather_energy_mult': -0.20}},
+    {'id': 'ga_efficient',     'name': 'Эффективный',       'icon': '⚙️',
+     'desc': 'Сбор ещё на 20% дешевле',
+     'branch': 'gathering', 'tier': 2, 'cost': 2,
+     'req_skill': 'gathering', 'min_level': 4, 'requires': 'ga_nimble_fingers',
+     'bonus': {'gather_energy_mult': -0.20}},
+    {'id': 'ga_pack_rat',      'name': 'Собиратель',        'icon': '🎒',
+     'desc': 'Инвентарь +3 слота',
+     'branch': 'gathering', 'tier': 3, 'cost': 3,
+     'req_skill': 'gathering', 'min_level': 6, 'requires': 'ga_efficient',
+     'bonus': {'inventory_bonus': 3}},
+    {'id': 'ga_pack_master',   'name': 'Мастер инвентаря',  'icon': '🏋️',
+     'desc': 'Инвентарь ещё +5 слотов',
+     'branch': 'gathering', 'tier': 4, 'cost': 4,
+     'req_skill': 'gathering', 'min_level': 8, 'requires': 'ga_pack_rat',
+     'bonus': {'inventory_bonus': 5}},
+    {'id': 'ga_pack_legend',   'name': 'Легенда собирателя','icon': '🗺️',
+     'desc': 'Инвентарь +5, сбор −15%',
+     'branch': 'gathering', 'tier': 5, 'cost': 5,
+     'req_skill': 'gathering', 'min_level': 10, 'requires': 'ga_pack_master',
+     'bonus': {'inventory_bonus': 5, 'gather_energy_mult': -0.15}},
+    # ═══ GATHERING — Колонка C: успех / опыт ═══
+    {'id': 'ga_botanist',      'name': 'Знаток растений',   'icon': '🌿',
+     'desc': 'Шанс успешного сбора +8%',
+     'branch': 'gathering', 'tier': 1, 'cost': 1,
+     'req_skill': 'gathering', 'min_level': 2, 'requires': None,
+     'bonus': {'gather_success': 0.08}},
+    {'id': 'ga_lucky',         'name': 'Удачливый',         'icon': '🍀',
+     'desc': 'Шанс сбора ещё +10%',
+     'branch': 'gathering', 'tier': 2, 'cost': 2,
+     'req_skill': 'gathering', 'min_level': 4, 'requires': 'ga_botanist',
+     'bonus': {'gather_success': 0.10}},
+    {'id': 'ga_treasure_sense','name': 'Чутьё сокровищ',   'icon': '🔮',
+     'desc': 'Шанс сбора ещё +12%',
+     'branch': 'gathering', 'tier': 3, 'cost': 3,
+     'req_skill': 'gathering', 'min_level': 6, 'requires': 'ga_lucky',
+     'bonus': {'gather_success': 0.12}},
+    {'id': 'ga_master_eye',    'name': 'Орлиный взор',      'icon': '🦅',
+     'desc': 'Шанс сбора +10%, опыт собирательства +20%',
+     'branch': 'gathering', 'tier': 4, 'cost': 4,
+     'req_skill': 'gathering', 'min_level': 8, 'requires': 'ga_treasure_sense',
+     'bonus': {'gather_success': 0.10, 'xp_mult_gathering': 0.20}},
+    {'id': 'ga_perfect_sense', 'name': 'Идеальное чутьё',   'icon': '👼',
+     'desc': 'Шанс сбора +10%, все навыки +10%',
+     'branch': 'gathering', 'tier': 5, 'cost': 5,
+     'req_skill': 'gathering', 'min_level': 10, 'requires': 'ga_master_eye',
+     'bonus': {'gather_success': 0.10, 'xp_mult_all': 0.10}},
+
+    # ═══ CRAFTING — Колонка A: убежище ═══
+    {'id': 'cr_skilled_hands', 'name': 'Умелые руки',       'icon': '🔨',
+     'desc': 'Бонус убежища к энергии ×2',
+     'branch': 'crafting', 'tier': 1, 'cost': 1,
+     'req_skill': 'crafting', 'min_level': 2, 'requires': None,
+     'bonus': {'shelter_bonus_mult': 1.0}},
+    {'id': 'cr_sturdy_build',  'name': 'Прочное строение',  'icon': '🏠',
+     'desc': 'Бонус убежища ещё ×1 (итого ×3)',
+     'branch': 'crafting', 'tier': 2, 'cost': 2,
+     'req_skill': 'crafting', 'min_level': 4, 'requires': 'cr_skilled_hands',
+     'bonus': {'shelter_bonus_mult': 1.0}},
+    {'id': 'cr_master_builder','name': 'Мастер-строитель',  'icon': '🏗️',
+     'desc': 'Радиус бонуса убежища +2 клетки',
+     'branch': 'crafting', 'tier': 3, 'cost': 3,
+     'req_skill': 'crafting', 'min_level': 6, 'requires': 'cr_sturdy_build',
+     'bonus': {'shelter_radius': 2}},
+    {'id': 'cr_architect',     'name': 'Архитектор',        'icon': '🏛️',
+     'desc': 'Радиус убежища +2, бонус ещё ×1',
+     'branch': 'crafting', 'tier': 4, 'cost': 4,
+     'req_skill': 'crafting', 'min_level': 8, 'requires': 'cr_master_builder',
+     'bonus': {'shelter_radius': 2, 'shelter_bonus_mult': 1.0}},
+    {'id': 'cr_grand_architect','name': 'Великий архитектор','icon': '🏰',
+     'desc': 'Бонус убежища ×2 + радиус +2',
+     'branch': 'crafting', 'tier': 5, 'cost': 5,
+     'req_skill': 'crafting', 'min_level': 10, 'requires': 'cr_architect',
+     'bonus': {'shelter_bonus_mult': 2.0, 'shelter_radius': 2}},
+    # ═══ CRAFTING — Колонка B: энергия крафта ═══
+    {'id': 'cr_tool_sense',    'name': 'Чувство инструмента','icon': '🪛',
+     'desc': 'Крафтинг на 20% дешевле',
+     'branch': 'crafting', 'tier': 1, 'cost': 1,
+     'req_skill': 'crafting', 'min_level': 2, 'requires': None,
+     'bonus': {'craft_energy_mult': -0.20}},
+    {'id': 'cr_efficient_craft','name': 'Эффективный крафт','icon': '🔧',
+     'desc': 'Крафтинг ещё на 20% дешевле',
+     'branch': 'crafting', 'tier': 2, 'cost': 2,
+     'req_skill': 'crafting', 'min_level': 4, 'requires': 'cr_tool_sense',
+     'bonus': {'craft_energy_mult': -0.20}},
+    {'id': 'cr_artisan',       'name': 'Артизан',           'icon': '🪚',
+     'desc': 'Крафтинг ещё на 20% дешевле',
+     'branch': 'crafting', 'tier': 3, 'cost': 3,
+     'req_skill': 'crafting', 'min_level': 6, 'requires': 'cr_efficient_craft',
+     'bonus': {'craft_energy_mult': -0.20}},
+    {'id': 'cr_precision',     'name': 'Точность',          'icon': '🎯',
+     'desc': 'Крафтинг ещё на 15% дешевле',
+     'branch': 'crafting', 'tier': 4, 'cost': 4,
+     'req_skill': 'crafting', 'min_level': 8, 'requires': 'cr_artisan',
+     'bonus': {'craft_energy_mult': -0.15}},
+    {'id': 'cr_legendary_craft','name': 'Легендарный мастер','icon': '⚔️',
+     'desc': 'Крафтинг −15%, опыт крафта +20%',
+     'branch': 'crafting', 'tier': 5, 'cost': 5,
+     'req_skill': 'crafting', 'min_level': 10, 'requires': 'cr_precision',
+     'bonus': {'craft_energy_mult': -0.15, 'xp_mult_crafting': 0.20}},
+    # ═══ CRAFTING — Колонка C: опыт крафта ═══
+    {'id': 'cr_quick_craft',   'name': 'Быстрый крафт',     'icon': '⚡',
+     'desc': 'Опыт крафтинга +20%',
+     'branch': 'crafting', 'tier': 1, 'cost': 1,
+     'req_skill': 'crafting', 'min_level': 2, 'requires': None,
+     'bonus': {'xp_mult_crafting': 0.20}},
+    {'id': 'cr_apprentice',    'name': 'Подмастерье',       'icon': '📖',
+     'desc': 'Опыт крафтинга ещё +25%',
+     'branch': 'crafting', 'tier': 2, 'cost': 2,
+     'req_skill': 'crafting', 'min_level': 4, 'requires': 'cr_quick_craft',
+     'bonus': {'xp_mult_crafting': 0.25}},
+    {'id': 'cr_journeyman',    'name': 'Мастеровой',        'icon': '🎓',
+     'desc': 'Опыт крафтинга ещё +25%',
+     'branch': 'crafting', 'tier': 3, 'cost': 3,
+     'req_skill': 'crafting', 'min_level': 6, 'requires': 'cr_apprentice',
+     'bonus': {'xp_mult_crafting': 0.25}},
+    {'id': 'cr_master_crafter','name': 'Мастер-кузнец',     'icon': '🌟',
+     'desc': 'Опыт крафтинга ещё +30%',
+     'branch': 'crafting', 'tier': 4, 'cost': 4,
+     'req_skill': 'crafting', 'min_level': 8, 'requires': 'cr_journeyman',
+     'bonus': {'xp_mult_crafting': 0.30}},
+    {'id': 'cr_grandmaster',   'name': 'Грандмастер',       'icon': '👑',
+     'desc': 'Все навыки +15% опыта',
+     'branch': 'crafting', 'tier': 5, 'cost': 5,
+     'req_skill': 'crafting', 'min_level': 10, 'requires': 'cr_master_crafter',
+     'bonus': {'xp_mult_all': 0.15}},
+
+    # ═══ COMMUNICATION — Колонка A: опыт общения ═══
+    {'id': 'co_charisma',      'name': 'Харизма',           'icon': '✨',
+     'desc': 'Опыт общения +50%',
+     'branch': 'communication', 'tier': 1, 'cost': 1,
+     'req_skill': 'communication', 'min_level': 2, 'requires': None,
+     'bonus': {'xp_mult_communication': 0.50}},
+    {'id': 'co_orator',        'name': 'Оратор',            'icon': '🎤',
+     'desc': 'Опыт общения ещё +50%',
+     'branch': 'communication', 'tier': 2, 'cost': 2,
+     'req_skill': 'communication', 'min_level': 4, 'requires': 'co_charisma',
+     'bonus': {'xp_mult_communication': 0.50}},
+    {'id': 'co_motivator',     'name': 'Мотиватор',         'icon': '🔥',
+     'desc': 'Общение +50%, все навыки +5%',
+     'branch': 'communication', 'tier': 3, 'cost': 3,
+     'req_skill': 'communication', 'min_level': 6, 'requires': 'co_orator',
+     'bonus': {'xp_mult_communication': 0.50, 'xp_mult_all': 0.05}},
+    {'id': 'co_mentor',        'name': 'Наставник',         'icon': '📚',
+     'desc': 'Все навыки растут на 10% быстрее',
+     'branch': 'communication', 'tier': 4, 'cost': 4,
+     'req_skill': 'communication', 'min_level': 8, 'requires': 'co_motivator',
+     'bonus': {'xp_mult_all': 0.10}},
+    {'id': 'co_sage',          'name': 'Мудрец',            'icon': '🧙',
+     'desc': 'Все навыки ещё +15%',
+     'branch': 'communication', 'tier': 5, 'cost': 5,
+     'req_skill': 'communication', 'min_level': 10, 'requires': 'co_mentor',
+     'bonus': {'xp_mult_all': 0.15}},
+    # ═══ COMMUNICATION — Колонка B: энергия общения ═══
+    {'id': 'co_empath',        'name': 'Эмпат',             'icon': '💞',
+     'desc': 'Общение на 20% дешевле',
+     'branch': 'communication', 'tier': 1, 'cost': 1,
+     'req_skill': 'communication', 'min_level': 2, 'requires': None,
+     'bonus': {'comm_energy_mult': -0.20}},
+    {'id': 'co_diplomat',      'name': 'Дипломат',          'icon': '🤝',
+     'desc': 'Общение ещё на 20% дешевле',
+     'branch': 'communication', 'tier': 2, 'cost': 2,
+     'req_skill': 'communication', 'min_level': 4, 'requires': 'co_empath',
+     'bonus': {'comm_energy_mult': -0.20}},
+    {'id': 'co_mediator',      'name': 'Медиатор',          'icon': '⚖️',
+     'desc': 'Общение ещё на 20% дешевле',
+     'branch': 'communication', 'tier': 3, 'cost': 3,
+     'req_skill': 'communication', 'min_level': 6, 'requires': 'co_diplomat',
+     'bonus': {'comm_energy_mult': -0.20}},
+    {'id': 'co_pacifist',      'name': 'Пацифист',          'icon': '☮️',
+     'desc': 'Общение −15%, урон от атак −10%',
+     'branch': 'communication', 'tier': 4, 'cost': 4,
+     'req_skill': 'communication', 'min_level': 8, 'requires': 'co_mediator',
+     'bonus': {'comm_energy_mult': -0.15, 'damage_reduction': 0.10}},
+    {'id': 'co_peacemaker',    'name': 'Миротворец',        'icon': '🕊️',
+     'desc': 'Урон −15%, общение −10%',
+     'branch': 'communication', 'tier': 5, 'cost': 5,
+     'req_skill': 'communication', 'min_level': 10, 'requires': 'co_pacifist',
+     'bonus': {'damage_reduction': 0.15, 'comm_energy_mult': -0.10}},
+    # ═══ COMMUNICATION — Колонка C: лидерство ═══
+    {'id': 'co_networker',     'name': 'Сетевик',           'icon': '🌐',
+     'desc': 'Опыт общения +25%',
+     'branch': 'communication', 'tier': 1, 'cost': 1,
+     'req_skill': 'communication', 'min_level': 2, 'requires': None,
+     'bonus': {'xp_mult_communication': 0.25}},
+    {'id': 'co_influencer',    'name': 'Влиятельный',       'icon': '🎯',
+     'desc': 'Опыт общения ещё +25%',
+     'branch': 'communication', 'tier': 2, 'cost': 2,
+     'req_skill': 'communication', 'min_level': 4, 'requires': 'co_networker',
+     'bonus': {'xp_mult_communication': 0.25}},
+    {'id': 'co_leader',        'name': 'Лидер',             'icon': '👑',
+     'desc': 'Все навыки растут на 8% быстрее',
+     'branch': 'communication', 'tier': 3, 'cost': 3,
+     'req_skill': 'communication', 'min_level': 6, 'requires': 'co_influencer',
+     'bonus': {'xp_mult_all': 0.08}},
+    {'id': 'co_visionary',     'name': 'Визионер',          'icon': '🔮',
+     'desc': 'Все навыки +12%',
+     'branch': 'communication', 'tier': 4, 'cost': 4,
+     'req_skill': 'communication', 'min_level': 8, 'requires': 'co_leader',
+     'bonus': {'xp_mult_all': 0.12}},
+    {'id': 'co_legend',        'name': 'Легенда',           'icon': '🌟',
+     'desc': 'Все навыки +20% опыта',
+     'branch': 'communication', 'tier': 5, 'cost': 5,
+     'req_skill': 'communication', 'min_level': 10, 'requires': 'co_visionary',
+     'bonus': {'xp_mult_all': 0.20}},
+]
+_RESEARCH_BY_ID: Dict[str, Dict] = {n['id']: n for n in RESEARCH_TREE}
+
+
+def _compute_research_bonuses(unlocked_ids: set) -> Dict[str, float]:
+    """Суммирует все бонусы из разблокированных узлов дерева развития."""
+    bonuses: Dict[str, float] = {}
+    for nid in unlocked_ids:
+        node = _RESEARCH_BY_ID.get(nid)
+        if node:
+            for k, v in node.get('bonus', {}).items():
+                bonuses[k] = bonuses.get(k, 0.0) + v
+    return bonuses
+
+
+def _calc_research_points(agent) -> int:
+    """Очки исследования = сумма уровней навыков - 6 (базовый)."""
+    return max(0, sum(
+        agent.skills.level(s)
+        for s in ['gathering', 'crafting', 'hunting', 'cooking', 'communication', 'survival']
+    ) - 6)
+
+
+def _update_quests(agent, uid: int, ts: int) -> None:
+    """Обновляет прогресс квестов пользователя по текущему состоянию агента."""
+    try:
+        fire_done = int(any(
+            e.get('type') == 'craft' and '🔥' in e.get('text', '')
+            for e in getattr(agent.life_log, 'entries', [])
+        ))
+        progress_map = {
+            'survive_300':    int(agent.age),
+            'make_3_friends': len(getattr(agent.social, 'friends', [])),
+            'gather_50':      agent.achievements.get_counter('total_gathered'),
+            'light_campfire': fire_done,
+            'have_child':     min(1, int(agent.offspring_count)),
+        }
+        conn = _db_connect()
+        cur = conn.cursor()
+        for qid, info in QUESTS.items():
+            prog = progress_map.get(qid, 0)
+            target = info['target']
+            row = cur.execute(
+                "SELECT progress, done FROM user_quests WHERE user_id=? AND quest_id=?",
+                (uid, qid),
+            ).fetchone()
+            if row is None:
+                cur.execute(
+                    "INSERT INTO user_quests(user_id,quest_id,progress,target,done) VALUES(?,?,?,?,0)",
+                    (uid, qid, prog, target),
+                )
+                conn.commit()
+                row = (prog, 0)
+            old_prog, done = int(row[0]), int(row[1])
+            if done:
+                continue
+            new_done = 1 if prog >= target else 0
+            if prog != old_prog or new_done != done:
+                cur.execute(
+                    "UPDATE user_quests SET progress=?, done=?, done_tick=? WHERE user_id=? AND quest_id=?",
+                    (prog, new_done, ts if new_done else None, uid, qid),
+                )
+                if new_done:
+                    cur.execute(
+                        "INSERT INTO agent_events(user_id,sim_tick,event_type,icon,text,ts)"
+                        " VALUES(?,?,?,?,?,?)",
+                        (uid, ts, 'quest_complete', info['icon'],
+                         f"Задание выполнено: {info['title']} {info['icon']}", time.time()),
+                    )
+                conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def _save_agent_events_batch(state) -> None:
@@ -229,6 +629,12 @@ def _save_agent_events_batch(state) -> None:
             e for e in life_log.entries
             if e.get("t", 0) > last_tick and e.get("type") in _NOTABLE_EVENT_TYPES
         ]
+
+        # Обновляем прогресс квестов каждые ~30 тиков
+        _cur_tick = int(getattr(state, 'timestep', 0))
+        if _cur_tick % 30 == 0:
+            _update_quests(agent, uid, _cur_tick)
+
         if not new_entries:
             continue
 
@@ -283,10 +689,84 @@ def _find_agent_by_owner(uid: int):
             return None
         for a in state.agents.values():
             if int(getattr(a, "owner_uid", -1)) == int(uid):
+                # Ленивая синхронизация research_bonuses при первом обнаружении агента
+                if not getattr(a, '_research_loaded', False):
+                    _sync_agent_research_in_memory(a, uid)
+                    a._research_loaded = True
                 return a
     except Exception:
         pass
     return None
+
+
+def _sync_agent_research_in_memory(agent, uid: int) -> None:
+    """Загружает разблокированные узлы из user_research в память агента."""
+    try:
+        conn = _db_connect()
+        try:
+            row = conn.execute(
+                "SELECT unlocked FROM user_research WHERE user_id=?", (uid,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row:
+            unlocked = set(json.loads(row["unlocked"] or "[]"))
+            agent.research_unlocks = unlocked
+            agent.research_bonuses = _compute_research_bonuses(unlocked)
+    except Exception:
+        pass
+
+
+def _load_dynasty_skills(uid: int) -> Dict[str, float]:
+    """Загружает навыки династии из БД."""
+    try:
+        conn = _db_connect()
+        try:
+            row = conn.execute(
+                "SELECT skills FROM dynasty_skills WHERE user_id=?", (uid,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row:
+            return json.loads(row["skills"] or "{}")
+    except Exception:
+        pass
+    return {}
+
+
+def _save_dynasty_skills(uid: int, skills: Dict[str, float]) -> None:
+    """Сохраняет навыки династии (только увеличивает, не уменьшает)."""
+    try:
+        existing = _load_dynasty_skills(uid)
+        merged = {s: max(existing.get(s, 0.0), skills.get(s, 0.0))
+                  for s in set(list(existing.keys()) + list(skills.keys()))}
+        conn = _db_connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO dynasty_skills(user_id, skills) VALUES(?,?)",
+                (uid, json.dumps(merged)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def _apply_dynasty_to_agent(agent, uid: int) -> None:
+    """Применяет навыки династии к агенту (не уменьшает, только поднимает floor)."""
+    try:
+        from ..core.agent import SKILL_NAMES
+        dynasty = _load_dynasty_skills(uid)
+        if not dynasty:
+            return
+        for s in SKILL_NAMES:
+            d_val = dynasty.get(s, 0.0) * 0.75  # 75% от максимума династии
+            cur = agent.skills.get(s)
+            if d_val > cur:
+                setattr(agent.skills, s, d_val)
+    except Exception:
+        pass
 
 
 def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
@@ -698,6 +1178,49 @@ def _db_init() -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_events_uid_ts ON agent_events(user_id, ts)"
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_quests (
+                user_id  INTEGER NOT NULL,
+                quest_id TEXT    NOT NULL,
+                progress INTEGER NOT NULL DEFAULT 0,
+                target   INTEGER NOT NULL,
+                done     INTEGER NOT NULL DEFAULT 0,
+                done_tick INTEGER,
+                PRIMARY KEY (user_id, quest_id)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_research (
+                user_id  INTEGER NOT NULL,
+                agent_id TEXT    NOT NULL,
+                spent    INTEGER NOT NULL DEFAULT 0,
+                unlocked TEXT    NOT NULL DEFAULT '[]',
+                PRIMARY KEY (user_id, agent_id)
+            )
+            """
+        )
+        # Дерево развития: хранится за пользователем (не за агентом — сохраняется при смерти)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_research (
+                user_id  INTEGER PRIMARY KEY,
+                spent    INTEGER NOT NULL DEFAULT 0,
+                unlocked TEXT    NOT NULL DEFAULT '[]'
+            )
+            """
+        )
+        # Навыки династии: максимальные достигнутые уровни, передаются потомкам
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dynasty_skills (
+                user_id INTEGER PRIMARY KEY,
+                skills  TEXT    NOT NULL DEFAULT '{}'
+            )
+            """
+        )
 
         # Lightweight migrations for existing DBs
         try:
@@ -736,6 +1259,23 @@ async def api_runs_history(limit: int = 50):
     limit = max(1, min(200, int(limit)))
     items = _load_run_history_from_db(limit=limit)
     return JSONResponse({"items": items})
+
+
+def _close_unfinished_runs() -> None:
+    """Закрывает все запуски без ended_at — остались после краша/перезапуска сервера."""
+    try:
+        conn = _db_connect()
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "UPDATE sim_runs SET ended_at=?, reason=? WHERE ended_at IS NULL",
+                (now, "перезапуск сервера"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 def _get_last_run_number_from_db() -> int:
@@ -1472,6 +2012,9 @@ class SimulationController:
         self._last_learning_save_timestep: int = 0
         self._load_learning_bootstrap_from_disk()
 
+        # Dynasty: track already-processed dead agent IDs so we don't double-save
+        self._processed_dead_agent_ids: Set[str] = set()
+
     def _load_learning_bootstrap_from_disk(self) -> None:
         try:
             data = _read_learning_state()
@@ -1518,6 +2061,8 @@ class SimulationController:
         async with self._lock:
             if self.simulation is not None:
                 return
+            # Закрыть запуски, оставшиеся незавершёнными после перезапуска сервера
+            _close_unfinished_runs()
             # Restore last run_number from DB to keep continuity between restarts
             try:
                 self.run_number = _get_last_run_number_from_db()
@@ -1563,6 +2108,9 @@ class SimulationController:
                 self.simulation.stop()
             except Exception:
                 pass
+
+        # New run → fresh dead-agent tracking set
+        self._processed_dead_agent_ids = set()
 
         config = load_config(self._config_path)
 
@@ -1993,11 +2541,12 @@ class SimulationController:
                         "hunger": float(agent.hunger),
                         "thirst": float(getattr(agent, 'thirst', 0.0)),
                         "sleepiness": float(getattr(agent, 'sleepiness', 0.0)),
+                        "body_temp": round(float(getattr(agent, 'body_temp', 37.0)), 1),
                         "is_swimming": bool(getattr(agent, 'is_swimming', False)),
                         "water_ticks": int(getattr(agent, 'water_ticks', 0) or 0),
                         "age": int(agent.age),
                         "adulthood_age": int(getattr(agent, 'adulthood_age', 18)),
-                        "is_child": bool(getattr(agent, 'is_child', lambda: False)()),
+                        "is_child": bool(getattr(agent, 'is_child', lambda: False)()) and bool(getattr(agent, 'mother_id', None)),
                         "pregnant": bool(getattr(agent, 'pregnant', False)),
                         "pregnancy_remaining": int(getattr(agent, 'pregnancy_remaining', 0) or 0),
                         "mother_id": getattr(agent, 'mother_id', None),
@@ -2025,6 +2574,7 @@ class SimulationController:
                         "dominant_emotion": agent.emotional_state.dominant() if hasattr(agent, 'emotional_state') else None,
                         "thought": getattr(agent, 'current_thought', None),
                         "social": agent.social.to_dict() if hasattr(agent, 'social') and hasattr(agent.social, 'to_dict') else None,
+                        "network_size": sum(1 for t in agent.social.relationships.values() if t > 0.3) if hasattr(agent, 'social') and hasattr(agent.social, 'relationships') else 0,
                         "skills": agent.skills.to_dict() if hasattr(agent, 'skills') and hasattr(agent.skills, 'to_dict') else None,
                         "skills_ru": agent.skills.describe_ru() if hasattr(agent, 'skills') and hasattr(agent.skills, 'describe_ru') else None,
                         "achievements": agent.achievements.to_list() if hasattr(agent, 'achievements') and hasattr(agent.achievements, 'to_list') else [],
@@ -2180,6 +2730,12 @@ class SimulationController:
                     for o in env.objects.values()
                     if o.type == 'berry_bush'
                 ],
+                "shelters": [
+                    {"x": int(o.position[0]), "y": int(o.position[1]),
+                     "owner_name": getattr(o, 'shelter_owner_name', '?')}
+                    for o in env.objects.values()
+                    if o.type == 'shelter'
+                ],
                 "dead_agents": list(state.dead_agents) if hasattr(state, 'dead_agents') else [],
                 "objects": (objects_full if objects_full is not None else []),
                 "objects_full": objects_full,
@@ -2194,7 +2750,7 @@ class SimulationController:
                     "number": int(self.run_number),
                     "started_wall": float(self.run_started_wall),
                 },
-                "history": self.history[-20:],
+                "history": self.history[:50],
             }
 
     def _calculate_language_metrics(self, state, events_tail):
@@ -2291,6 +2847,29 @@ class SimulationController:
                 for ws in to_remove:
                     self._clients.discard(ws)
 
+    def _process_dynasty_on_death(self) -> None:
+        """Persist dynasty skills for any newly-dead owned agents.
+        Called synchronously from run_forever (outside the lock) each tick.
+        """
+        try:
+            sim = self.simulation
+            if sim is None or sim.state is None:
+                return
+            for entry in sim.state.dead_agents:
+                aid = entry.get('id')
+                if not aid or aid in self._processed_dead_agent_ids:
+                    continue
+                # Mark as processed regardless of outcome so we don't retry on error
+                self._processed_dead_agent_ids.add(aid)
+                owner_uid = entry.get('owner_uid')
+                if not owner_uid:
+                    continue
+                skills = entry.get('skills')
+                if skills:
+                    _save_dynasty_skills(int(owner_uid), skills)
+        except Exception:
+            pass
+
     async def run_forever(self):
         await self.ensure_simulation()
 
@@ -2313,6 +2892,9 @@ class SimulationController:
                         "traceback": tb,
                     },
                 )
+
+            # Save dynasty skills for newly-dead owned agents
+            self._process_dynasty_on_death()
 
             snapshot = await self.get_snapshot(full_sync=False)
             await self._broadcast(snapshot)
@@ -2732,6 +3314,16 @@ async def api_agents_create(token: str, payload: Dict[str, Any]):
     sex = payload.get("sex") or ""
     stats = payload.get("stats")
     created = await controller.create_custom_agent(user=user, display_name=str(display_name), sex=str(sex), stats=stats)
+    # Применить навыки династии и исследования к только что созданному агенту
+    try:
+        uid = int(user["uid"])
+        new_agent = _find_agent_by_owner(uid)
+        if new_agent:
+            _apply_dynasty_to_agent(new_agent, uid)
+            _sync_agent_research_in_memory(new_agent, uid)
+            new_agent._research_loaded = True
+    except Exception:
+        pass
     return JSONResponse({"ok": True, "agent": created})
 
 
@@ -3092,6 +3684,261 @@ async def api_animal_sprite_get(animal_id: str, direction: str):
     if not path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="sprite_not_found")
     return FileResponse(str(path), media_type="image/png")
+
+
+def _agent_lb_entry(a) -> dict:
+    skills_sum = round(sum(v["value"] for v in a.skills.to_dict().values()), 2)
+    return {
+        "name": getattr(a, "display_name", a.id),
+        "sex": getattr(a, "sex", "unknown"),
+        "age": int(a.age),
+        "offspring": int(a.offspring_count),
+        "owner": getattr(a, "owner_username", None),
+        "skills_sum": skills_sum,
+    }
+
+
+@app.get("/api/leaderboard")
+async def api_leaderboard():
+    """Топ-5 агентов по возрасту, семье и навыкам."""
+    try:
+        sim = controller.simulation
+        state = getattr(sim, "state", None) if sim else None
+        agents = list(state.agents.values()) if state else []
+    except Exception:
+        agents = []
+
+    top_age    = sorted(agents, key=lambda a: a.age, reverse=True)[:5]
+    top_family = sorted(agents, key=lambda a: a.offspring_count, reverse=True)[:5]
+    top_skills = sorted(
+        agents,
+        key=lambda a: sum(v["value"] for v in a.skills.to_dict().values()),
+        reverse=True,
+    )[:5]
+
+    return JSONResponse({
+        "age":    [_agent_lb_entry(a) for a in top_age],
+        "family": [_agent_lb_entry(a) for a in top_family],
+        "skills": [_agent_lb_entry(a) for a in top_skills],
+    })
+
+
+@app.get("/api/quests")
+async def api_quests(token: str):
+    """Возвращает прогресс квестов текущего пользователя."""
+    user = _auth_from_token(token)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    uid = int(user["uid"])
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT quest_id, progress, target, done, done_tick FROM user_quests WHERE user_id=?",
+            (uid,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    existing = {r["quest_id"]: r for r in rows}
+    result = []
+    for qid, info in QUESTS.items():
+        row = existing.get(qid)
+        result.append({
+            "id":       qid,
+            "title":    info["title"],
+            "icon":     info["icon"],
+            "progress": int(row["progress"]) if row else 0,
+            "target":   info["target"],
+            "done":     bool(row["done"]) if row else False,
+        })
+    return JSONResponse({"quests": result})
+
+
+@app.post("/api/agents/inherit")
+async def api_agents_inherit(token: str, payload: Dict[str, Any]):
+    """Переход пользователя к ребёнку умершего агента."""
+    user = _auth_from_token(token)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    uid = int(user["uid"])
+    username = str(user["username"])
+
+    child_id = str(payload.get("child_agent_id", "")).strip()
+    if not child_id:
+        raise HTTPException(status_code=400, detail="child_agent_id_required")
+
+    try:
+        sim = controller.simulation
+        state = getattr(sim, "state", None) if sim else None
+        if state is None:
+            raise HTTPException(status_code=503, detail="sim_not_running")
+
+        # Убедиться что у пользователя нет живого агента
+        for a in state.agents.values():
+            if int(getattr(a, "owner_uid", -1)) == uid:
+                raise HTTPException(status_code=400, detail="agent_still_alive")
+
+        child = state.agents.get(child_id)
+        if child is None:
+            raise HTTPException(status_code=404, detail="child_not_found")
+
+        # Проверяем что это действительно потомок (mother_id/father_id совпадает с умершим агентом)
+        # Достаточно что child не имеет другого владельца
+        if getattr(child, "owner_uid", -1) not in (-1, uid):
+            raise HTTPException(status_code=403, detail="child_belongs_to_another_user")
+
+        # Устанавливаем владельца
+        setattr(child, "owner_username", username)
+        setattr(child, "owner_uid", uid)
+
+        # Применяем навыки династии (поднимаем floor, не уменьшаем)
+        _apply_dynasty_to_agent(child, uid)
+
+        # Сохраняем текущие навыки ребёнка как новый пол навыков династии
+        try:
+            from ..core.agent import SKILL_NAMES as _SN
+            child_skills = {s: child.skills.get(s) for s in _SN}
+            _save_dynasty_skills(uid, child_skills)
+        except Exception:
+            pass
+
+        # Загружаем разблокированные узлы исследований из user_research в память агента
+        _sync_agent_research_in_memory(child, uid)
+        child._research_loaded = True
+
+        # Обновляем user_agents в БД
+        conn = _db_connect()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT OR REPLACE INTO user_agents(user_id, username, display_name, sex, stats_json, created_at)"
+                " VALUES(?, ?, ?, ?, ?, datetime('now'))",
+                (uid, username,
+                 getattr(child, "display_name", child.id),
+                 getattr(child, "sex", "unknown"),
+                 "{}"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return JSONResponse({"ok": True, "agent_name": getattr(child, "display_name", child.id)})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/research")
+async def api_research(token: str):
+    """Возвращает дерево развития (хранится за пользователем, не сбрасывается при смерти)."""
+    user = _auth_from_token(token)
+    uid  = int(user["uid"])
+    agent = _find_agent_by_owner(uid)
+
+    earned = _calc_research_points(agent) if agent else 0
+
+    # Загрузить из user_research (не agent_research — не привязано к агенту)
+    conn = _db_connect()
+    try:
+        row = conn.execute(
+            "SELECT spent, unlocked FROM user_research WHERE user_id=?", (uid,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    spent = int(row["spent"]) if row else 0
+    available = max(0, earned - spent)
+    unlocked_set = set(json.loads(row["unlocked"] or "[]")) if row else set()
+
+    # Синхронизировать в память агента
+    if agent:
+        if unlocked_set != getattr(agent, 'research_unlocks', set()):
+            agent.research_unlocks = unlocked_set
+            agent.research_bonuses = _compute_research_bonuses(unlocked_set)
+        elif not getattr(agent, 'research_bonuses', {}):
+            agent.research_bonuses = _compute_research_bonuses(unlocked_set)
+
+    # Построить ответ
+    tree_out = []
+    for node in RESEARCH_TREE:
+        nid = node['id']
+        cur_level = agent.skills.level(node['req_skill']) if agent else 1
+        req_ok = (cur_level >= node['min_level'])
+        par_ok = (node['requires'] is None or node['requires'] in unlocked_set)
+        if nid in unlocked_set:
+            node_status = 'unlocked'
+        elif req_ok and par_ok and available >= node['cost']:
+            node_status = 'available'
+        else:
+            node_status = 'locked'
+        tree_out.append({
+            'id': nid, 'name': node['name'], 'icon': node['icon'], 'desc': node['desc'],
+            'branch': node['branch'], 'tier': node['tier'], 'cost': node['cost'],
+            'req_skill': node['req_skill'], 'min_level': node['min_level'],
+            'requires': node['requires'],
+            'status': node_status,
+            'cur_level': cur_level,
+            'req_skill_label': SKILL_RU.get(node['req_skill'], node['req_skill']),
+        })
+
+    return JSONResponse({"earned": earned, "spent": spent, "available": available, "tree": tree_out})
+
+
+@app.post("/api/research/unlock")
+async def api_research_unlock(token: str, payload: Dict[str, Any]):
+    """Разблокировать узел дерева развития (сохраняется при смерти агента)."""
+    user = _auth_from_token(token)
+    uid  = int(user["uid"])
+    agent = _find_agent_by_owner(uid)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent_not_found")
+
+    node_id = str(payload.get("node_id", "")).strip()
+    node = _RESEARCH_BY_ID.get(node_id)
+    if node is None:
+        raise HTTPException(status_code=400, detail="unknown_node")
+
+    unlocked_set: set = getattr(agent, 'research_unlocks', set())
+
+    if node_id in unlocked_set:
+        raise HTTPException(status_code=400, detail="already_unlocked")
+
+    if agent.skills.level(node['req_skill']) < node['min_level']:
+        raise HTTPException(status_code=400, detail="skill_level_too_low")
+    if node['requires'] and node['requires'] not in unlocked_set:
+        raise HTTPException(status_code=400, detail="parent_node_required")
+
+    earned = _calc_research_points(agent)
+
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        row = cur.execute(
+            "SELECT spent, unlocked FROM user_research WHERE user_id=?", (uid,)
+        ).fetchone()
+        spent    = int(row["spent"]) if row else 0
+        db_nodes = set(json.loads(row["unlocked"] or "[]")) if row else set()
+
+        available = max(0, earned - spent)
+        if available < node['cost']:
+            raise HTTPException(status_code=400, detail="not_enough_points")
+
+        new_spent = spent + node['cost']
+        db_nodes.add(node_id)
+        cur.execute(
+            "INSERT OR REPLACE INTO user_research(user_id, spent, unlocked) VALUES(?,?,?)",
+            (uid, new_spent, json.dumps(list(db_nodes))),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    agent.research_unlocks.add(node_id)
+    agent.research_bonuses = _compute_research_bonuses(agent.research_unlocks)
+
+    return JSONResponse({"ok": True, "available": max(0, earned - new_spent)})
 
 
 @app.get("/api/news")
