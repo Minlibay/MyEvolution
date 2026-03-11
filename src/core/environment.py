@@ -78,7 +78,15 @@ class Environment:
         self.hour: int = 0
         self.minute: int = 0
         self.is_daytime: bool = True
-        
+
+        # Ветер (Ornstein-Uhlenbeck процесс)
+        self.wind_speed: float = 0.0        # 0..1 (нормализованный по Бофорту)
+        self.wind_angle: float = 0.0        # радианы, 0=север (вверх), по часовой
+        self.wind_dx: float = 0.0           # sin(angle)*speed → смещение по X
+        self.wind_dy: float = 0.0           # -cos(angle)*speed → смещение по Y
+        self._wind_target_angle: float = 0.0  # цель для OU-дрейфа угла
+        self._wind_target_speed: float = 0.2  # цель для OU-дрейфа скорости
+
         # Инициализация начальных ресурсов
         if not bool(getattr(self.config, 'disable_random_water_lakes', False)):
             self._initialize_water_sources()
@@ -171,6 +179,9 @@ class Environment:
         # Обновление температуры
         self._update_temperature(timestep)
 
+        # Обновление ветра
+        self._update_wind()
+
     def _update_time_of_day(self, timestep: int):
         """Обновляет сутки и время (1 шаг = 1 сек)."""
         day_len = max(1, int(self.config.day_length_seconds))
@@ -204,6 +215,27 @@ class Environment:
         
         self.temperature += daily_variation * 0.1
     
+    def _update_wind(self):
+        """Обновление ветра по процессу Орнштейна-Уленбека."""
+        # Сезонные цели скорости: весна=0.25, лето=0.15, осень=0.35, зима=0.50
+        season_speed = [0.25, 0.15, 0.35, 0.50][self.season]
+        # Редко меняем цель направления (~каждые 300 тиков)
+        if self.random.random() < 0.003:
+            self._wind_target_angle = self.random.uniform(0, 2 * np.pi)
+        if self.random.random() < 0.01:
+            self._wind_target_speed = self.random.uniform(0.0, season_speed * 1.5)
+        # OU-шаг: подтягиваем к цели + гауссовский шум
+        kappa_a, sigma_a = 0.04, 0.15
+        kappa_s, sigma_s = 0.03, 0.08
+        self.wind_angle += kappa_a * (self._wind_target_angle - self.wind_angle) + \
+            self.np_random.randn() * sigma_a
+        self.wind_angle %= (2 * np.pi)
+        self.wind_speed += kappa_s * (self._wind_target_speed - self.wind_speed) + \
+            self.np_random.randn() * sigma_s
+        self.wind_speed = float(np.clip(self.wind_speed, 0.0, 1.0))
+        self.wind_dx = float(np.sin(self.wind_angle) * self.wind_speed)
+        self.wind_dy = float(-np.cos(self.wind_angle) * self.wind_speed)
+
     def _spawn_resources(self, timestep: int):
         """Создает новые ресурсы"""
         # Количество ресурсов зависит от сезона и обилия

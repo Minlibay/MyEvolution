@@ -15,6 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/translations.js"></script>
   <style>
     .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .kv { display:flex; gap:10px; font-size:12px; color:var(--text-secondary); }
@@ -87,10 +88,11 @@
       <span>{{PROJECT_NAME}}</span>
     </div>
     <div class="navbar-right">
-      <button id="leaderboardBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;" title="Лидерборд">🏆 Лидеры</button>
+      <button id="leaderboardBtn" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;" data-i18n-title="lb.title">🏆 <span data-i18n="nav.leaders">Лидеры</span></button>
+      <button id="langToggleBtn" onclick="setLang(currentLang === 'ru' ? 'en' : 'ru')" style="background:none;border:1px solid var(--border-default);color:var(--text-muted);cursor:pointer;font-size:12px;padding:3px 8px;border-radius:6px;font-weight:600;">EN</button>
       <div class="navbar-status">
         <span class="status-dot" id="statusDot"></span>
-        <span id="onlineCount">0</span> онлайн
+        <span id="onlineCount">0</span> <span data-i18n="nav.online">онлайн</span>
       </div>
     </div>
   </nav>
@@ -104,14 +106,14 @@
     <!-- Simulation Panel -->
     <div class="sim-panel" id="worldPanel">
       <div class="sim-info-bar" id="simInfoBar">
-        <div class="info-item">Тик: <span class="info-value" id="infoTick">0</span></div>
-        <div class="info-item">День: <span class="info-value" id="infoDay">0</span></div>
-        <div class="info-item">Время: <span class="info-value" id="infoTime">00:00</span></div>
-        <div class="info-item">Сезон: <span class="info-value" id="infoSeason">—</span></div>
-        <div class="info-item">Агенты: <span class="info-value" id="infoAgents">0</span></div>
+        <div class="info-item"><span data-i18n="info.tick">Тик</span>: <span class="info-value" id="infoTick">0</span></div>
+        <div class="info-item"><span data-i18n="info.day">День</span>: <span class="info-value" id="infoDay">0</span></div>
+        <div class="info-item"><span data-i18n="info.time">Время</span>: <span class="info-value" id="infoTime">00:00</span></div>
+        <div class="info-item"><span data-i18n="info.season">Сезон</span>: <span class="info-value" id="infoSeason">—</span></div>
+        <div class="info-item"><span data-i18n="info.agents">Агенты</span>: <span class="info-value" id="infoAgents">0</span></div>
         <div class="info-item">Run: <span class="info-value" id="infoRun">#1</span></div>
         <div id="worldControls" style="display:none; margin-left:auto;">
-          <button id="btnCreateAgent" class="btn btn-primary btn-sm">+ Создать агента</button>
+          <button id="btnCreateAgent" class="btn btn-primary btn-sm" data-i18n="agent.create_btn">+ Создать агента</button>
           <span id="createAgentState" class="text-sm text-muted" style="margin-left:6px;"></span>
         </div>
       </div>
@@ -126,11 +128,11 @@
     <!-- ===== SIDEBAR ===== -->
     <div class="sidebar">
       <div class="sidebar-tabs">
-        <div class="sidebar-tab active" data-tab="tab-chat">Чат</div>
-        <div class="sidebar-tab" data-tab="tab-events">События</div>
-        <div class="sidebar-tab" data-tab="tab-news">Новости</div>
-        <div class="sidebar-tab" data-tab="tab-agent">Агент</div>
-        <div class="sidebar-tab" data-tab="tab-history">История</div>
+        <div class="sidebar-tab active" data-tab="tab-chat" data-i18n="tab.chat">Чат</div>
+        <div class="sidebar-tab" data-tab="tab-events" data-i18n="tab.events">События</div>
+        <div class="sidebar-tab" data-tab="tab-news" data-i18n="tab.news">Новости</div>
+        <div class="sidebar-tab" data-tab="tab-agent" data-i18n="tab.agent">Агент</div>
+        <div class="sidebar-tab" data-tab="tab-history" data-i18n="tab.history">История</div>
       </div>
 
       <!-- TAB: Chat -->
@@ -139,18 +141,18 @@
           <div id="chatAuth" class="auth-section">
             <div class="form-row">
               <div class="form-group">
-                <label>Логин</label>
+                <label data-i18n="auth.login">Логин</label>
                 <input id="authUser" type="text" placeholder="username" />
               </div>
               <div class="form-group">
-                <label>Пароль</label>
+                <label data-i18n="auth.password">Пароль</label>
                 <input id="authPass" type="password" placeholder="password" />
               </div>
             </div>
             <div class="row" style="gap:6px;">
-              <button id="btnLogin" class="btn btn-primary btn-sm">Войти</button>
-              <button id="btnRegister" class="btn btn-secondary btn-sm">Регистрация</button>
-              <button id="btnLogout" class="btn btn-secondary btn-sm" style="display:none;">Выйти</button>
+              <button id="btnLogin" class="btn btn-primary btn-sm" data-i18n="auth.btn_login">Войти</button>
+              <button id="btnRegister" class="btn btn-secondary btn-sm" data-i18n="auth.btn_register">Регистрация</button>
+              <button id="btnLogout" class="btn btn-secondary btn-sm" style="display:none;" data-i18n="auth.btn_logout">Выйти</button>
               <span id="authState" class="text-sm text-muted"></span>
             </div>
           </div>
@@ -160,24 +162,24 @@
               <div class="auth-avatar" id="accountAvatar">?</div>
               <div>
                 <div id="accountText" class="text-sm" style="font-weight:600;"></div>
-                <a id="adminLink" href="/adminkins" style="display:none;" class="text-xs text-accent">Панель управления</a>
+                <a id="adminLink" href="/adminkins" style="display:none;" class="text-xs text-accent" data-i18n="auth.admin_panel">Панель управления</a>
               </div>
             </div>
-            <button id="btnLogout2" class="btn btn-secondary btn-xs">Выйти</button>
+            <button id="btnLogout2" class="btn btn-secondary btn-xs" data-i18n="auth.btn_logout">Выйти</button>
           </div>
 
           <div id="chatBox" style="display:none;">
             <div id="chatAdminBar">
-              <button id="btnChatClear" class="btn btn-secondary" title="Очистить чат для всех">🗑 Очистить чат</button>
-              <button id="btnChatPin" class="btn btn-secondary" title="Закрепить сообщение">📌 Закрепить</button>
-              <button id="btnChatBanInline" class="btn btn-secondary" title="Забанить пользователя">🚫 Бан</button>
+              <button id="btnChatClear" class="btn btn-secondary" data-i18n="chat.clear">🗑 Очистить чат</button>
+              <button id="btnChatPin" class="btn btn-secondary" data-i18n="chat.pin">📌 Закрепить</button>
+              <button id="btnChatBanInline" class="btn btn-secondary" data-i18n="chat.ban">🚫 Бан</button>
             </div>
-            <div id="chatPinned" class="chat-pinned"><b>📌 Закреплено:</b> <span id="chatPinnedText"></span></div>
-            <div id="chatAnnounce"><b>Анонс:</b> <span id="chatAnnounceText"></span></div>
+            <div id="chatPinned" class="chat-pinned"><b data-i18n="chat.pinned">📌 Закреплено:</b> <span id="chatPinnedText"></span></div>
+            <div id="chatAnnounce"><b data-i18n="chat.announce">Анонс:</b> <span id="chatAnnounceText"></span></div>
             <div id="chatMessages"></div>
             <div class="chat-input-row" style="margin-top:8px;">
-              <input id="chatInput" type="text" placeholder="Написать сообщение..." />
-              <button id="btnSend" class="btn btn-primary btn-sm" disabled>Отправить</button>
+              <input id="chatInput" type="text" data-i18n-placeholder="chat.placeholder" placeholder="Написать сообщение..." />
+              <button id="btnSend" class="btn btn-primary btn-sm" disabled data-i18n="chat.send">Отправить</button>
             </div>
           </div>
         </div>
@@ -186,7 +188,7 @@
       <!-- TAB: Events -->
       <div class="sidebar-panel" id="tab-events">
         <div class="panel-head">
-          <h3>События</h3>
+          <h3 data-i18n="events.title">События</h3>
         </div>
         <div id="events"></div>
       </div>
@@ -195,15 +197,15 @@
       <div class="sidebar-panel" id="tab-news">
         <div id="newsAdmin" style="display:none; margin-bottom:12px;">
           <div class="card">
-            <div class="card-title" style="margin-bottom:8px;">Добавить новость</div>
+            <div class="card-title" style="margin-bottom:8px;" data-i18n="news.add">Добавить новость</div>
             <div class="form-group" style="margin-bottom:6px;">
-              <input id="newsTitle" type="text" placeholder="Заголовок" />
+              <input id="newsTitle" type="text" data-i18n-placeholder="news.title_ph" placeholder="Заголовок" />
             </div>
             <div class="form-group" style="margin-bottom:6px;">
-              <textarea id="newsText" placeholder="Текст новости" rows="3"></textarea>
+              <textarea id="newsText" data-i18n-placeholder="news.text_ph" placeholder="Текст новости" rows="3"></textarea>
             </div>
             <div class="row">
-              <button id="btnPostNews" class="btn btn-primary btn-sm">Опубликовать</button>
+              <button id="btnPostNews" class="btn btn-primary btn-sm" data-i18n="news.publish">Опубликовать</button>
               <span id="newsAdminState" class="text-sm text-muted"></span>
             </div>
           </div>
@@ -216,8 +218,8 @@
         <!-- Пустое состояние -->
         <div id="myAgentState" class="agp-empty">
           <div class="agp-empty-icon" id="myAgentStateIcon">🌱</div>
-          <div id="myAgentStateText" class="agp-empty-text">Войдите и создайте агента,<br>чтобы следить за ним.</div>
-          <button id="btnEmptyCreateAgent" class="btn btn-primary" style="display:none; margin-top:4px;">+ Создать агента</button>
+          <div id="myAgentStateText" class="agp-empty-text" data-i18n-html="agent.login_create">Войдите и создайте агента,<br>чтобы следить за ним.</div>
+          <button id="btnEmptyCreateAgent" class="btn btn-primary" style="display:none; margin-top:4px;" data-i18n="agent.create_btn">+ Создать агента</button>
         </div>
         <!-- Тело панели -->
         <div id="myAgentBody" style="display:none">
@@ -228,7 +230,7 @@
               <div class="agp-hname" id="agpName"></div>
               <div class="agp-hsub"  id="agpSub"></div>
             </div>
-            <span id="agpBadge" class="badge badge-success">живёт</span>
+            <span id="agpBadge" class="badge badge-success" data-i18n="agp.badge_alive">живёт</span>
           </div>
           <!-- ЭКРАН 1: Главное меню (показатели + выбор раздела) -->
           <div class="agp-screen active" id="agpMainScreen">
@@ -266,40 +268,40 @@
               <div class="agp-menu-item" data-goto="agpInfoScreen">
                 <span class="agp-menu-icon">🧬</span>
                 <div class="agp-menu-text">
-                  <div class="agp-menu-title">Информация об агенте</div>
-                  <div class="agp-menu-sub">Состояние, навыки, дневник жизни</div>
+                  <div class="agp-menu-title" data-i18n="agp.menu_info">Информация об агенте</div>
+                  <div class="agp-menu-sub" data-i18n="agp.menu_info_sub">Состояние, навыки, дневник жизни</div>
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
               <div class="agp-menu-item" data-goto="agpChatScreen">
                 <span class="agp-menu-icon">⚡</span>
                 <div class="agp-menu-text">
-                  <div class="agp-menu-title">Дать команду</div>
-                  <div class="agp-menu-sub">Отправьте сообщение своему агенту</div>
+                  <div class="agp-menu-title" data-i18n="agp.menu_cmd">Дать команду</div>
+                  <div class="agp-menu-sub" data-i18n="agp.menu_cmd_sub">Отправьте сообщение своему агенту</div>
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
               <div class="agp-menu-item" data-goto="agpFamilyScreen">
                 <span class="agp-menu-icon">👨‍👩‍👦</span>
                 <div class="agp-menu-text">
-                  <div class="agp-menu-title">Семейное дерево</div>
-                  <div class="agp-menu-sub" id="agpFamilyMenuSub">Родители и дети</div>
+                  <div class="agp-menu-title" data-i18n="agp.menu_family">Семейное дерево</div>
+                  <div class="agp-menu-sub" id="agpFamilyMenuSub" data-i18n="agp.menu_family_sub">Родители и дети</div>
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
               <div class="agp-menu-item" data-goto="agpQuestsScreen">
                 <span class="agp-menu-icon">🎯</span>
                 <div class="agp-menu-text">
-                  <div class="agp-menu-title">Задания</div>
-                  <div class="agp-menu-sub" id="agpQuestsMenuSub">Цели агента</div>
+                  <div class="agp-menu-title" data-i18n="agp.menu_quests">Задания</div>
+                  <div class="agp-menu-sub" id="agpQuestsMenuSub" data-i18n="agp.menu_quests_sub">Цели агента</div>
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
               <div class="agp-menu-item" id="researchTreeBtn">
                 <span class="agp-menu-icon">🌳</span>
                 <div class="agp-menu-text">
-                  <div class="agp-menu-title">Дерево развития</div>
-                  <div class="agp-menu-sub">Улучшения и способности агента</div>
+                  <div class="agp-menu-title" data-i18n="agp.menu_research">Дерево развития</div>
+                  <div class="agp-menu-sub" data-i18n="agp.menu_research_sub">Улучшения и способности агента</div>
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
@@ -309,8 +311,8 @@
           <!-- ЭКРАН 2: Информация об агенте -->
           <div class="agp-screen" id="agpInfoScreen">
             <div class="agp-screen-top">
-              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
-              <span class="agp-screen-title">Информация об агенте</span>
+              <button class="agp-back" data-to="agpMainScreen" data-i18n="agp.back">‹ Назад</button>
+              <span class="agp-screen-title" data-i18n="agp.screen_info">Информация об агенте</span>
             </div>
             <div class="agp-screen-body" id="myAgentExtra"></div>
           </div>
@@ -318,8 +320,8 @@
           <!-- ЭКРАН 4: Семейное дерево -->
           <div class="agp-screen" id="agpFamilyScreen">
             <div class="agp-screen-top">
-              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
-              <span class="agp-screen-title">Семейное дерево</span>
+              <button class="agp-back" data-to="agpMainScreen" data-i18n="agp.back">‹ Назад</button>
+              <span class="agp-screen-title" data-i18n="agp.screen_family">Семейное дерево</span>
             </div>
             <div class="agp-screen-body" id="agpFamilyBody"></div>
           </div>
@@ -327,34 +329,34 @@
           <!-- ЭКРАН 5: Задания -->
           <div class="agp-screen" id="agpQuestsScreen">
             <div class="agp-screen-top">
-              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
-              <span class="agp-screen-title">🎯 Задания</span>
+              <button class="agp-back" data-to="agpMainScreen" data-i18n="agp.back">‹ Назад</button>
+              <span class="agp-screen-title" data-i18n="agp.screen_quests">🎯 Задания</span>
             </div>
             <div class="agp-screen-body" id="agpQuestsBody">
-              <div class="text-xs text-muted" style="padding:12px 0 4px">Загрузка...</div>
+              <div class="text-xs text-muted" style="padding:12px 0 4px" data-i18n="ui.loading">Загрузка...</div>
             </div>
           </div>
 
           <!-- ЭКРАН 3: Дать команду -->
           <div class="agp-screen" id="agpChatScreen">
             <div class="agp-screen-top">
-              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
-              <span class="agp-screen-title">Дать команду</span>
+              <button class="agp-back" data-to="agpMainScreen" data-i18n="agp.back">‹ Назад</button>
+              <span class="agp-screen-title" data-i18n="agp.screen_cmd">Дать команду</span>
             </div>
             <div class="agp-cmds">
-              <div class="agp-cmd-title">Быстрые команды</div>
+              <div class="agp-cmd-title" data-i18n="cmd.title">Быстрые команды</div>
               <div class="agp-cmd-chips">
-                <button class="agp-chip" data-cmd="Найди еду">🍖 Найди еду</button>
-                <button class="agp-chip" data-cmd="Попей воды">💧 Попей воды</button>
-                <button class="agp-chip" data-cmd="Отдохни и восстановись">💤 Отдохни</button>
-                <button class="agp-chip" data-cmd="Исследуй территорию вокруг">🗺️ Исследуй</button>
-                <button class="agp-chip" data-cmd="Пообщайся с другими агентами">🤝 Общение</button>
-                <button class="agp-chip" data-cmd="Как ты себя чувствуешь?">💬 Как ты?</button>
+                <button class="agp-chip" data-cmd="Найди еду" data-cmd-key="find_food" data-i18n="cmd.find_food">🍖 Найди еду</button>
+                <button class="agp-chip" data-cmd="Попей воды" data-cmd-key="drink" data-i18n="cmd.drink">💧 Попей воды</button>
+                <button class="agp-chip" data-cmd="Отдохни и восстановись" data-cmd-key="rest" data-i18n="cmd.rest">💤 Отдохни</button>
+                <button class="agp-chip" data-cmd="Исследуй территорию вокруг" data-cmd-key="explore" data-i18n="cmd.explore">🗺️ Исследуй</button>
+                <button class="agp-chip" data-cmd="Пообщайся с другими агентами" data-cmd-key="socialize" data-i18n="cmd.socialize">🤝 Общение</button>
+                <button class="agp-chip" data-cmd="Как ты себя чувствуешь?" data-cmd-key="howru" data-i18n="cmd.howru">💬 Как ты?</button>
               </div>
             </div>
             <div id="agentChatMessages"></div>
             <div class="agp-chat-input">
-              <input id="agentChatInput" placeholder="Написать команду агенту…" maxlength="300" />
+              <input id="agentChatInput" data-i18n-placeholder="cmd.placeholder" placeholder="Написать команду агенту…" maxlength="300" />
               <button id="btnAgentChatSend" class="btn btn-primary btn-sm">↑</button>
             </div>
             <div id="agentChatStatus" class="agp-chat-status"></div>
@@ -365,7 +367,7 @@
       <!-- TAB: History -->
       <div class="sidebar-panel" id="tab-history">
         <div class="panel-head">
-          <h3>История запусков</h3>
+          <h3 data-i18n="history.title">История запусков</h3>
         </div>
         <div id="history" style="font-family:var(--font-mono); font-size:12px; flex:1; min-height:0; overflow-y:auto;"></div>
       </div>
@@ -378,42 +380,42 @@
   <div class="modal">
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
       <div>
-        <div class="modal-title">Создать агента</div>
-        <div class="text-sm text-muted">Агент появится в мире и будет участвовать в эксперименте</div>
+        <div class="modal-title" data-i18n="modal.create_title">Создать агента</div>
+        <div class="text-sm text-muted" data-i18n="modal.create_sub">Агент появится в мире и будет участвовать в эксперименте</div>
       </div>
-      <button id="btnCloseAgentModal" class="btn btn-secondary btn-sm">Закрыть</button>
+      <button id="btnCloseAgentModal" class="btn btn-secondary btn-sm" data-i18n="modal.close">Закрыть</button>
     </div>
 
     <div class="form-group" style="margin-bottom:12px;">
-      <label>Имя</label>
-      <input id="agentName" type="text" placeholder="например: Кин" />
+      <label data-i18n="modal.name">Имя</label>
+      <input id="agentName" type="text" data-i18n-placeholder="modal.name_ph" placeholder="например: Кин" />
     </div>
 
     <div class="form-group" style="margin-bottom:12px;">
-      <label>Пол</label>
+      <label data-i18n="modal.sex">Пол</label>
       <div class="radio-group">
-        <label class="radio-label"><input type="radio" name="agentSex" value="male" checked /> мужской</label>
-        <label class="radio-label"><input type="radio" name="agentSex" value="female" /> женский</label>
+        <label class="radio-label"><input type="radio" name="agentSex" value="male" checked /> <span data-i18n="modal.sex_male">мужской</span></label>
+        <label class="radio-label"><input type="radio" name="agentSex" value="female" /> <span data-i18n="modal.sex_female">женский</span></label>
       </div>
     </div>
 
     <div class="form-group" style="margin-bottom:12px;">
-      <label>Характеристики (5 очков)</label>
+      <label data-i18n="modal.stats">Характеристики (5 очков)</label>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px;">
         <div class="form-group">
-          <label class="text-xs">Сила</label>
+          <label class="text-xs" data-i18n="modal.stat_strength">Сила</label>
           <input id="agentStatsStrength" type="number" min="0" max="3" value="0" />
         </div>
         <div class="form-group">
-          <label class="text-xs">Интеллект</label>
+          <label class="text-xs" data-i18n="modal.stat_intelligence">Интеллект</label>
           <input id="agentStatsIntelligence" type="number" min="0" max="3" value="0" />
         </div>
         <div class="form-group">
-          <label class="text-xs">Социальность</label>
+          <label class="text-xs" data-i18n="modal.stat_social">Социальность</label>
           <input id="agentStatsSocial" type="number" min="0" max="3" value="0" />
         </div>
         <div class="form-group">
-          <label class="text-xs">Выносливость</label>
+          <label class="text-xs" data-i18n="modal.stat_endurance">Выносливость</label>
           <input id="agentStatsEndurance" type="number" min="0" max="3" value="0" />
         </div>
       </div>
@@ -422,15 +424,15 @@
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
       <div id="agentStatsLeft" class="text-sm text-muted"></div>
       <div class="preset-group">
-        <button id="btnPresetInventor" class="preset-btn">Изобретатель</button>
-        <button id="btnPresetSurvivor" class="preset-btn">Выживальщик</button>
-        <button id="btnPresetLeader" class="preset-btn">Вождь</button>
+        <button id="btnPresetInventor" class="preset-btn" data-i18n="modal.preset_inventor">Изобретатель</button>
+        <button id="btnPresetSurvivor" class="preset-btn" data-i18n="modal.preset_survivor">Выживальщик</button>
+        <button id="btnPresetLeader" class="preset-btn" data-i18n="modal.preset_leader">Вождь</button>
       </div>
     </div>
 
     <div class="modal-actions">
       <span id="agentModalState" class="text-sm text-muted"></span>
-      <button id="btnSubmitAgent" class="btn btn-primary">Создать</button>
+      <button id="btnSubmitAgent" class="btn btn-primary" data-i18n="modal.create">Создать</button>
     </div>
   </div>
 </div>
@@ -438,19 +440,15 @@
 <!-- ===== WELCOME MODAL ===== -->
 <div id="welcomeModal" class="modal-overlay">
   <div class="modal" style="max-width:600px;">
-    <div class="modal-title">О проекте</div>
-    <div class="text-sm text-muted" style="margin-bottom:12px;">Коротко: это интерактивная симуляция эволюции поведения агентов и появления инструментов</div>
+    <div class="modal-title" data-i18n="welcome.title">О проекте</div>
+    <div class="text-sm text-muted" style="margin-bottom:12px;" data-i18n="welcome.sub">Коротко: это интерактивная симуляция эволюции поведения агентов и появления инструментов</div>
     <div style="font-size:13px; color:var(--text-secondary); line-height:1.5;">
-      <p style="margin-bottom:10px;">
-        Здесь можно наблюдать за жизнью агентов в 2D-мире: они перемещаются, собирают ресурсы, общаются, пытаются выжить, а также могут открывать и использовать инструменты.
-      </p>
-      <p style="margin-bottom:10px;">
-        Если ты зарегистрируешься и войдёшь, ты сможешь <b style="color:var(--text-primary);">создать собственного агента</b> — он появится в мире, и ты сможешь следить за его состоянием, действиями и судьбой.
-      </p>
+      <p style="margin-bottom:10px;" data-i18n="welcome.p1">Здесь можно наблюдать за жизнью агентов в 2D-мире: они перемещаются, собирают ресурсы, общаются, пытаются выжить, а также могут открывать и использовать инструменты.</p>
+      <p style="margin-bottom:10px;" data-i18n-html="welcome.p2">Если ты зарегистрируешься и войдёшь, ты сможешь <b style="color:var(--text-primary);">создать собственного агента</b> — он появится в мире, и ты сможешь следить за его состоянием, действиями и судьбой.</p>
     </div>
     <div class="modal-actions">
       <button id="btnCloseWelcome" class="btn btn-secondary btn-sm" style="display:none;">_</button>
-      <button id="btnWelcomeOk" class="btn btn-primary">Понятно</button>
+      <button id="btnWelcomeOk" class="btn btn-primary" data-i18n="welcome.ok">Понятно</button>
     </div>
   </div>
 </div>
@@ -458,13 +456,11 @@
 <!-- ===== COOKIE BAR ===== -->
 <div id="cookieBar" class="cookie-bar">
   <div id="cookieText">
-    <b>Файлы cookie</b>. Мы используем cookie и похожие технологии для обеспечения работы сайта, безопасности, авторизации/сессии, сохранения настроек интерфейса и аналитики.
-    Cookie могут содержать технические идентификаторы и информацию о действиях на сайте. Нажимая «Принять» и продолжая пользоваться сайтом, ты даёшь согласие на обработку таких данных и установку cookie.
-    Согласие можно отозвать, удалив cookie в браузере и/или запретив их в настройках браузера (при этом часть функций может работать некорректно).
-    Если используются сторонние сервисы (например, сети баннеров/аналитики), они могут устанавливать свои cookie согласно своим политикам. Подробнее: <a href="/privacy" target="_blank" rel="noopener noreferrer">Политика cookie/конфиденциальности</a>.
+    <b data-i18n="cookie.title">Файлы cookie</b>. <span data-i18n="cookie.text">Мы используем cookie и похожие технологии для обеспечения работы сайта, безопасности, авторизации/сессии, сохранения настроек интерфейса и аналитики.</span>
+    Подробнее: <a href="/privacy" target="_blank" rel="noopener noreferrer" data-i18n="cookie.policy">Политика cookie/конфиденциальности</a>.
   </div>
   <div style="flex-shrink:0;">
-    <button id="btnCookieAccept" class="btn btn-primary btn-sm">Принять</button>
+    <button id="btnCookieAccept" class="btn btn-primary btn-sm" data-i18n="cookie.accept">Принять</button>
   </div>
 </div>
 
@@ -472,39 +468,39 @@
 <div id="onboardingOverlay" class="onboarding-overlay" style="display:none">
   <div class="onboarding-card">
     <div class="onboarding-logo">🌍</div>
-    <h2 class="onboarding-title">Добро пожаловать в WorldES</h2>
-    <p class="onboarding-sub">Симуляция эволюции живых существ в реальном времени. Создайте своего агента и наблюдайте за его жизнью!</p>
+    <h2 class="onboarding-title" data-i18n="onboarding.title">Добро пожаловать в WorldES</h2>
+    <p class="onboarding-sub" data-i18n="onboarding.sub">Симуляция эволюции живых существ в реальном времени. Создайте своего агента и наблюдайте за его жизнью!</p>
     <div class="onboarding-steps">
       <div class="onboarding-step">
         <span class="onboarding-step-num">1</span>
         <div>
-          <div class="onboarding-step-title">Зарегистрируйтесь</div>
-          <div class="onboarding-step-sub">Создайте аккаунт — это займёт секунду</div>
+          <div class="onboarding-step-title" data-i18n="onboarding.step1_title">Зарегистрируйтесь</div>
+          <div class="onboarding-step-sub" data-i18n="onboarding.step1_sub">Создайте аккаунт — это займёт секунду</div>
         </div>
       </div>
       <div class="onboarding-step">
         <span class="onboarding-step-num">2</span>
         <div>
-          <div class="onboarding-step-title">Создайте агента</div>
-          <div class="onboarding-step-sub">Настройте имя, пол и характеристики</div>
+          <div class="onboarding-step-title" data-i18n="onboarding.step2_title">Создайте агента</div>
+          <div class="onboarding-step-sub" data-i18n="onboarding.step2_sub">Настройте имя, пол и характеристики</div>
         </div>
       </div>
       <div class="onboarding-step">
         <span class="onboarding-step-num">3</span>
         <div>
-          <div class="onboarding-step-title">Следите и общайтесь</div>
-          <div class="onboarding-step-sub">Наблюдайте за жизнью агента и давайте ему команды</div>
+          <div class="onboarding-step-title" data-i18n="onboarding.step3_title">Следите и общайтесь</div>
+          <div class="onboarding-step-sub" data-i18n="onboarding.step3_sub">Наблюдайте за жизнью агента и давайте ему команды</div>
         </div>
       </div>
     </div>
-    <button id="btnOnboardingStart" class="btn btn-primary" style="width:100%; padding:12px;">Начать →</button>
+    <button id="btnOnboardingStart" class="btn btn-primary" style="width:100%; padding:12px;" data-i18n="onboarding.start">Начать →</button>
   </div>
 </div>
 
 <!-- ── Дерево развития ──────────────────────────────────────────────── -->
 <div id="researchPanel" class="lb-panel rt-panel">
   <div class="lb-header">
-    <span>🌳 Дерево развития</span>
+    <span data-i18n="rt.title">🌳 Дерево развития</span>
     <span id="rtPointsBadge" class="rt-points-badge"><span>✦</span><span id="rtPtsNum">—</span></span>
     <button id="rtClose" class="lb-close">✕</button>
   </div>
@@ -514,13 +510,13 @@
 <!-- ── Лидерборд-панель ─────────────────────────────────────────────── -->
 <div id="leaderboardPanel" class="lb-panel">
   <div class="lb-header">
-    <span>🏆 Лидеры симуляции</span>
+    <span data-i18n="lb.title">🏆 Лидеры симуляции</span>
     <button id="lbClose" class="lb-close">✕</button>
   </div>
   <div class="lb-tabs">
-    <button class="lb-tab active" data-tab="age">По возрасту</button>
-    <button class="lb-tab" data-tab="family">По семье</button>
-    <button class="lb-tab" data-tab="skills">По навыкам</button>
+    <button class="lb-tab active" data-tab="age" data-i18n="lb.tab_age">По возрасту</button>
+    <button class="lb-tab" data-tab="family" data-i18n="lb.tab_family">По семье</button>
+    <button class="lb-tab" data-tab="skills" data-i18n="lb.tab_skills">По навыкам</button>
   </div>
   <div id="lbBody" class="lb-body"></div>
 </div>
@@ -528,11 +524,11 @@
 <!-- ── Легаси-модал ─────────────────────────────────────────────────── -->
 <div id="legacyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(6px);z-index:9999;align-items:center;justify-content:center;">
   <div style="background:#111827;border:1px solid rgba(239,68,68,0.25);border-radius:16px;padding:28px 24px 20px;max-width:340px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,0.8),0 0 0 1px rgba(239,68,68,0.08);">
-    <div id="legacyTitle" style="font-size:19px;font-weight:700;margin-bottom:12px;color:#f87171;display:flex;align-items:center;gap:8px;">☠ Агент погиб</div>
+    <div id="legacyTitle" style="font-size:19px;font-weight:700;margin-bottom:12px;color:#f87171;display:flex;align-items:center;gap:8px;" data-i18n="legacy.title">☠ Агент погиб</div>
     <div id="legacyBody" style="font-size:13px;margin-bottom:20px;line-height:1.6;color:#c9cdd8;"></div>
     <div style="display:flex;gap:8px;flex-direction:column;">
-      <button id="legacyInheritBtn" style="background:#6366f1;color:#fff;border:none;border-radius:10px;padding:11px;cursor:pointer;font-size:14px;font-weight:600;transition:background 0.15s;">👶 Перейти к ребёнку</button>
-      <button id="legacyNewBtn" style="background:rgba(255,255,255,0.05);color:#9ca3b4;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px;cursor:pointer;font-size:13px;transition:background 0.15s;">Понятно</button>
+      <button id="legacyInheritBtn" style="background:#6366f1;color:#fff;border:none;border-radius:10px;padding:11px;cursor:pointer;font-size:14px;font-weight:600;transition:background 0.15s;" data-i18n="legacy.inherit">👶 Перейти к ребёнку</button>
+      <button id="legacyNewBtn" style="background:rgba(255,255,255,0.05);color:#9ca3b4;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px;cursor:pointer;font-size:13px;transition:background 0.15s;" data-i18n="legacy.ok">Понятно</button>
     </div>
   </div>
 </div>
@@ -560,15 +556,13 @@
   const statusDot = document.getElementById('statusDot');
   const accountAvatar = document.getElementById('accountAvatar');
 
-  const seasonNames = ['Весна', 'Лето', 'Осень', 'Зима'];
-
   function updateInfoBar(snap) {
     if (!snap || !snap.world) return;
     try {
       if (infoTick) infoTick.textContent = snap.timestep || 0;
       if (infoDay) infoDay.textContent = snap.world.day || 0;
       if (infoTime) infoTime.textContent = String(snap.world.hour || 0).padStart(2,'0') + ':' + String(snap.world.minute || 0).padStart(2,'0');
-      if (infoSeason) infoSeason.textContent = seasonNames[snap.world.season] || '—';
+      if (infoSeason) infoSeason.textContent = t('season.' + (snap.world.season ?? '')) || '—';
       if (infoAgents) infoAgents.textContent = (snap.agents || []).length;
       if (infoRun) infoRun.textContent = '#' + (snap.run_number || snap.run_info?.number || 1);
       if (onlineCountEl && snap.online) onlineCountEl.textContent = snap.online.viewers || 0;
@@ -774,27 +768,9 @@
 
   cv.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  const ruAction = {
-    move: 'идёт',
-    gather: 'собирает',
-    consume: 'ест',
-    drink: 'пьёт',
-    sleep: 'спит',
-    communicate: 'общается',
-    mate: 'спаривается',
-    care: 'заботится о ребёнке',
-    combine: 'крафтит',
-    break: 'ломает',
-    attack: 'охотится',
-    rest: 'отдыхает',
-    light_fire: 'разводит костёр',
-    plant_berry: 'сажает куст',
-    share: 'делится ягодами',
-  };
-
   function actionToRu(action) {
     if (!action) return '...';
-    return ruAction[action] || 'действует';
+    return t('action.' + action) || t('action.default');
   }
 
   function renderHistory(snapshot) {
@@ -804,18 +780,18 @@
     el.innerHTML = '';
 
     const reasonRu = {
-      'смерть Адама и Евы': 'все агенты погибли',
-      'перезапуск': 'ручной перезапуск',
-      'ошибка симуляции': 'ошибка симуляции',
-      'применение карты': 'применение новой карты',
-      'перезапуск сервера': 'перезапуск сервера',
+      'смерть Адама и Евы': t('reason.all_dead'),
+      'перезапуск': t('reason.restart'),
+      'ошибка симуляции': t('reason.error'),
+      'применение карты': t('reason.map'),
+      'перезапуск сервера': t('reason.server'),
     };
-    const rruFallback = (r) => r && r.trim() ? r : 'причина неизвестна';
+    const rruFallback = (r) => r && r.trim() ? r : t('reason.unknown');
 
     if (!items.length) {
       const div = document.createElement('div');
       div.className = 'event';
-      div.textContent = 'История перезапусков пустая.';
+      div.textContent = t('history.empty');
       el.appendChild(div);
       return;
     }
@@ -835,7 +811,7 @@
         const hlth = (d.health === undefined || d.health === null) ? '—' : d.health.toFixed(2);
         const age = (d.age === undefined || d.age === null) ? '—' : d.age;
         if (d.cause_ru) {
-          extra = `; ${d.cause_ru}${agent}; голод=${hng} жажда=${thr} сон=${slp} энергия=${eng} здоровье=${hlth} возраст=${age}`;
+          extra = `; ${getCauseStr(d)}${agent}; ${t('stat.hunger')}=${hng} ${t('stat.thirst')}=${thr} ${t('stat.sleep')}=${slp} ${t('stat.energy')}=${eng} ${t('stat.health')}=${hlth} ${t('stat.age')}=${age}`;
         } else if (d.message) {
           const where = d.where ? ` (${d.where})` : '';
           extra = `; ${d.message}${where}`;
@@ -854,7 +830,7 @@
       const rru = reasonRu[h.reason] || rruFallback(h.reason);
       const dur = h.duration_sec_wall ? ` · ${h.duration_sec_wall.toFixed(1)}s` : '';
       const ts = h.ended_at_timestep ? `t=${h.ended_at_timestep}` : '';
-      const dy = h.ended_at_day ? `день ${h.ended_at_day}` : '';
+      const dy = h.ended_at_day ? `${t('info.day').toLowerCase()} ${h.ended_at_day}` : '';
       const tm = h.ended_at_time ? h.ended_at_time : '';
       const when = [ts, dy, tm].filter(Boolean).join(' ');
       const whenStr = when ? `; ${when}` : '';
@@ -905,22 +881,8 @@
     return '#ff4d6d';
   }
 
-  const ruObj = {
-    stone: 'камень',
-    wood: 'дерево',
-    plant: 'растение',
-    berry: 'ягоды',
-    bone: 'кость',
-    fiber: 'волокно',
-    animal: 'мясо',
-    water: 'вода',
-  };
-
-  const ruToolKind = {
-    wooden_axe: 'деревянный топор',
-    wooden_spear: 'деревянное копьё',
-    stone_hammer: 'каменный молот',
-  };
+  function objName(type) { return t('obj.' + type) || type; }
+  function toolName(kind) { return t('tool.' + kind) || kind; }
 
   function escapeHtml(s) {
     return String(s)
@@ -996,17 +958,18 @@
   function renderDeadAgentTooltip(d) {
     if (!agentTooltip) return;
     if (!d) { agentTooltip.style.display = 'none'; return; }
-    const causeRu = d.cause_ru || d.cause || '?';
+    const causeRu = getCauseStr(d);
     const name = escapeHtml(d.name || d.id);
-    const owner = d.owner_username ? `<div class="muted">создатель: <span class="mono">${escapeHtml(d.owner_username)}</span></div>` : '';
-    const pers = d.personality_ru ? `<div class="muted">характер: ${escapeHtml(d.personality_ru)}</div>` : '';
+    const owner = d.owner_username ? `<div class="muted">${t('tooltip.creator')}: <span class="mono">${escapeHtml(d.owner_username)}</span></div>` : '';
+    const _dPers = getPersonalityStr(d);
+    const pers = _dPers ? `<div class="muted">${t('tooltip.character')}: ${escapeHtml(_dPers)}</div>` : '';
     agentTooltip.innerHTML = `
       <div class="title" style="color:#c87a7a;">☠ ${name}</div>
       ${owner}
-      <div class="muted">статус: <b style="color:#e57373;">Умер</b></div>
-      <div class="muted">причина: <b>${escapeHtml(causeRu)}</b></div>
-      <div class="muted">прожил: ${d.age} тиков</div>
-      <div class="muted">умер на t=${d.died_at}</div>
+      <div class="muted">${t('tooltip.status')}: <b style="color:#e57373;">${t('tooltip.dead')}</b></div>
+      <div class="muted">${t('tooltip.cause')}: <b>${escapeHtml(causeRu)}</b></div>
+      <div class="muted">${t('tooltip.lived')}: ${d.age} ${t('legacy.ticks')}</div>
+      <div class="muted">${t('tooltip.died_at')}${d.died_at}</div>
       ${pers}
     `;
     agentTooltip.style.display = 'block';
@@ -1061,46 +1024,46 @@
     for (const k of keys) {
       const v = byType[k];
       if (!v) continue;
-      invParts.push(`${ruObj[k] || k}=${v}`);
+      invParts.push(`${objName(k)}=${v}`);
     }
     if (food !== null) {
-      invParts.push(`еда=${food}`);
+      invParts.push(`${t('obj.food')}=${food}`);
     }
 
     const tools = agent.tools_list || [];
     const toolParts = [];
     for (const t of tools) {
       const kind = t.kind || null;
-      const label = kind ? (ruToolKind[kind] || kind) : (t.tool_type || 'tool');
+      const label = kind ? toolName(kind) : (t.tool_type || 'tool');
       const d = (t.durability_left === undefined || t.durability_left === null) ? null : t.durability_left.toFixed(0);
       toolParts.push(d ? `${label} (${d}%)` : `${label}`);
     }
 
     const title = escapeHtml(agent.name || agent.id);
-    const invLine = invParts.length ? escapeHtml(invParts.join(', ')) : 'пусто';
-    const toolLine = toolParts.length ? escapeHtml(toolParts.join(', ')) : 'нет';
+    const invLine = invParts.length ? escapeHtml(invParts.join(', ')) : t('tooltip.empty');
+    const toolLine = toolParts.length ? escapeHtml(toolParts.join(', ')) : t('tooltip.none');
 
     const ownerLine = agent.owner_username
-      ? `<div class="muted">создатель: <span class="mono">${escapeHtml(agent.owner_username)}</span></div>`
+      ? `<div class="muted">${t('tooltip.creator')}: <span class="mono">${escapeHtml(agent.owner_username)}</span></div>`
       : '';
 
     const pregnantLine = (agent.sex === 'female' && agent.pregnant)
-      ? `<div style="color:#f8a4c8;font-size:11px;margin-top:2px">🤰 Беременна — осталось ${agent.pregnancy_remaining || 0} тик.</div>`
+      ? `<div style="color:#f8a4c8;font-size:11px;margin-top:2px">${escapeHtml(t('tooltip.pregnant', agent.pregnancy_remaining || 0))}</div>`
       : '';
 
     const swimLine = agent.is_swimming
-      ? `<div class="muted">статус: <span class="mono">плавает</span> (${escapeHtml(agent.water_ticks ?? 0)})</div>`
+      ? `<div class="muted">${t('tooltip.status')}: <span class="mono">${t('tooltip.swimming_label')}</span> (${escapeHtml(agent.water_ticks ?? 0)})</div>`
       : '';
 
     // Personality & mood
-    const personalityLine = agent.personality_ru
-      ? `<div class="muted">характер: <b>${escapeHtml(agent.personality_ru)}</b></div>`
+    const _persStr = getPersonalityStr(agent);
+    const personalityLine = _persStr
+      ? `<div class="muted">${t('tooltip.character')}: <b>${escapeHtml(_persStr)}</b></div>`
       : '';
 
-    const emotionRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
-    const domEmo = agent.dominant_emotion ? (emotionRu[agent.dominant_emotion] || agent.dominant_emotion) : null;
+    const domEmo = agent.dominant_emotion ? t('emo.' + agent.dominant_emotion) : null;
     const moodLine = agent.mood
-      ? `<div class="muted">настроение: <b>${escapeHtml(agent.mood)}</b>${domEmo ? ' (' + escapeHtml(domEmo) + ')' : ''}</div>`
+      ? `<div class="muted">${t('tooltip.mood')}: <b>${escapeHtml(agent.mood)}</b>${domEmo ? ' (' + escapeHtml(domEmo) + ')' : ''}</div>`
       : '';
 
     const thoughtLine = agent.thought
@@ -1114,33 +1077,33 @@
       const fam = (agent.social.family || []).length;
       if (friends.length || fam) {
         const parts = [];
-        if (fam) parts.push(`семья: ${fam}`);
+        if (fam) parts.push(`${t('ft.family_short')}: ${fam}`);
         for (const f of friends) {
           const name = findAgentName(f.id);
           parts.push(`${escapeHtml(name)}: ${f.trust > 0.5 ? '❤' : '👍'}`);
         }
-        socialLine = `<div class="muted">связи: ${parts.join(', ')}</div>`;
+        socialLine = `<div class="muted">${t('tooltip.connections')}: ${parts.join(', ')}</div>`;
       }
     }
 
     // Skills
-    const skillsLine = agent.skills_ru
-      ? `<div class="muted">навыки: <b>${escapeHtml(agent.skills_ru)}</b></div>`
+    const _skillsStr = getSkillsStr(agent);
+    const skillsLine = _skillsStr
+      ? `<div class="muted">${t('tooltip.skills')}: <b>${escapeHtml(_skillsStr)}</b></div>`
       : '';
 
     // Achievements (icons only in tooltip)
     let achieveLine = '';
     if (agent.achievements && agent.achievements.length) {
       const icons = agent.achievements.map(a => a.icon || '⭐').join('');
-      achieveLine = `<div class="muted">достижения: ${icons}</div>`;
+      achieveLine = `<div class="muted">${t('tooltip.achievements')}: ${icons}</div>`;
     }
 
     // Last diary entry
     let diaryLine = '';
     if (agent.life_log && agent.life_log.length) {
       const last = agent.life_log[agent.life_log.length - 1];
-      const emotionRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
-      const emoTag = last.emo ? ` <span style="opacity:0.6">(${emotionRu[last.emo] || last.emo})</span>` : '';
+      const emoTag = last.emo ? ` <span style="opacity:0.6">(${t('emo.' + last.emo)})</span>` : '';
       diaryLine = `<div class="muted" style="margin-top:3px;font-style:italic;">${last.icon || '📝'} ${escapeHtml(last.text)}${emoTag}</div>`;
     }
 
@@ -1156,10 +1119,10 @@
       ${diaryLine}
       ${swimLine}
       ${socialLine}
-      <div class="muted">Инвентарь:</div>
+      <div class="muted">${t('tooltip.inventory')}:</div>
       <div class="mono">${invLine}</div>
       <div style="height:4px"></div>
-      <div class="muted">Инструменты:</div>
+      <div class="muted">${t('tooltip.tools')}:</div>
       <div class="mono">${toolLine}</div>
     `;
     agentTooltip.style.display = 'block';
@@ -1178,7 +1141,7 @@
       return;
     }
 
-    const title = `${ruObj[obj.type] || obj.type}`;
+    const title = objName(obj.type);
     const qty = (obj.quantity === undefined || obj.quantity === null) ? 1 : obj.quantity;
 
     const nutrition = (obj.nutrition === undefined || obj.nutrition === null) ? null : obj.nutrition;
@@ -1187,11 +1150,11 @@
     const durability = (obj.durability === undefined || obj.durability === null) ? null : obj.durability;
 
     const lines = [];
-    lines.push(`кол-во=${qty}`);
-    if (nutrition !== null && nutrition > 0) lines.push(`питательность=${nutrition.toFixed(2)}`);
-    if (toxicity !== null && toxicity > 0) lines.push(`токсичность=${toxicity.toFixed(2)}`);
-    if (hardness !== null && hardness > 0) lines.push(`твёрдость=${hardness.toFixed(2)}`);
-    if (durability !== null && durability > 0) lines.push(`прочность=${durability.toFixed(2)}`);
+    lines.push(`${t('tooltip.qty')}=${qty}`);
+    if (nutrition !== null && nutrition > 0) lines.push(`${t('tooltip.nutrition')}=${nutrition.toFixed(2)}`);
+    if (toxicity !== null && toxicity > 0) lines.push(`${t('tooltip.toxicity')}=${toxicity.toFixed(2)}`);
+    if (hardness !== null && hardness > 0) lines.push(`${t('tooltip.hardness')}=${hardness.toFixed(2)}`);
+    if (durability !== null && durability > 0) lines.push(`${t('tooltip.durability')}=${durability.toFixed(2)}`);
 
     agentTooltip.innerHTML = `
       <div class="title">${escapeHtml(title)}</div>
@@ -1346,7 +1309,7 @@
       }
       // Подпись "Имя: Умер"
       const dName = d.name || d.id;
-      const dText = `${dName}: Умер`;
+      const dText = `${dName}: ${t('canvas.dead_label')}`;
       ctx.save();
       ctx.font = '11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const dtw = ctx.measureText(dText).width;
@@ -1457,11 +1420,11 @@
       let bubbleColor = '#e7e9ee';
 
       if (a.is_child) {
-        bubbleText = `${who} (ребёнок)`;
+        bubbleText = `${who} ${t('canvas.child')}`;
       }
       if (a.pregnant) {
         const pr = a.pregnancy_remaining ?? 0;
-        bubbleText = `${who}: беременность (${pr})`;
+        bubbleText = `${who}: ${t('canvas.pregnant')} (${pr})`;
       }
       if (a.speech) {
         bubbleText = `${who}: ${a.speech}`;
@@ -1473,7 +1436,7 @@
         bubbleBorder = 'rgba(99,102,241,0.3)';
         bubbleColor = '#a5b4fc';
       } else if (a.is_swimming) {
-        bubbleText = `${who}: плавает`;
+        bubbleText = `${who}: ${t('canvas.swimming')}`;
       } else if (a.last_action) {
         bubbleText = `${who}: ${actionToRu(a.last_action)}`;
       }
@@ -1663,11 +1626,11 @@
       div.className = 'event';
       if (e.type === 'agent_action') {
         const who = nameById.get(e.agent_id) || e.agent_id;
-        div.textContent = `[t=${e.timestamp}] ${who} -> ${actionToRu(e.action)} успех=${e.success} награда=${(e.reward ?? 0).toFixed(2)}`;
+        div.textContent = `[t=${e.timestamp}] ${who} -> ${actionToRu(e.action)} ${t('ev.success')}=${e.success} ${t('ev.reward')}=${(e.reward ?? 0).toFixed(2)}`;
       } else if (e.type === 'communication') {
         const speaker = nameById.get(e.speaker_id) || e.speaker_id;
         const listener = nameById.get(e.listener_id) || e.listener_id;
-        div.textContent = `[t=${e.timestamp}] ${speaker} сказал '${e.token}' → ${listener} (успех=${e.success})`;
+        div.textContent = `[t=${e.timestamp}] ${speaker} ${t('ev.said')} '${e.token}' → ${listener} (${t('ev.success')}=${e.success})`;
       } else {
         const who = e.agent_id ? (nameById.get(e.agent_id) || e.agent_id) : '';
         div.textContent = `[t=${e.timestamp}] ${e.type} ${who}`;
@@ -1694,7 +1657,7 @@
     const deathKeys = Object.keys(deaths);
     deathKeys.sort();
     for (const k of deathKeys) {
-      deathParts.push(`${k}=${deaths[k]}`);
+      deathParts.push(`${t('cause.' + k) || k}=${deaths[k]}`);
     }
     const deathLine = deathParts.length ? deathParts.join(', ') : '—';
 
@@ -1703,24 +1666,24 @@
     const kindKeys = Object.keys(kinds);
     kindKeys.sort();
     for (const k of kindKeys) {
-      const label = ruToolKind[k] || k;
+      const label = toolName(k);
       kindParts.push(`${label}=${kinds[k]}`);
     }
     const kindLine = kindParts.length ? kindParts.join(', ') : '—';
 
     status.innerHTML = `
-      <span title="Температура среды (°C)"><b>T</b>: ${snapshot.world.temperature.toFixed(1)}°C</span>
-      <span title="Средняя нагрузка нужд по живым: (голод+жажда+сонливость)/3"><b>нужды</b>: ${needsLoad}</span>
-      <span title="Доля живых в критическом состоянии"><b>критич</b>: ${critical}</span>
-      <span title="Возраст: средний/максимальный"><b>возраст</b>: ${avgAge}/${maxAge}</span>
-      <span title="Успешные крафты за последние 200 событий"><b>крафт</b>: ${combOk}</span>
-      <span title="Инструментов в мире"><b>инструм</b>: ${totalTools}</span>
-      <span title="Типы инструментов"><b>типы</b>: ${kindLine}</span>
-      <span title="Смерти за последние 200 событий"><b>смерти</b>: ${deathLine}</span>
-      <span title="Размер словаря"><b>словарь</b>: ${num(lang.lexicon_size)}</span>
-      <span title="Стабильность лексикона"><b>стаб</b>: ${pct(lang.stability)}</span>
-      <span title="Сходимость языка"><b>сходим</b>: ${pct(lang.convergence)}</span>
-      <span title="Успешность коммуникации"><b>комм</b>: ${pct(lang.comm_success_rate_recent)} (${num(lang.comm_count_recent)})</span>
+      <span title="T°C"><b>T</b>: ${snapshot.world.temperature.toFixed(1)}°C</span>
+      <span title="${t('status.needs_title')}"><b>${t('status.needs')}</b>: ${needsLoad}</span>
+      <span title="${t('status.critical_title')}"><b>${t('status.critical')}</b>: ${critical}</span>
+      <span title="${t('status.age_title')}"><b>${t('status.age')}</b>: ${avgAge}/${maxAge}</span>
+      <span title="${t('status.craft_title')}"><b>${t('status.craft')}</b>: ${combOk}</span>
+      <span title="${t('status.tools_title')}"><b>${t('status.tools')}</b>: ${totalTools}</span>
+      <span title="${t('status.types_title')}"><b>${t('status.types')}</b>: ${kindLine}</span>
+      <span title="${t('status.deaths_title')}"><b>${t('status.deaths')}</b>: ${deathLine}</span>
+      <span title="${t('status.lexicon_title')}"><b>${t('status.lexicon')}</b>: ${num(lang.lexicon_size)}</span>
+      <span title="${t('status.stability_title')}"><b>${t('status.stability')}</b>: ${pct(lang.stability)}</span>
+      <span title="${t('status.convergence_title')}"><b>${t('status.convergence')}</b>: ${pct(lang.convergence)}</span>
+      <span title="${t('status.comm_title')}"><b>${t('status.comm')}</b>: ${pct(lang.comm_success_rate_recent)} (${num(lang.comm_count_recent)})</span>
     `;
   }
 
@@ -1881,26 +1844,15 @@
   function localizeDetail(detail) {
     const d = (detail || '').toString();
     if (!d) return '';
-    const map = {
-      invalid_username_or_password: 'Неверный логин или пароль',
-      invalid_credentials: 'Неверный логин или пароль',
-      invalid_token: 'Сессия недействительна. Войдите заново.',
-      not_authenticated: 'Нужно войти в аккаунт',
-      not_admin: 'Недостаточно прав (нужен администратор)',
-      registration_closed: 'Регистрация закрыта. Обратитесь к администратору.',
-      admin_already_exists: 'Администратор уже создан',
-      username_taken: 'Этот логин уже занят',
-      username_too_short: 'Логин слишком короткий',
-      password_too_short: 'Пароль слишком короткий',
-      invalid_agent_name: 'Некорректное имя агента',
-      invalid_agent_sex: 'Некорректный пол агента',
-      invalid_agent_stats: 'Некорректные характеристики агента',
-      simulation_not_ready: 'Симуляция ещё не готова. Попробуйте чуть позже.',
-      agent_already_created: 'У вас уже есть агент. Можно только наблюдать за ним.',
-      user_not_found: 'Пользователь не найден',
-      empty_username: 'Введите имя пользователя',
-    };
-    return map[d] || d;
+    const keys = [
+      'invalid_username_or_password','invalid_credentials','invalid_token',
+      'not_authenticated','not_admin','registration_closed','admin_already_exists',
+      'username_taken','username_too_short','password_too_short','invalid_agent_name',
+      'invalid_agent_sex','invalid_agent_stats','simulation_not_ready',
+      'agent_already_created','user_not_found','empty_username',
+    ];
+    if (keys.includes(d)) return t('detail.' + d);
+    return d;
   }
 
   function setHasAgentFlag(hasAgent) {
@@ -1917,6 +1869,37 @@
     if (x === undefined || x === null) return '—';
     return `${Math.round(x * 100)}%`;
   }
+
+  const _PERSONALITY_TRAITS = ['bravery','sociability','curiosity','industriousness','empathy','patience'];
+  const _SKILL_NAMES = ['gathering','crafting','hunting','cooking','communication','survival'];
+
+  function getPersonalityStr(agent) {
+    if (currentLang === 'en' && agent.personality) {
+      const top = [..._PERSONALITY_TRAITS].sort((a, b) => (agent.personality[b] || 0) - (agent.personality[a] || 0)).slice(0, 2);
+      return top.map(tr => t('trait.' + tr)).join(', ');
+    }
+    return agent.personality_ru || '';
+  }
+
+  function getSkillsStr(agent) {
+    if (currentLang === 'en' && agent.skills) {
+      const parts = [];
+      for (const s of _SKILL_NAMES) {
+        const lv = agent.skills[s] ? agent.skills[s].level : 0;
+        if (lv > 1) parts.push(t('skill.' + s) + ' lv' + lv);
+      }
+      return parts.length ? parts.join(', ') : t('agent.novice');
+    }
+    return agent.skills_ru || '';
+  }
+
+  function getCauseStr(dead) {
+    if (currentLang === 'en' && dead.cause) return t('cause.' + dead.cause);
+    return dead.cause_ru || dead.cause || '';
+  }
+
+  function getAchievementName(a) { return currentLang === 'en' ? (a.name_en || a.name) : a.name; }
+  function getAchievementDesc(a) { return currentLang === 'en' ? (a.desc_en || a.desc) : a.desc; }
 
   function findMyDeadAgent(snapshot) {
     const u = localStorage.getItem('evosim_username') || '';
@@ -1949,19 +1932,21 @@
         if (av) { av.textContent = '☠'; av.className = 'agp-avatar dead'; }
         const nm = document.getElementById('agpName'); if (nm) nm.textContent = dead.name || dead.id;
         const sb = document.getElementById('agpSub');
-        if (sb) sb.textContent = `погиб на t=${dead.died_at} · прожил ${dead.age} тиков`;
+        if (sb) sb.textContent = t('agent.died_sub', dead.died_at, dead.age);
         const bg = document.getElementById('agpBadge');
-        if (bg) { bg.textContent = 'погиб'; bg.className = 'badge badge-danger'; }
+        if (bg) { bg.textContent = t('agp.badge_dead'); bg.className = 'badge badge-danger'; }
         _vital('agpHpBar',  'agpHpVal',  0);
         _vital('agpNrgBar', 'agpNrgVal', 0);
         _vital('agpHngBar', 'agpHngVal', dead.hunger);
         _vital('agpThrBar', 'agpThrVal', dead.thirst);
         const extraEl = document.getElementById('myAgentExtra');
         if (extraEl) {
-          let html = '<div class="agp-dead-msg">☠ Ваш агент погиб</div>';
-          if (dead.cause_ru || dead.cause) html += `<div class="text-xs text-muted">Причина</div><div style="font-size:13px;margin-top:2px;">${escapeHtml(dead.cause_ru || dead.cause)}</div>`;
-          if (dead.personality_ru) html += `<div class="text-xs text-muted" style="margin-top:8px;">Характер</div><div style="font-size:13px;margin-top:2px;">${escapeHtml(dead.personality_ru)}</div>`;
-          html += `<div style="margin-top:12px;font-size:12px;color:var(--text-secondary);">Создайте нового агента, чтобы продолжить.</div>`;
+          let html = `<div class="agp-dead-msg">${t('agent.dead_msg')}</div>`;
+          const _deadCause = getCauseStr(dead);
+          if (_deadCause) html += `<div class="text-xs text-muted">${t('agent.cause_label')}</div><div style="font-size:13px;margin-top:2px;">${escapeHtml(_deadCause)}</div>`;
+          const _deadPers = getPersonalityStr(dead);
+          if (_deadPers) html += `<div class="text-xs text-muted" style="margin-top:8px;">${t('agent.character')}</div><div style="font-size:13px;margin-top:2px;">${escapeHtml(_deadPers)}</div>`;
+          html += `<div style="margin-top:12px;font-size:12px;color:var(--text-secondary);">${t('agent.new_agent_hint')}</div>`;
           extraEl.innerHTML = html;
         }
         return;
@@ -1974,15 +1959,15 @@
       const hasToken  = !!localStorage.getItem('evosim_token');
       if (hasAgent) {
         if (icon) icon.textContent = '🔍';
-        if (txt)  txt.innerHTML = 'Ваш агент сейчас не найден.<br><span style="font-size:0.78rem;">Возможно, ещё не заспавнился или погиб.</span>';
+        if (txt)  txt.innerHTML = t('agent.not_found');
         if (btn)  btn.style.display = 'none';
       } else if (hasToken) {
         if (icon) icon.textContent = '🌱';
-        if (txt)  txt.innerHTML = 'У вас ещё нет агента.<br><span style="font-size:0.78rem;">Создайте своего первого агента!</span>';
+        if (txt)  txt.innerHTML = t('agent.no_agent');
         if (btn)  btn.style.display = '';
       } else {
         if (icon) icon.textContent = '🌱';
-        if (txt)  txt.innerHTML = 'Войдите в аккаунт,<br>чтобы создать агента и следить за ним.';
+        if (txt)  txt.innerHTML = t('agent.login_create');
         if (btn)  btn.style.display = 'none';
       }
       return;
@@ -1997,20 +1982,20 @@
     // Имя и строка с позицией/действием
     const nm = document.getElementById('agpName');
     if (nm) {
-      const childTag = agent.is_child ? ' <span style="font-size:11px;opacity:.65;font-weight:400;">(ребёнок)</span>' : '';
+      const childTag = agent.is_child ? ` <span style="font-size:11px;opacity:.65;font-weight:400;">${t('agent.child_tag')}</span>` : '';
       nm.innerHTML = escapeHtml(agent.name || agent.id) + childTag;
     }
     const sb = document.getElementById('agpSub');
     const swim    = agent.is_swimming ? ' 🌊' : '';
     const lastAct = agent.last_action ? ` · ${actionToRu(agent.last_action)}` : '';
-    const cmdMap  = {gather:'собирает еду',drink:'ищет воду',rest:'отдыхает',sleep:'спит',move:'исследует',communicate:'общается'};
+    const cmdMap  = {gather:t('cmd_map.gather'),drink:t('cmd_map.drink'),rest:t('cmd_map.rest'),sleep:t('cmd_map.sleep'),move:t('cmd_map.move'),communicate:t('cmd_map.communicate')};
     const cmdHint = (agent.pending_command && agent.pending_command_ticks > 0)
       ? ` · ⚡ ${cmdMap[agent.pending_command] || agent.pending_command}` : '';
-    if (sb) sb.textContent = `(${agent.x}, ${agent.y}) · возраст ${agent.age}${swim}${lastAct}${cmdHint}`;
+    if (sb) sb.textContent = `(${agent.x}, ${agent.y}) · ${t('agent.age')} ${agent.age}${swim}${lastAct}${cmdHint}`;
 
     // Бейдж
     const bg = document.getElementById('agpBadge');
-    if (bg) { bg.textContent = 'живёт'; bg.className = 'badge badge-success'; }
+    if (bg) { bg.textContent = t('agp.badge_alive'); bg.className = 'badge badge-success'; }
 
     // Показатели
     _vital('agpHpBar',  'agpHpVal',  agent.health);
@@ -2021,16 +2006,17 @@
     // Блок дополнительной информации
     let extraHtml = '';
     if (agent.pending_command && agent.pending_command_ticks > 0) {
-      const cmdRu = {gather:'собирает еду',drink:'ищет воду',rest:'отдыхает',sleep:'спит',move:'исследует',communicate:'общается'};
-      extraHtml += `<div style="margin-bottom:8px;padding:7px 10px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:var(--radius-sm);font-size:13px;">⚡ Выполняет команду: <b>${escapeHtml(cmdRu[agent.pending_command] || agent.pending_command)}</b> (ещё ${agent.pending_command_ticks} тик${agent.pending_command_ticks > 1 ? 'а' : ''})</div>`;
+      const cmdRu = {gather:t('cmd_map.gather'),drink:t('cmd_map.drink'),rest:t('cmd_map.rest'),sleep:t('cmd_map.sleep'),move:t('cmd_map.move'),communicate:t('cmd_map.communicate')};
+      const _ticks = agent.pending_command_ticks;
+      extraHtml += `<div style="margin-bottom:8px;padding:7px 10px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:var(--radius-sm);font-size:13px;">⚡ ${t('ui.exec_cmd')}: <b>${escapeHtml(cmdRu[agent.pending_command] || agent.pending_command)}</b> (${t(_ticks > 1 ? 'ui.ticks_left_n' : 'ui.ticks_left_1', _ticks)})</div>`;
     }
-    if (agent.personality_ru) {
-      extraHtml += `<div class="text-xs text-muted">Характер</div><div style="font-size:13px;margin:2px 0 8px;">${escapeHtml(agent.personality_ru)}</div>`;
+    const _agPers = getPersonalityStr(agent);
+    if (_agPers) {
+      extraHtml += `<div class="text-xs text-muted">${t('agent.character')}</div><div style="font-size:13px;margin:2px 0 8px;">${escapeHtml(_agPers)}</div>`;
     }
     if (agent.mood) {
-      const emoRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
-      const emo = agent.dominant_emotion ? (emoRu[agent.dominant_emotion] || '') : '';
-      extraHtml += `<div class="text-xs text-muted">Настроение</div><div style="font-size:13px;margin:2px 0 8px;">${escapeHtml(agent.mood)}${emo ? ' · ' + escapeHtml(emo) : ''}</div>`;
+      const emo = agent.dominant_emotion ? t('emo.' + agent.dominant_emotion) : '';
+      extraHtml += `<div class="text-xs text-muted">${t('agent.mood_label')}</div><div style="font-size:13px;margin:2px 0 8px;">${escapeHtml(agent.mood)}${emo ? ' · ' + escapeHtml(emo) : ''}</div>`;
     }
     if (agent.thought) {
       extraHtml += `<div style="margin-bottom:8px;padding:7px 10px;background:var(--accent-glow);border-radius:var(--radius-sm);color:var(--text-accent);font-style:italic;font-size:13px;">💭 ${escapeHtml(agent.thought)}</div>`;
@@ -2039,10 +2025,10 @@
       const bt = agent.body_temp ?? 37.0;
       const btColor = bt < 35 ? '#60a5fa' : bt > 39 ? '#f87171' : '#34d399';
       const btIcon  = bt < 35 ? '❄️' : bt > 39 ? '🔥' : '🌡️';
-      const btLabel = bt < 35 ? 'Переохлаждение' : bt > 39 ? 'Перегрев' : 'Норма';
+      const btLabel = bt < 35 ? t('temp.cold') : bt > 39 ? t('temp.hot') : t('temp.normal');
       extraHtml += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
   <span>${btIcon}</span>
-  <span style="font-size:12px;color:var(--text-muted);">Темп. тела</span>
+  <span style="font-size:12px;color:var(--text-muted);" data-i18n="agent.body_temp">Темп. тела</span>
   <span style="font-size:13px;font-weight:600;color:${btColor};margin-left:auto;">${bt.toFixed(1)}°C</span>
   <span style="font-size:11px;color:${btColor};opacity:.8;">${btLabel}</span>
 </div>`;
@@ -2054,8 +2040,8 @@
       const nsColor = ns === 0 ? 'var(--text-muted)' : ns < 3 ? '#fbbf24' : '#34d399';
       extraHtml += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
   <span>🌐</span>
-  <span style="font-size:12px;color:var(--text-muted);">Сеть (Меткалф)</span>
-  <span style="font-size:13px;font-weight:600;color:${nsColor};margin-left:auto;">${ns} связей · n²=${nv}</span>
+  <span style="font-size:12px;color:var(--text-muted);">${t('agent.network')}</span>
+  <span style="font-size:13px;font-weight:600;color:${nsColor};margin-left:auto;">${ns} ${t('agent.connections_unit')} · n²=${nv}</span>
   <span style="font-size:11px;color:${nsColor};opacity:.8;">×${nMult} XP</span>
 </div>`;
     }
@@ -2063,8 +2049,8 @@
       const fam = (agent.social.family || []).length;
       const friends = (agent.social.friends || []).slice(0, 5);
       if (fam || friends.length) {
-        extraHtml += `<div class="text-xs text-muted">Связи</div><div style="font-size:13px;margin:2px 0 8px;">`;
-        if (fam) extraHtml += `семья: ${fam} `;
+        extraHtml += `<div class="text-xs text-muted">${t('agent.connections')}</div><div style="font-size:13px;margin:2px 0 8px;">`;
+        if (fam) extraHtml += `${t('agent.family_label')}: ${fam} `;
         for (const f of friends) {
           const n = findAgentName(f.id);
           extraHtml += `${escapeHtml(n)}(${f.trust > 0 ? '+' : ''}${f.trust}) `;
@@ -2073,13 +2059,12 @@
       }
     }
     if (agent.skills) {
-      const skillRu = {gathering:'собирательство',crafting:'крафтинг',hunting:'охота',cooking:'кулинария',communication:'общение',survival:'выживание'};
-      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">Навыки</div><div style="margin-bottom:8px;">`;
+      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">${t('agent.skills_label')}</div><div style="margin-bottom:8px;">`;
       for (const [sk, info] of Object.entries(agent.skills)) {
         if (!info || !info.level) continue;
         const pct = Math.round((info.value || 0) * 100);
         extraHtml += `<div class="skill-row">
-          <span class="skill-name">${escapeHtml(skillRu[sk] || sk)}</span>
+          <span class="skill-name">${escapeHtml(t('skill.' + sk) || sk)}</span>
           <div class="skill-bar-bg"><div class="skill-bar-fill sk-${sk}" style="width:${pct}%"></div></div>
           <span class="skill-lv">lv${info.level}</span>
         </div>`;
@@ -2087,22 +2072,21 @@
       extraHtml += `</div>`;
     }
     if (agent.achievements && agent.achievements.length) {
-      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">Достижения</div><div style="font-size:13px;margin-bottom:8px;">`;
+      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">${t('agent.achievements')}</div><div style="font-size:13px;margin-bottom:8px;">`;
       for (const a of agent.achievements) {
-        extraHtml += `<div>${a.icon || '⭐'} <b>${escapeHtml(a.name)}</b> — ${escapeHtml(a.desc)}</div>`;
+        extraHtml += `<div>${a.icon || '⭐'} <b>${escapeHtml(getAchievementName(a))}</b> — ${escapeHtml(getAchievementDesc(a))}</div>`;
       }
       extraHtml += `</div>`;
     }
     if (agent.life_log && agent.life_log.length) {
-      const emotionRu = {happiness:'счастье',fear:'страх',anger:'злость',loneliness:'одиночество',curiosity:'любопытство',contentment:'довольство',pride:'гордость',grief:'горе'};
-      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">📖 Дневник жизни</div><div class="diary-wrap">`;
+      extraHtml += `<div class="text-xs text-muted" style="margin-bottom:4px;">${t('agent.diary')}</div><div class="diary-wrap">`;
       const entries = agent.life_log.slice(-12).reverse();
       for (const e of entries) {
         const cat = e.type || '';
         const icon = e.icon || '📝';
         let metaParts = [`t${e.t}`];
         if (e.mood) metaParts.push(e.mood);
-        if (e.emo) metaParts.push(emotionRu[e.emo] || e.emo);
+        if (e.emo) metaParts.push(t('emo.' + e.emo));
         extraHtml += `<div class="diary-entry cat-${escapeHtml(cat)}">
           <div class="diary-icon">${icon}</div>
           <div class="diary-body">
@@ -2124,9 +2108,9 @@
     if (familyMenuSub) {
       const childCount = children.length;
       const parts = [];
-      if (agent.mother_id || agent.father_id) parts.push('есть родители');
-      if (childCount) parts.push(`${childCount} ${childCount === 1 ? 'ребёнок' : childCount < 5 ? 'детей' : 'детей'}`);
-      familyMenuSub.textContent = parts.length ? parts.join(' · ') : 'Родители и дети';
+      if (agent.mother_id || agent.father_id) parts.push(t('ft.parents').replace(/[👨‍👩‍👦 ]/g,'').trim());
+      if (childCount) parts.push(`${childCount} ${t('ft.children').replace(/[👶 ]/g,'').trim()}`);
+      familyMenuSub.textContent = parts.length ? parts.join(' · ') : t('agp.menu_family_sub');
     }
 
     // Рендерим семейное дерево (если экран уже открыт)
@@ -2141,9 +2125,9 @@
 
     const agentCard = (a, role) => {
       if (!a) return '';
-      const childTag = a.is_child ? ' <span class="ft-child-tag">ребёнок</span>' : '';
+      const childTag = a.is_child ? ` <span class="ft-child-tag">${t('ft.child_tag')}</span>` : '';
       const sexIcon = a.sex === 'female' ? '♀' : a.sex === 'male' ? '♂' : '?';
-      const ageLabel = `возраст ${a.age}`;
+      const ageLabel = `${t('agent.age')} ${a.age}`;
       const pos = `(${a.x}, ${a.y})`;
       const hpPct = Math.round((a.health || 0) * 100);
       return `
@@ -2164,29 +2148,29 @@
     const mother = byId.get(agent.mother_id);
     const father = byId.get(agent.father_id);
     if (mother || father || agent.mother_id || agent.father_id) {
-      html += `<div class="ft-section-title">👨‍👩‍👦 Родители</div>`;
+      html += `<div class="ft-section-title">${t('ft.parents')}</div>`;
       if (mother) {
-        html += agentCard(mother, 'Мать');
+        html += agentCard(mother, t('ft.mother'));
       } else if (agent.mother_id) {
-        html += `<div class="ft-card ft-card-dead"><div class="ft-name muted">Мать (погибла)</div></div>`;
+        html += `<div class="ft-card ft-card-dead"><div class="ft-name muted">${t('ft.mother_dead')}</div></div>`;
       }
       if (father) {
-        html += agentCard(father, 'Отец');
+        html += agentCard(father, t('ft.father'));
       } else if (agent.father_id) {
-        html += `<div class="ft-card ft-card-dead"><div class="ft-name muted">Отец (погиб)</div></div>`;
+        html += `<div class="ft-card ft-card-dead"><div class="ft-name muted">${t('ft.father_dead')}</div></div>`;
       }
     } else {
-      html += `<div class="ft-section-title">👨‍👩‍👦 Родители</div><div class="ft-empty">Информация о родителях отсутствует</div>`;
+      html += `<div class="ft-section-title">${t('ft.parents')}</div><div class="ft-empty">${t('ft.no_parents')}</div>`;
     }
 
     // Дети
     const children = allAgents.filter(a => a.mother_id === agent.id || a.father_id === agent.id);
-    html += `<div class="ft-section-title" style="margin-top:16px;">👶 Дети <span class="ft-count">${children.length}</span></div>`;
+    html += `<div class="ft-section-title" style="margin-top:16px;">${t('ft.children')} <span class="ft-count">${children.length}</span></div>`;
     if (children.length === 0) {
-      html += `<div class="ft-empty">Нет детей</div>`;
+      html += `<div class="ft-empty">${t('ft.no_children')}</div>`;
     } else {
       for (const child of children) {
-        html += agentCard(child, child.sex === 'female' ? 'Дочь' : 'Сын');
+        html += agentCard(child, child.sex === 'female' ? t('ft.daughter') : t('ft.son'));
       }
     }
 
@@ -2207,7 +2191,7 @@
       hint.className = 'text-xs text-muted';
       hint.style.textAlign = 'center';
       hint.style.padding = '12px 0';
-      hint.textContent = 'Напишите что-нибудь своему агенту…';
+      hint.textContent = t('agentchat.hint');
       agentChatMessages.appendChild(hint);
       return;
     }
@@ -2249,7 +2233,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (agentChatStatus) agentChatStatus.textContent = data.detail === 'no_agent' ? 'нет агента' : 'ошибка';
+        if (agentChatStatus) agentChatStatus.textContent = data.detail === 'no_agent' ? t('agentchat.no_agent') : t('ui.error');
         return;
       }
       if (agentChatStatus) agentChatStatus.textContent = '';
@@ -2262,7 +2246,7 @@
         if (data.ignored) {
           const ign = document.createElement('div');
           ign.className = 'agent-bubble ignored';
-          ign.textContent = '(агент не ответил)';
+          ign.textContent = t('agentchat.ignored');
           agentChatMessages.appendChild(ign);
         } else if (data.reply) {
           const aEl = document.createElement('div');
@@ -2273,7 +2257,7 @@
         agentChatMessages.scrollTop = agentChatMessages.scrollHeight;
       }
     } catch (e) {
-      if (agentChatStatus) agentChatStatus.textContent = 'ошибка сети';
+      if (agentChatStatus) agentChatStatus.textContent = t('ui.network_error');
     } finally {
       if (btnAgentChatSend) btnAgentChatSend.disabled = false;
       if (agentChatInput) agentChatInput.focus();
@@ -2292,9 +2276,9 @@
     if (!sinceTs || sinceTs <= 0) return null;
     const secs = Math.floor(Date.now() / 1000 - sinceTs);
     if (secs < 120) return null; // меньше 2 минут — не показываем «было»
-    if (secs < 3600) return `${Math.floor(secs / 60)} мин`;
+    if (secs < 3600) return `${Math.floor(secs / 60)} ${t('time.min')}`;
     const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
-    return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
+    return m > 0 ? `${h} ${t('time.h')} ${m} ${t('time.min')}` : `${h} ${t('time.h')}`;
   }
 
   async function fetchMissedEvents() {
@@ -2315,8 +2299,8 @@
 
       const awayStr = _formatAwayTime(data.since_ts);
       title.textContent = awayStr
-        ? `📬 За ${awayStr} пока вас не было:`
-        : '📬 За время жизни агента:';
+        ? `📬 ${t('missed.away', awayStr)}`
+        : `📬 ${t('missed.lifetime')}`;
 
       const shown = data.events.slice(-5).reverse(); // последние 5, новые сверху
       const extra = data.count > 5 ? data.count - 5 : 0;
@@ -2325,7 +2309,7 @@
         html += `<div class="agp-missed-item">${escapeHtml(ev.icon || '📝')} ${escapeHtml(ev.text)}</div>`;
       }
       if (extra > 0) {
-        html += `<div class="agp-missed-more">+ ещё ${extra} событи${extra === 1 ? 'е' : extra < 5 ? 'я' : 'й'}</div>`;
+        html += `<div class="agp-missed-more">+ ${t('missed.more', extra)}</div>`;
       }
       list.innerHTML = html;
       card.style.display = '';
@@ -2442,19 +2426,19 @@
         const lBody  = document.getElementById('legacyBody');
         const lInherit = document.getElementById('legacyInheritBtn');
         const lNewBtn = document.getElementById('legacyNewBtn');
-        if (lTitle) lTitle.innerHTML = `☠ ${escapeHtml(dead.name || dead.id)} погиб(ла)`;
+        if (lTitle) lTitle.innerHTML = `☠ ${escapeHtml(dead.name || dead.id)} ${t('legacy.died')}`;
         if (lBody) {
-          const causeRu = dead.cause_ru || dead.cause || '';
-          let html = `<div style="color:#6b7280;margin-bottom:10px;">Причина: <b style="color:#9ca3b4;">${escapeHtml(causeRu)}</b> · ${dead.age} тиков</div>`;
+          const causeRu = getCauseStr(dead);
+          let html = `<div style="color:#6b7280;margin-bottom:10px;">${t('legacy.cause')}: <b style="color:#9ca3b4;">${escapeHtml(causeRu)}</b> · ${dead.age} ${t('legacy.ticks')}</div>`;
           if (children.length) {
             _legacyChildId = children[0].id;
-            html += `<div style="margin-bottom:6px;">Живых потомков: <b style="color:#e7e9f0;">${children.length}</b></div>`;
+            html += `<div style="margin-bottom:6px;">${t('legacy.living_children')}: <b style="color:#e7e9f0;">${children.length}</b></div>`;
             html += `<div style="color:#a5b4fc;font-weight:500;">👶 ${escapeHtml(children[0].name || children[0].id)}</div>`;
             if (lInherit) lInherit.style.display = '';
             if (lNewBtn) lNewBtn.style.display = 'none';
           } else {
             _legacyChildId = null;
-            html += `<div style="color:#9ca3b4;line-height:1.6;">Потомков не осталось.<br>Ожидайте следующей симуляции или наблюдайте за происходящим.</div>`;
+            html += `<div style="color:#9ca3b4;line-height:1.6;">${t('legacy.no_children')}</div>`;
             if (lInherit) lInherit.style.display = 'none';
             if (lNewBtn) lNewBtn.style.display = '';
           }
@@ -2463,8 +2447,8 @@
         modal.style.display = 'flex';
       } else {
         const name = dead.name || dead.id;
-        const cause = dead.cause_ru || dead.cause || '';
-        showToast(`☠ Ваш агент ${name} погиб${cause ? ': ' + cause : ''}`, 'danger');
+        const cause = getCauseStr(dead);
+        showToast(`☠ ${t('legacy.toast_died', name)}${cause ? ': ' + cause : ''}`, 'danger');
       }
     }
   }
@@ -2563,7 +2547,7 @@
     chatBox.style.display = '';
     btnSend.disabled = false;
     const tag = isAdmin() ? ' (admin)' : '';
-    accountText.textContent = username ? `${username}${tag}` : `вы вошли${tag}`;
+    accountText.textContent = username ? `${username}${tag}` : `${t('auth.logged_in')}${tag}`;
     if (accountAvatar) accountAvatar.textContent = username ? username.charAt(0).toUpperCase() : '?';
     adminLink.style.display = isAdmin() ? '' : 'none';
     if (chatAdminBar) chatAdminBar.style.display = isAdmin() ? 'flex' : 'none';
@@ -2574,7 +2558,7 @@
     if (btnCreateAgent) {
       const locked = hasAgent();
       btnCreateAgent.disabled = locked;
-      setCreateAgentState(locked ? 'агент уже создан' : '');
+      setCreateAgentState(locked ? t('agent.already_created') : '');
     }
   }
 
@@ -2596,12 +2580,12 @@
     setCreateAgentState('');
   }
 
-  function setCreateAgentState(t) {
-    if (createAgentState) createAgentState.textContent = t || '';
+  function setCreateAgentState(msg) {
+    if (createAgentState) createAgentState.textContent = msg || '';
   }
 
-  function setAgentModalState(t) {
-    if (agentModalState) agentModalState.textContent = t || '';
+  function setAgentModalState(msg) {
+    if (agentModalState) agentModalState.textContent = msg || '';
   }
 
   function readStat(el) {
@@ -2637,7 +2621,7 @@
     const s = getStatsPoints();
     const left = 5 - sumStats(s);
     if (agentStatsLeft) {
-      agentStatsLeft.textContent = left >= 0 ? `осталось очков: ${left}` : `лишние очки: ${-left}`;
+      agentStatsLeft.textContent = left >= 0 ? `${t('modal.pts_left')}: ${left}` : `${t('modal.pts_over')}: ${-left}`;
       agentStatsLeft.style.color = left === 0 ? '#41d67e' : (left > 0 ? '#aab0c0' : '#ff4d6d');
     }
     if (btnSubmitAgent) btnSubmitAgent.disabled = (left !== 0);
@@ -2690,14 +2674,14 @@
   async function submitAgent() {
     const token = getToken();
     if (!token) {
-      setCreateAgentState('нужно войти');
+      setCreateAgentState(t('auth.need_login'));
       return;
     }
     const name = (agentName && agentName.value ? agentName.value : '').trim();
     const sex = getAgentSex();
     const stats = getStatsPoints();
     if (sumStats(stats) !== 5) {
-      setAgentModalState('нужно распределить ровно 5 очков');
+      setAgentModalState(t('modal.pts_exact'));
       return;
     }
     setAgentModalState('...');
@@ -2709,16 +2693,16 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setAgentModalState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+        setAgentModalState(localizeDetail(data.detail) || `${t('ui.error')} ${res.status}`);
         return;
       }
       const a = data.agent || {};
-      setCreateAgentState(`создан: ${a.name || a.id}`);
+      setCreateAgentState(`${t('agent.created')}: ${a.name || a.id}`);
       setHasAgentFlag(true);
       if (btnCreateAgent) btnCreateAgent.disabled = true;
       closeAgentModal();
     } catch (e) {
-      setAgentModalState('ошибка сети');
+      setAgentModalState(t('ui.network_error'));
     }
   }
 
@@ -2800,29 +2784,29 @@
       if (msg.type === 'moderation' && msg.event === 'ban') {
         const me = localStorage.getItem('evosim_username') || '';
         if (msg.username === me && msg.banned) {
-          setAuthState('вы заблокированы в чате');
+          setAuthState(t('chat.banned'));
           try { if (chatBox) chatBox.style.display = 'none'; } catch (e) {}
         }
         return;
       }
       if (msg.type === 'banned') {
-        setAuthState('вы заблокированы в чате');
+        setAuthState(t('chat.banned'));
         try { if (chatBox) chatBox.style.display = 'none'; } catch (e) {}
         return;
       }
       if (msg.type === 'error' && msg.detail === 'chat_banned') {
-        setAuthState('вы заблокированы в чате');
+        setAuthState(t('chat.banned'));
         return;
       }
       if (msg.type === 'error' && msg.detail === 'slow_down') {
-        setAuthState('слишком быстро — подождите секунду');
+        setAuthState(t('chat.slow_down'));
         setTimeout(() => setAuthState(''), 2000);
         return;
       }
     };
 
     chatWs.onclose = () => {
-      setAuthState('чат отключен');
+      setAuthState(t('chat.disconnected'));
     };
   }
 
@@ -2837,7 +2821,7 @@
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setAuthState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+      setAuthState(localizeDetail(data.detail) || `${t('ui.error')} ${res.status}`);
       return;
     }
     setToken(data.token, data.username);
@@ -2847,10 +2831,10 @@
   }
 
   btnLogin.addEventListener('click', async () => {
-    try { await authCall('/api/auth/login'); } catch (e) { setAuthState('ошибка сети'); }
+    try { await authCall('/api/auth/login'); } catch (e) { setAuthState(t('ui.network_error')); }
   });
   btnRegister.addEventListener('click', async () => {
-    try { await authCall('/api/auth/register'); } catch (e) { setAuthState('ошибка сети'); }
+    try { await authCall('/api/auth/register'); } catch (e) { setAuthState(t('ui.network_error')); }
   });
   btnLogout.addEventListener('click', () => {
     clearToken();
@@ -2905,13 +2889,13 @@
       const wrap = document.createElement('div');
       wrap.className = 'news-item';
 
-      const t = (n.created_at || '').replace('T', ' ').slice(0, 19);
+      const ts = (n.created_at || '').replace('T', ' ').slice(0, 19);
       const title = document.createElement('div');
       title.className = 'news-title';
       title.textContent = n.title;
       const meta = document.createElement('div');
       meta.className = 'news-meta';
-      meta.textContent = `${t} — ${n.author_username}`;
+      meta.textContent = `${ts} — ${n.author_username}`;
       const body = document.createElement('div');
       body.className = 'news-body';
       body.textContent = n.text;
@@ -2925,7 +2909,7 @@
         row.style.marginTop = '8px';
         const btnDel = document.createElement('button');
         btnDel.className = 'btn btn-danger btn-xs';
-        btnDel.textContent = 'Удалить';
+        btnDel.textContent = t('admin.delete');
         btnDel.addEventListener('click', async () => {
           try {
             const res = await fetch('/api/admin/news/' + n.id + '?token=' + encodeURIComponent(getToken()), { method: 'DELETE' });
@@ -2964,15 +2948,15 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setNewsAdminState(localizeDetail(data.detail) || `Ошибка ${res.status}`);
+        setNewsAdminState(localizeDetail(data.detail) || `${t('ui.error')} ${res.status}`);
         return;
       }
       newsTitle.value = '';
       newsText.value = '';
-      setNewsAdminState('опубликовано');
+      setNewsAdminState(t('admin.published'));
       await loadNews();
     } catch (e) {
-      setNewsAdminState('ошибка сети');
+      setNewsAdminState(t('ui.network_error'));
     }
   });
 
@@ -2980,7 +2964,7 @@
     const text = (chatInput.value || '').trim();
     if (!text) return;
     if (!chatWs || chatWs.readyState !== WebSocket.OPEN) {
-      setAuthState('чат не подключен');
+      setAuthState(t('chat.not_connected'));
       return;
     }
     chatWs.send(JSON.stringify({ text }));
@@ -2994,17 +2978,17 @@
 
   // ── Admin chat buttons ──────────────────────────────────────
   btnChatClear.addEventListener('click', async () => {
-    if (!confirm('Очистить весь чат для всех пользователей?')) return;
+    if (!confirm(t('admin.confirm_clear_chat'))) return;
     const token = getToken();
     if (!token) return;
     try {
       const res = await fetch('/api/admin/chat/clear?token=' + encodeURIComponent(token), { method: 'POST' });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(localizeDetail(d.detail) || 'Ошибка'); }
-    } catch (e) { alert('Ошибка сети'); }
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(localizeDetail(d.detail) || t('ui.error')); }
+    } catch (e) { alert(t('ui.network_error')); }
   });
 
   btnChatPin.addEventListener('click', async () => {
-    const text = prompt('Введите текст закреплённого сообщения (пусто — снять закреп):');
+    const text = prompt(t('admin.prompt_pin'));
     if (text === null) return;
     const token = getToken();
     if (!token) return;
@@ -3014,14 +2998,14 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.trim() }),
       });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(localizeDetail(d.detail) || 'Ошибка'); }
-    } catch (e) { alert('Ошибка сети'); }
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(localizeDetail(d.detail) || t('ui.error')); }
+    } catch (e) { alert(t('ui.network_error')); }
   });
 
   btnChatBanInline.addEventListener('click', async () => {
-    const username = prompt('Введите имя пользователя для бана (или разбана):');
+    const username = prompt(t('admin.prompt_ban'));
     if (!username || !username.trim()) return;
-    const action = confirm(`Заблокировать "${username.trim()}" в чате?\n\nОК — забанить\nОтмена — разбанить`);
+    const action = confirm(t('admin.confirm_ban', username.trim()));
     const token = getToken();
     if (!token) return;
     try {
@@ -3031,9 +3015,9 @@
         body: JSON.stringify({ username: username.trim(), banned: action }),
       });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) { alert(localizeDetail(d.detail) || 'Ошибка'); }
-      else { alert(action ? 'Пользователь забанен' : 'Пользователь разбанен'); }
-    } catch (e) { alert('Ошибка сети'); }
+      if (!res.ok) { alert(localizeDetail(d.detail) || t('ui.error')); }
+      else { alert(action ? t('admin.banned') : t('admin.unbanned')); }
+    } catch (e) { alert(t('ui.network_error')); }
   });
 
   validateTokenAndSyncUI();
@@ -3048,7 +3032,7 @@
   let _lbTab = 'age';
 
   function renderLbRows(rows) {
-    if (!rows || !rows.length) return '<div class="text-muted" style="padding:8px 0">Нет данных</div>';
+    if (!rows || !rows.length) return `<div class="text-muted" style="padding:8px 0">${t('lb.no_data')}</div>`;
     const sexIcon = s => s === 'female' ? '♀' : s === 'male' ? '♂' : '?';
     return rows.map((r, i) => {
       const medal = ['🥇','🥈','🥉'][i] || `${i+1}.`;
@@ -3057,8 +3041,8 @@
         <span class="lb-medal">${medal}</span>
         <span class="lb-name">${sexIcon(r.sex)} ${escapeHtml(r.name)}${owner}</span>
         <span class="lb-val">${
-          _lbTab === 'age'    ? r.age + ' тик' :
-          _lbTab === 'family' ? r.offspring + ' детей' :
+          _lbTab === 'age'    ? r.age + ' ' + t('lb.ticks') :
+          _lbTab === 'family' ? r.offspring + ' ' + t('lb.children') :
                                 r.skills_sum.toFixed(1) + ' XP'
         }</span>
       </div>`;
@@ -3068,13 +3052,13 @@
   async function loadLeaderboard() {
     const body = document.getElementById('lbBody');
     if (!body) return;
-    body.innerHTML = '<div class="text-muted">Загрузка...</div>';
+    body.innerHTML = `<div class="text-muted">${t('ui.loading')}</div>`;
     try {
       const r = await fetch('/api/leaderboard');
       const d = await r.json();
       body.innerHTML = renderLbRows(d[_lbTab] || []);
     } catch(e) {
-      body.innerHTML = '<div class="text-muted">Ошибка загрузки</div>';
+      body.innerHTML = `<div class="text-muted">${t('ui.load_error')}</div>`;
     }
   }
 
@@ -3110,8 +3094,8 @@
     const badge  = document.getElementById('rtPointsBadge');
     if (!body) return;
     const token = getToken();
-    if (!token) { body.innerHTML = '<div class="text-muted" style="padding:12px">Войдите в аккаунт</div>'; return; }
-    body.innerHTML = '<div class="text-muted" style="padding:12px">Загрузка...</div>';
+    if (!token) { body.innerHTML = `<div class="text-muted" style="padding:12px">${t('ui.login_required')}</div>`; return; }
+    body.innerHTML = `<div class="text-muted" style="padding:12px">${t('ui.loading')}</div>`;
     try {
       const r = await fetch('/api/research?token=' + encodeURIComponent(token));
       const d = await r.json();
@@ -3119,7 +3103,7 @@
       if (ptsNum) ptsNum.textContent = d.available ?? '—';
       renderResearchTree(d.tree || [], d.available || 0, token);
     } catch(e) {
-      body.innerHTML = '<div class="text-muted" style="padding:12px">Ошибка загрузки</div>';
+      body.innerHTML = `<div class="text-muted" style="padding:12px">${t('ui.load_error')}</div>`;
     }
   }
 
@@ -3129,12 +3113,12 @@
 
     const branchOrder = ['survival', 'gathering', 'crafting', 'communication'];
     const branchMeta = {
-      survival:      { label: 'Выживание',      icon: '🛡️', color: '#0d9488', glow: 'rgba(13,148,136,0.35)' },
-      gathering:     { label: 'Собирательство', icon: '🌿', color: '#16a34a', glow: 'rgba(22,163,74,0.35)'  },
-      crafting:      { label: 'Крафтинг',       icon: '⚒️', color: '#d97706', glow: 'rgba(217,119,6,0.35)'  },
-      communication: { label: 'Общение',        icon: '🤝', color: '#7c3aed', glow: 'rgba(124,58,237,0.35)' },
+      survival:      { get label() { return t('rt.branch.survival'); },      icon: '🛡️', color: '#0d9488', glow: 'rgba(13,148,136,0.35)' },
+      gathering:     { get label() { return t('rt.branch.gathering'); },     icon: '🌿', color: '#16a34a', glow: 'rgba(22,163,74,0.35)'  },
+      crafting:      { get label() { return t('rt.branch.crafting'); },      icon: '⚒️', color: '#d97706', glow: 'rgba(217,119,6,0.35)'  },
+      communication: { get label() { return t('rt.branch.communication'); }, icon: '🤝', color: '#7c3aed', glow: 'rgba(124,58,237,0.35)' },
     };
-    const colNames = ['Ветвь I', 'Ветвь II', 'Ветвь III'];
+    const colNames = [t('rt.col1'), t('rt.col2'), t('rt.col3')];
 
     // Определить колонки (цепочки) в ветви
     function getBranchColumns(branchNodes) {
@@ -3188,10 +3172,11 @@
 
           let costLine = '';
           if (st === 'unlocked') {
-            costLine = `<div class="rt-node-cost unlocked-badge">✓ Активно</div>`;
+            costLine = `<div class="rt-node-cost unlocked-badge">✓ ${t('rt.active')}</div>`;
           } else {
             const pts = `<span class="rt-pts ${canAfford ? 'can' : 'cant'}">${node.cost} ✦</span>`;
-            const lvl = `<span class="rt-lv ${curLvl >= reqLvl ? 'met' : ''}">${node.req_skill_label || node.req_skill} lv${reqLvl}</span>`;
+            const _skillLabel = currentLang === 'en' ? t('skill.' + node.req_skill) : (node.req_skill_label || node.req_skill);
+            const lvl = `<span class="rt-lv ${curLvl >= reqLvl ? 'met' : ''}">${_skillLabel} lv${reqLvl}</span>`;
             costLine = `<div class="rt-node-cost">${pts}${lvl}</div>`;
           }
 
@@ -3209,8 +3194,8 @@
               <div class="rt-tier-badge">${tierLabel}</div>
               <div class="rt-status-badge rt-sb-${st}">${statusIcon}</div>
             </div>
-            <div class="rt-node-name">${escapeHtml(node.name)}</div>
-            <div class="rt-node-desc">${escapeHtml(node.desc)}</div>
+            <div class="rt-node-name">${escapeHtml(currentLang === 'en' ? (node.name_en || node.name) : node.name)}</div>
+            <div class="rt-node-desc">${escapeHtml(currentLang === 'en' ? (node.desc_en || node.desc) : node.desc)}</div>
             ${lvBar}
             ${costLine}
           </div>`;
@@ -3249,14 +3234,15 @@
             });
             const d = await r.json();
             if (d.ok) {
-              showToast('🌳 Улучшение разблокировано!', 'success');
+              showToast('🌳 ' + t('rt.unlocked'), 'success');
               loadResearchTree();
             } else {
-              const msgs = {not_enough_points:'Недостаточно очков', skill_level_too_low:'Нужен более высокий уровень навыка', parent_node_required:'Сначала разблокируйте предыдущий узел'};
-              showToast(msgs[d.detail] || 'Не удалось разблокировать', 'danger');
+              const rtErrKeys = ['not_enough_points','skill_level_too_low','parent_node_required'];
+              const errKey = rtErrKeys.includes(d.detail) ? d.detail : null;
+              showToast(errKey ? t('rt.err.' + errKey) : t('rt.err.default'), 'danger');
               el.classList.remove('rt-loading');
             }
-          } catch(e) { showToast('Ошибка сети', 'danger'); el.classList.remove('rt-loading'); }
+          } catch(e) { showToast(t('ui.network_error'), 'danger'); el.classList.remove('rt-loading'); }
         });
       });
     }
@@ -3269,8 +3255,8 @@
     const body = document.getElementById('agpQuestsBody');
     if (!body) return;
     const token = localStorage.getItem('evosim_token');
-    if (!token) { body.innerHTML = '<div class="text-muted" style="padding:8px">Войдите в аккаунт</div>'; return; }
-    body.innerHTML = '<div class="text-muted" style="padding:8px">Загрузка...</div>';
+    if (!token) { body.innerHTML = `<div class="text-muted" style="padding:8px">${t('ui.login_required')}</div>`; return; }
+    body.innerHTML = `<div class="text-muted" style="padding:8px">${t('ui.loading')}</div>`;
     try {
       const r = await fetch('/api/quests?token=' + encodeURIComponent(token));
       const d = await r.json();
@@ -3278,14 +3264,15 @@
       for (const q of (d.quests || [])) {
         const pct = Math.min(100, Math.round((q.progress / q.target) * 100));
         const doneClass = q.done ? ' quest-done' : '';
+        const qTitle = currentLang === 'en' ? (q.title_en || q.title) : q.title;
         html += `<div class="quest-item${doneClass}">
-          <div class="quest-header"><span>${q.icon} ${escapeHtml(q.title)}</span><span class="quest-prog">${q.progress}/${q.target}</span></div>
+          <div class="quest-header"><span>${q.icon} ${escapeHtml(qTitle)}</span><span class="quest-prog">${q.progress}/${q.target}</span></div>
           <div class="quest-bar-wrap"><div class="quest-bar-fill" style="width:${pct}%"></div></div>
         </div>`;
       }
-      body.innerHTML = html || '<div class="text-muted" style="padding:8px">Нет заданий</div>';
+      body.innerHTML = html || `<div class="text-muted" style="padding:8px">${t('quest.empty')}</div>`;
     } catch(e) {
-      body.innerHTML = '<div class="text-muted" style="padding:8px">Ошибка загрузки</div>';
+      body.innerHTML = `<div class="text-muted" style="padding:8px">${t('ui.load_error')}</div>`;
     }
   }
 
@@ -3314,13 +3301,13 @@
       });
       const d = await r.json();
       if (d.ok) {
-        showToast(`👶 Вы продолжаете путь: ${d.agent_name}`, 'success');
+        showToast(`👶 ${t('ui.inherit_ok', d.agent_name)}`, 'success');
         if (legacyModal) legacyModal.style.display = 'none';
       } else {
-        showToast('Не удалось перейти к ребёнку', 'danger');
+        showToast(t('ui.inherit_fail'), 'danger');
       }
     } catch(e) {
-      showToast('Ошибка сети', 'danger');
+      showToast(t('ui.network_error'), 'danger');
     }
   });
 
@@ -3328,6 +3315,8 @@
     if (legacyModal) legacyModal.style.display = 'none';
   });
 
+  // Apply translations on load
+  applyTranslations();
 
 </script>
 

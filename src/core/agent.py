@@ -333,19 +333,19 @@ class LifeLog:
 
 # ── Достижения ────────────────────────────────────────────────────────
 ACHIEVEMENTS = {
-    'first_gather':     {'name': 'Первая добыча',      'icon': '🥬', 'desc': 'Собрал первый объект'},
-    'first_craft':      {'name': 'Изобретатель',       'icon': '🔧', 'desc': 'Создал первый инструмент'},
-    'first_child':      {'name': 'Родитель',           'icon': '👶', 'desc': 'Родился первый ребёнок'},
-    'elder':            {'name': 'Долгожитель',        'icon': '🧓', 'desc': 'Дожил до 5000 тиков'},
-    'social_butterfly': {'name': 'Душа компании',      'icon': '🦋', 'desc': '5+ друзей'},
-    'master_hunter':    {'name': 'Мастер охоты',       'icon': '🏹', 'desc': 'Навык охоты lv7+'},
-    'master_crafter':   {'name': 'Мастер крафта',      'icon': '⚒️', 'desc': 'Навык крафтинга lv7+'},
-    'master_gatherer':  {'name': 'Мастер сбора',       'icon': '🌿', 'desc': 'Навык собирательства lv7+'},
-    'survivor':         {'name': 'Выживальщик',        'icon': '💪', 'desc': 'Навык выживания lv7+'},
-    'communicator':     {'name': 'Оратор',             'icon': '🗣️', 'desc': 'Навык общения lv7+'},
-    'explorer':         {'name': 'Путешественник',     'icon': '🗺️', 'desc': 'Посетил 100+ клеток'},
-    'well_fed':         {'name': 'Сытая жизнь',        'icon': '🍖', 'desc': 'Голод < 0.2 целых 500 тиков подряд'},
-    'family_person':    {'name': 'Семьянин',           'icon': '👨‍👩‍👦', 'desc': '3+ членов семьи'},
+    'first_gather':     {'name': 'Первая добыча',      'name_en': 'First Harvest',      'icon': '🥬', 'desc': 'Собрал первый объект',                    'desc_en': 'Gathered the first resource'},
+    'first_craft':      {'name': 'Изобретатель',       'name_en': 'Inventor',           'icon': '🔧', 'desc': 'Создал первый инструмент',               'desc_en': 'Crafted the first tool'},
+    'first_child':      {'name': 'Родитель',           'name_en': 'Parent',             'icon': '👶', 'desc': 'Родился первый ребёнок',                  'desc_en': 'First child was born'},
+    'elder':            {'name': 'Долгожитель',        'name_en': 'Elder',              'icon': '🧓', 'desc': 'Дожил до 5000 тиков',                    'desc_en': 'Survived to 5000 ticks'},
+    'social_butterfly': {'name': 'Душа компании',      'name_en': 'Social Butterfly',   'icon': '🦋', 'desc': '5+ друзей',                              'desc_en': '5+ friends'},
+    'master_hunter':    {'name': 'Мастер охоты',       'name_en': 'Master Hunter',      'icon': '🏹', 'desc': 'Навык охоты lv7+',                       'desc_en': 'Hunting skill lv7+'},
+    'master_crafter':   {'name': 'Мастер крафта',      'name_en': 'Master Crafter',     'icon': '⚒️', 'desc': 'Навык крафтинга lv7+',                   'desc_en': 'Crafting skill lv7+'},
+    'master_gatherer':  {'name': 'Мастер сбора',       'name_en': 'Master Gatherer',    'icon': '🌿', 'desc': 'Навык собирательства lv7+',               'desc_en': 'Gathering skill lv7+'},
+    'survivor':         {'name': 'Выживальщик',        'name_en': 'Survivor',           'icon': '💪', 'desc': 'Навык выживания lv7+',                   'desc_en': 'Survival skill lv7+'},
+    'communicator':     {'name': 'Оратор',             'name_en': 'Orator',             'icon': '🗣️', 'desc': 'Навык общения lv7+',                      'desc_en': 'Communication skill lv7+'},
+    'explorer':         {'name': 'Путешественник',     'name_en': 'Explorer',           'icon': '🗺️', 'desc': 'Посетил 100+ клеток',                    'desc_en': 'Visited 100+ cells'},
+    'well_fed':         {'name': 'Сытая жизнь',        'name_en': 'Well Fed',           'icon': '🍖', 'desc': 'Голод < 0.2 целых 500 тиков подряд',     'desc_en': 'Hunger < 0.2 for 500 ticks'},
+    'family_person':    {'name': 'Семьянин',           'name_en': 'Family Person',      'icon': '👨‍👩‍👦', 'desc': '3+ членов семьи',                         'desc_en': '3+ family members'},
 }
 
 
@@ -378,8 +378,10 @@ class AchievementTracker:
             result.append({
                 'id': aid,
                 'name': info.get('name', aid),
+                'name_en': info.get('name_en', aid),
                 'icon': info.get('icon', '⭐'),
                 'desc': info.get('desc', ''),
+                'desc_en': info.get('desc_en', ''),
                 'unlocked_at': ts,
             })
         return result

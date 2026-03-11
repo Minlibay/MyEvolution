@@ -604,6 +604,10 @@ class SimulationState:
                     break
                 insulation = min(insulation + _rb.get('insulation', 0.0), 0.80)
 
+                # Wind-chill: ветер снижает теплоизоляцию
+                _wind_s = float(getattr(self.environment, 'wind_speed', 0.0))
+                insulation *= max(0.3, 1.0 - _wind_s * 0.6)
+
                 heat_loss = LAMBDA * (agent.body_temp - env_temp) * (1.0 - insulation)
                 agent.body_temp = max(20.0, min(45.0,
                     agent.body_temp - heat_loss + metabolic_heat + action_heat))
@@ -1150,6 +1154,7 @@ class SimulationState:
             'cause_ru': cause_ru_map.get(cause, cause),
             'died_at': int(self.timestep),
             'personality_ru': agent.personality.describe_ru() if hasattr(agent, 'personality') and hasattr(agent.personality, 'describe_ru') else None,
+            'personality': agent.personality.to_dict() if hasattr(agent, 'personality') and hasattr(agent.personality, 'to_dict') else None,
             # Навыки для сохранения в dynasty_skills
             'skills': {s: agent.skills.get(s) for s in ['gathering','crafting','hunting','cooking','communication','survival']}
             if hasattr(agent, 'skills') else {},
