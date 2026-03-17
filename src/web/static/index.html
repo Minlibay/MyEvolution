@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>{{SEO_TITLE}}</title>
   <meta name="description" content="{{SEO_DESCRIPTION}}" />
   <meta name="keywords" content="{{SEO_KEYWORDS}}" />
@@ -156,7 +156,8 @@
     </div>
 
     <!-- ===== SIDEBAR ===== -->
-    <div class="sidebar">
+    <div class="sidebar" id="mobileSidebar">
+      <div class="mob-drawer-handle" id="mobDrawerHandle"></div>
       <div class="sidebar-tabs">
         <div class="sidebar-tab active" data-tab="tab-chat" data-i18n="tab.chat">Чат</div>
         <div class="sidebar-tab" data-tab="tab-events" data-i18n="tab.events">События</div>
@@ -3896,5 +3897,28 @@
 </script>
 
 
+<!-- ===== MOBILE BOTTOM NAV ===== -->
+<nav id="mobileNav" aria-label="Мобильная навигация">
+  <div class="mob-nav-item active" data-tab="map">
+    <span class="mob-nav-icon">🗺️</span>
+    <span class="mob-nav-label">Карта</span>
+  </div>
+  <div class="mob-nav-item" data-tab="tab-chat">
+    <span class="mob-nav-icon">💬</span>
+    <span class="mob-nav-label">Чат</span>
+  </div>
+  <div class="mob-nav-item" data-tab="tab-agent">
+    <span class="mob-nav-icon">🧬</span>
+    <span class="mob-nav-label">Агент</span>
+  </div>
+  <div class="mob-nav-item" data-tab="tab-events">
+    <span class="mob-nav-icon">⚡</span>
+    <span class="mob-nav-label">События</span>
+  </div>
+  <div class="mob-nav-item" data-tab="tab-news">
+    <span class="mob-nav-icon">📰</span>
+    <span class="mob-nav-label">Новости</span>
+  </div>
+</nav>
 </body>
 </html>
