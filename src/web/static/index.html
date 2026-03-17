@@ -348,6 +348,38 @@
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
+              <div class="agp-menu-item" data-goto="agpStatsScreen">
+                <span class="agp-menu-icon">📊</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Графики показателей</div>
+                  <div class="agp-menu-sub" id="agpStatsMenuSub">Динамика жизненных показателей</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
+              <div class="agp-menu-item" data-goto="agpPsychScreen">
+                <span class="agp-menu-icon">🧠</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Психология</div>
+                  <div class="agp-menu-sub" id="agpPsychMenuSub">Личность, эмоции, настроение</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
+              <div class="agp-menu-item" data-goto="agpGeneticsScreen">
+                <span class="agp-menu-icon">🧬</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Генетика и ИИ</div>
+                  <div class="agp-menu-sub" id="agpGeneticsMenuSub">Гены, обучение, исследования</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
+              <div class="agp-menu-item" data-goto="agpLexiconScreen">
+                <span class="agp-menu-icon">💬</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Язык агента</div>
+                  <div class="agp-menu-sub" id="agpLexiconMenuSub">Слова, связи, коммуникация</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
             </div>
           </div>
 
@@ -414,6 +446,42 @@
               <button id="btnAgentChatSend" class="btn btn-primary btn-sm">↑</button>
             </div>
             <div id="agentChatStatus" class="agp-chat-status"></div>
+          </div>
+
+          <!-- ЭКРАН 7: Графики показателей -->
+          <div class="agp-screen" id="agpStatsScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
+              <span class="agp-screen-title">📊 Графики</span>
+            </div>
+            <div class="agp-screen-body" id="agpStatsBody"><div style="padding:12px;color:var(--text-muted);font-size:12px;">Загрузка...</div></div>
+          </div>
+
+          <!-- ЭКРАН 8: Психология -->
+          <div class="agp-screen" id="agpPsychScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
+              <span class="agp-screen-title">🧠 Психология</span>
+            </div>
+            <div class="agp-screen-body" id="agpPsychBody"><div style="padding:12px;color:var(--text-muted);font-size:12px;">Загрузка...</div></div>
+          </div>
+
+          <!-- ЭКРАН 9: Генетика и ИИ -->
+          <div class="agp-screen" id="agpGeneticsScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
+              <span class="agp-screen-title">🧬 Генетика и ИИ</span>
+            </div>
+            <div class="agp-screen-body" id="agpGeneticsBody"><div style="padding:12px;color:var(--text-muted);font-size:12px;">Загрузка...</div></div>
+          </div>
+
+          <!-- ЭКРАН 10: Язык агента -->
+          <div class="agp-screen" id="agpLexiconScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen">‹ Назад</button>
+              <span class="agp-screen-title">💬 Язык агента</span>
+            </div>
+            <div class="agp-screen-body" id="agpLexiconBody"><div style="padding:12px;color:var(--text-muted);font-size:12px;">Загрузка...</div></div>
           </div>
         </div>
       </div>
@@ -2364,6 +2432,336 @@
     return snapshot.dead_agents.find(d => d.owner_username === u) || null;
   }
 
+  // ══════ AGENT ANALYSIS TOOLS ══════════════════════════════════════
+  const _agentVitalsHist = {};
+  const _HIST_MAX = 80;
+
+  function _pushVitals(agent, timestep) {
+    if (!agent) return;
+    if (!_agentVitalsHist[agent.id]) _agentVitalsHist[agent.id] = [];
+    const h = _agentVitalsHist[agent.id];
+    h.push({ t: timestep || 0, health: agent.health || 0, energy: agent.energy || 0,
+              hunger: agent.hunger || 0, thirst: agent.thirst || 0, sleepiness: agent.sleepiness || 0 });
+    if (h.length > _HIST_MAX) h.shift();
+  }
+
+  function _drawSparkline(canvas, values, color) {
+    if (!canvas || !values.length) return;
+    const W = canvas.width, H = canvas.height;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      const y = Math.round(H * i / 4) + 0.5;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    const step = W / (_HIST_MAX - 1);
+    ctx.beginPath();
+    for (let i = 0; i < values.length; i++) {
+      const x = i * step;
+      const y = H - Math.max(0, Math.min(1, values[i])) * (H - 2) - 1;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.lineTo((values.length - 1) * step, H); ctx.lineTo(0, H); ctx.closePath();
+    ctx.fillStyle = color + '25'; ctx.fill();
+    ctx.beginPath();
+    for (let i = 0; i < values.length; i++) {
+      const x = i * step;
+      const y = H - Math.max(0, Math.min(1, values[i])) * (H - 2) - 1;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+    if (values.length > 0) {
+      const lx = (values.length - 1) * step;
+      const ly = H - Math.max(0, Math.min(1, values[values.length - 1])) * (H - 2) - 1;
+      ctx.beginPath(); ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
+    }
+  }
+
+  function _drawRadar(canvas, values, labels) {
+    if (!canvas) return;
+    const W = canvas.width, H = canvas.height, ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.35, N = values.length;
+    const ang = i => (i / N) * Math.PI * 2 - Math.PI / 2;
+    for (let g = 1; g <= 4; g++) {
+      ctx.strokeStyle = `rgba(255,255,255,${g === 4 ? 0.1 : 0.04})`; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
+        const a = ang(i), r = R * g / 4;
+        i === 0 ? ctx.moveTo(cx + Math.cos(a)*r, cy + Math.sin(a)*r)
+                : ctx.lineTo(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
+      }
+      ctx.closePath(); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    for (let i = 0; i < N; i++) {
+      const a = ang(i); ctx.beginPath(); ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a)*R, cy + Math.sin(a)*R); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(99,102,241,0.18)'; ctx.strokeStyle = '#6366f1'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const a = ang(i), v = Math.max(0, Math.min(1, values[i]));
+      i === 0 ? ctx.moveTo(cx + Math.cos(a)*R*v, cy + Math.sin(a)*R*v)
+              : ctx.lineTo(cx + Math.cos(a)*R*v, cy + Math.sin(a)*R*v);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#818cf8';
+    for (let i = 0; i < N; i++) {
+      const a = ang(i), v = Math.max(0, Math.min(1, values[i]));
+      ctx.beginPath(); ctx.arc(cx + Math.cos(a)*R*v, cy + Math.sin(a)*R*v, 2.5, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(180,180,210,0.85)'; ctx.font = '9px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < N; i++) {
+      const a = ang(i);
+      ctx.fillText(labels[i], cx + Math.cos(a)*(R+18), cy + Math.sin(a)*(R+18));
+    }
+  }
+
+  function _hBarHtml(label, value01, color) {
+    const pct = Math.min(100, (value01 || 0) * 100).toFixed(0);
+    return `<div style="margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;">
+        <span style="color:var(--text-muted);">${escapeHtml(label)}</span>
+        <span style="color:${color};font-weight:600;">${pct}%</span>
+      </div>
+      <div style="height:4px;background:rgba(255,255,255,0.07);border-radius:2px;">
+        <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;"></div>
+      </div></div>`;
+  }
+
+  function _anSec(title) {
+    return `<div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin:12px 0 6px;">${escapeHtml(title)}</div>`;
+  }
+
+  function _anCard(content) {
+    return `<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 12px;margin-bottom:8px;">${content}</div>`;
+  }
+
+  function renderStatsScreen(agent) {
+    const body = document.getElementById('agpStatsBody');
+    if (!body) return;
+    const hist = _agentVitalsHist[agent.id] || [];
+    const vitals = [
+      { key:'health',     label:'❤️ Здоровье',  color:'#34d399' },
+      { key:'energy',     label:'⚡ Энергия',    color:'#6366f1' },
+      { key:'hunger',     label:'🍖 Голод',      color:'#f59e0b' },
+      { key:'thirst',     label:'💧 Жажда',      color:'#38bdf8' },
+      { key:'sleepiness', label:'😴 Сонливость', color:'#a78bfa' },
+    ];
+    let html = '';
+    for (const v of vitals) {
+      const cur = agent[v.key] ?? 0;
+      html += `<div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <span style="font-size:12px;color:var(--text-secondary);">${v.label}</span>
+          <span style="font-size:13px;font-weight:700;color:${v.color};">${(cur*100).toFixed(0)}%</span>
+        </div>
+        <canvas data-spark="${v.key}" width="240" height="36"
+                style="width:100%;height:36px;display:block;border-radius:4px;background:rgba(0,0,0,0.2);"></canvas>
+      </div>`;
+    }
+    const bt = agent.body_temp || 37;
+    const btPct = Math.max(0, Math.min(100, (bt - 34) / 7 * 100)).toFixed(1);
+    const btColor = bt < 35 ? '#60a5fa' : bt > 39 ? '#f87171' : '#34d399';
+    html += _anSec('Температура тела');
+    html += `<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:13px;">${bt < 35 ? '❄️' : bt > 39 ? '🔥' : '🌡️'} Температура</span>
+        <span style="font-size:15px;font-weight:700;color:${btColor};">${bt.toFixed(1)}°C</span>
+      </div>
+      <div style="height:7px;background:linear-gradient(to right,#60a5fa 0%,#34d399 30%,#f59e0b 65%,#f87171 100%);border-radius:4px;position:relative;">
+        <div style="position:absolute;top:-3px;left:clamp(4px,calc(${btPct}% - 6px),calc(100% - 14px));width:12px;height:12px;background:white;border-radius:50%;box-shadow:0 0 4px ${btColor};"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:4px;"><span>34°</span><span>35°</span><span>37°</span><span>39°</span><span>41°</span></div>
+    </div>`;
+    html += _anSec('Активность');
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">`;
+    for (const [lbl, val, color] of [
+      ['Позиция', `(${agent.x}, ${agent.y})`, '#94a3b8'],
+      ['Возраст / Макс', `${agent.age} / ${agent.max_age || 5000}`, '#6366f1'],
+      ['Клеток открыто', String(agent.visited_cells || 0), '#34d399'],
+      ['Последнее дейст.', escapeHtml(actionToRu(agent.last_action || 'rest')), '#f59e0b'],
+      ['Инвентарь', `${agent.inventory_size || 0} предм.`, '#a78bfa'],
+      ['Инструменты', `${agent.tools || 0} шт.`, '#fb923c'],
+    ]) {
+      html += `<div style="padding:8px;background:rgba(255,255,255,0.04);border-radius:6px;text-align:center;">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">${escapeHtml(lbl)}</div>
+        <div style="font-size:13px;font-weight:600;color:${color};">${val}</div>
+      </div>`;
+    }
+    html += '</div>';
+    body.innerHTML = html;
+    for (const v of vitals) {
+      const canvas = body.querySelector(`[data-spark="${v.key}"]`);
+      if (canvas) _drawSparkline(canvas, hist.map(h => h[v.key] ?? 0), v.color);
+    }
+  }
+
+  function renderPsychScreen(agent) {
+    const body = document.getElementById('agpPsychBody');
+    if (!body) return;
+    const traitRu = {bravery:'храбрость', sociability:'общит.', curiosity:'любопытн.', industriousness:'трудолюбие', empathy:'эмпатия', patience:'терпение'};
+    const emoRu   = {happiness:'счастье', fear:'страх', anger:'злость', loneliness:'одиноч.', curiosity:'любопытство', contentment:'удовл.', pride:'гордость', grief:'горе'};
+    const emoColor = {happiness:'#fbbf24', fear:'#f87171', anger:'#ef4444', loneliness:'#6366f1', curiosity:'#34d399', contentment:'#10b981', pride:'#818cf8', grief:'#60a5fa'};
+    const pers = agent.personality || {};
+    const emotions = agent.emotions || {};
+    const ms = agent.mood_score ?? 0;
+    const msColor = ms > 0.2 ? '#34d399' : ms < -0.2 ? '#f87171' : '#94a3b8';
+    const msLabel = ms > 0.3 ? 'Хорошо' : ms > 0.1 ? 'Неплохо' : ms < -0.3 ? 'Плохо' : ms < -0.1 ? 'Тревожно' : 'Нейтрально';
+    const msEmoji = ms > 0.3 ? '😊' : ms > 0.1 ? '🙂' : ms < -0.3 ? '😔' : ms < -0.1 ? '😐' : '😶';
+    let html = _anSec('Настроение');
+    html += `<div style="display:flex;align-items:center;gap:12px;background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+      <div style="font-size:26px;line-height:1;">${msEmoji}</div>
+      <div>
+        <div style="font-size:14px;font-weight:700;color:${msColor};">${msLabel}</div>
+        <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(agent.mood || '')}${agent.dominant_emotion ? ' · ' + escapeHtml(emoRu[agent.dominant_emotion] || agent.dominant_emotion) : ''}</div>
+      </div>
+      <div style="margin-left:auto;font-size:18px;font-weight:700;color:${msColor};">${ms > 0 ? '+' : ''}${(ms * 100).toFixed(0)}</div>
+    </div>`;
+    if (agent.thought) {
+      html += `<div style="margin-bottom:8px;padding:8px 12px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);border-radius:8px;font-style:italic;font-size:13px;">💭 ${escapeHtml(agent.thought)}</div>`;
+    }
+    const traitKeys = ['bravery','sociability','curiosity','industriousness','empathy','patience'];
+    const traitVals = traitKeys.map(k => pers[k] ?? 0.5);
+    html += _anSec('Черты личности');
+    html += `<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <canvas id="agpRadarCanvas" width="160" height="160" style="flex-shrink:0;"></canvas>
+      <div style="flex:1;min-width:100px;">`;
+    for (const k of traitKeys) {
+      const v = pers[k] ?? 0.5;
+      html += _hBarHtml(traitRu[k] || k, v, v > 0.65 ? '#6366f1' : v < 0.35 ? '#64748b' : '#94a3b8');
+    }
+    html += `</div></div>`;
+    html += _anSec('Эмоции');
+    for (const k of ['happiness','contentment','pride','curiosity','loneliness','fear','anger','grief']) {
+      const v = emotions[k] ?? 0;
+      html += _hBarHtml(emoRu[k] || k, v, emoColor[k] || '#94a3b8');
+    }
+    body.innerHTML = html;
+    const rc = document.getElementById('agpRadarCanvas');
+    if (rc) _drawRadar(rc, traitVals, traitKeys.map(k => traitRu[k] || k));
+  }
+
+  function renderGeneticsScreen(agent) {
+    const body = document.getElementById('agpGeneticsBody');
+    if (!body) return;
+    const geneRu = {metabolism_speed:'Метаболизм', strength:'Сила', intelligence:'Интеллект', social_tendency:'Социальность', exploration_bias:'Авантюризм'};
+    const geneColor = {metabolism_speed:'#f59e0b', strength:'#ef4444', intelligence:'#6366f1', social_tendency:'#34d399', exploration_bias:'#a78bfa'};
+    const genes = agent.genes || {};
+    const rl = agent.rl || {};
+    const rbs = agent.research_bonuses || {};
+    let html = _anSec('Геном');
+    for (const [k, label] of Object.entries(geneRu)) {
+      html += _hBarHtml(label, genes[k] ?? 0.5, geneColor[k] || '#94a3b8');
+    }
+    html += _anSec('Обучение (RL)');
+    html += _anCard(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
+      <div><div style="font-size:10px;color:var(--text-muted);">ε-исследование</div><div style="font-size:14px;font-weight:700;color:#a78bfa;">${((rl.epsilon ?? agent.exploration_rate ?? 0.1)*100).toFixed(1)}%</div></div>
+      <div><div style="font-size:10px;color:var(--text-muted);">Эпизодов</div><div style="font-size:14px;font-weight:700;color:#6366f1;">${rl.episodes ?? 0}</div></div>
+      <div><div style="font-size:10px;color:var(--text-muted);">Q-таблица</div><div style="font-size:14px;font-weight:700;color:#34d399;">${rl.q_table_size ?? 0}</div></div>
+      <div><div style="font-size:10px;color:var(--text-muted);">Ср. награда</div><div style="font-size:14px;font-weight:700;color:${(rl.avg_reward??0)>=0?'#34d399':'#f87171'};">${(rl.avg_reward??0).toFixed(3)}</div></div>
+    </div>
+    ${(rl.top_actions||[]).length ? '<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px;font-size:11px;color:var(--text-muted);">Топ Q-действий:</div>' + (rl.top_actions||[]).map(a=>`<div style="display:flex;justify-content:space-between;font-size:12px;margin-top:4px;"><span>${escapeHtml(a.action)}</span><span style="color:#818cf8;font-weight:600;">${a.q.toFixed(3)}</span></div>`).join('') : ''}`);
+    html += _anSec('Статистика');
+    html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">`;
+    for (const [lbl, val, color] of [
+      ['Открытий', agent.discoveries || 0, '#34d399'],
+      ['Потомков', agent.offspring_count || 0, '#f59e0b'],
+      ['Сумм. награда', Math.round(agent.total_reward || 0), '#6366f1'],
+      ['Посещ. клеток', agent.visited_cells || 0, '#a78bfa'],
+      ['Иссл. узлов', agent.research_count || 0, '#38bdf8'],
+      ['Макс. навык', agent.skills ? (Math.max(...Object.values(agent.skills).map(s=>s.value||0))*10+1).toFixed(0)+' lv' : '—', '#fb923c'],
+    ]) {
+      html += `<div style="padding:7px;background:rgba(255,255,255,0.04);border-radius:6px;text-align:center;">
+        <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px;">${escapeHtml(lbl)}</div>
+        <div style="font-size:13px;font-weight:700;color:${color};">${val}</div>
+      </div>`;
+    }
+    html += '</div>';
+    const rbsEntries = Object.entries(rbs).filter(([,v])=>v!==0);
+    if (rbsEntries.length) {
+      html += _anSec(`Бонусы исследований (${rbsEntries.length})`);
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:11px;">';
+      for (const [k, v] of rbsEntries.slice(0, 18)) {
+        const vs = (v>0?'+':'') + (v*100).toFixed(0) + '%';
+        html += `<div style="display:flex;justify-content:space-between;padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:4px;">
+          <span style="color:var(--text-muted);">${escapeHtml(k.replace(/_/g,' '))}</span>
+          <span style="color:${v>0?'#34d399':'#f87171'};font-weight:600;">${vs}</span>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    body.innerHTML = html;
+  }
+
+  function renderLexiconScreen(agent) {
+    const body = document.getElementById('agpLexiconBody');
+    if (!body) return;
+    const lexicon = agent.lexicon || [];
+    const meaningRu = {food:'еда',water:'вода',danger:'опасность',shelter:'укрытие',help:'помощь',greeting:'приветствие',stone:'камень',wood:'дерево',fire:'огонь',run:'бежать',come:'иди сюда',stop:'стой',berry:'ягода',animal:'животное',tool:'инструмент'};
+    let html = _anSec('Последняя коммуникация');
+    html += _anCard((agent.speech || agent.heard) ? `
+      ${agent.speech ? `<div style="margin-bottom:6px;"><span style="font-size:10px;color:var(--text-muted);">Сказал:</span> <b style="color:#818cf8;font-family:monospace;">"${escapeHtml(agent.speech)}"</b>${agent.speech_meaning ? ` <span style="font-size:11px;color:var(--text-muted);">(${escapeHtml(meaningRu[agent.speech_meaning]||agent.speech_meaning)})</span>` : ''}</div>` : ''}
+      ${agent.heard ? `<div><span style="font-size:10px;color:var(--text-muted);">Услышал:</span> <b style="color:#34d399;font-family:monospace;">"${escapeHtml(agent.heard)}"</b></div>` : ''}
+    ` : '<span style="font-size:12px;color:var(--text-muted);">Нет активной коммуникации</span>');
+    html += _anSec(`Лексикон (${lexicon.length} слов)`);
+    if (!lexicon.length) {
+      html += `<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">Агент ещё не изобрёл слов. Коммуникация развивает лексикон.</div>`;
+    } else {
+      for (const entry of lexicon) {
+        const conf = entry.confidence ?? 0;
+        const ru = meaningRu[entry.meaning] || entry.meaning;
+        html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(99,102,241,0.07);border:1px solid rgba(99,102,241,0.15);border-radius:6px;margin-bottom:4px;">
+          <span style="font-family:monospace;font-size:14px;font-weight:700;color:#818cf8;min-width:52px;">"${escapeHtml(entry.token)}"</span>
+          <span style="font-size:11px;color:var(--text-muted);">→</span>
+          <span style="font-size:12px;color:var(--text-secondary);flex:1;">${escapeHtml(ru)}</span>
+          <div style="width:48px;height:3px;background:rgba(255,255,255,0.07);border-radius:2px;">
+            <div style="height:100%;width:${(conf*100).toFixed(0)}%;background:#6366f1;border-radius:2px;"></div>
+          </div>
+          <span style="font-size:10px;color:var(--text-muted);min-width:26px;text-align:right;">${(conf*100).toFixed(0)}%</span>
+        </div>`;
+      }
+    }
+    html += _anSec('Социальные связи');
+    const friends = (agent.social && agent.social.friends) || [];
+    const ns = agent.network_size || 0;
+    html += _anCard(`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:${friends.length?'8px':'0'};">
+      <span style="color:var(--text-muted);">Активных связей (доверие > 0.3)</span>
+      <span style="font-weight:700;color:${ns>2?'#34d399':'#94a3b8'};">${ns}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;${friends.length?'margin-bottom:8px;':''}">
+      <span style="color:var(--text-muted);">Бонус XP от сети</span>
+      <span style="font-weight:700;color:#6366f1;">×${(1+Math.min(1.5,Math.pow(ns/8,2))).toFixed(2)}</span>
+    </div>
+    ${friends.slice(0,6).map(f=>{
+      const n = findAgentName(f.id);
+      const tc = f.trust>0.5?'#34d399':f.trust>0?'#f59e0b':'#f87171';
+      return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:4px;">
+        <span style="color:var(--text-secondary);flex:1;">${escapeHtml(n)}</span>
+        <div style="width:60px;height:3px;background:rgba(255,255,255,0.07);border-radius:2px;">
+          <div style="height:100%;width:${Math.abs(f.trust)*100}%;background:${tc};border-radius:2px;"></div>
+        </div>
+        <span style="color:${tc};font-weight:600;min-width:30px;text-align:right;">${f.trust>0?'+':''}${f.trust.toFixed(2)}</span>
+      </div>`;
+    }).join('')}`);
+    body.innerHTML = html;
+  }
+
+  function _renderActiveAnalysisScreen(agent) {
+    const active = document.querySelector('#myAgentBody .agp-screen.active');
+    if (!active || !agent) return;
+    const id = active.id;
+    if (id === 'agpStatsScreen')    renderStatsScreen(agent);
+    else if (id === 'agpPsychScreen')    renderPsychScreen(agent);
+    else if (id === 'agpGeneticsScreen') renderGeneticsScreen(agent);
+    else if (id === 'agpLexiconScreen')  renderLexiconScreen(agent);
+  }
+
   function renderMyAgent(snapshot) {
     const agentBody  = document.getElementById('myAgentBody');
     const agentEmpty = document.getElementById('myAgentState');
@@ -2431,6 +2829,7 @@
     }
 
     _show(true);
+    _pushVitals(agent, snapshot ? snapshot.timestep : 0);
 
     // Аватар — первая буква имени
     const av = document.getElementById('agpAvatar');
@@ -2572,6 +2971,19 @@
 
     // Рендерим семейное дерево (если экран уже открыт)
     renderFamilyTree(agent, allAgents);
+
+    // Обновляем подзаголовки аналитических меню
+    const _statSub = document.getElementById('agpStatsMenuSub');
+    if (_statSub) _statSub.textContent = `❤️ ${(agent.health*100).toFixed(0)}% · ⚡ ${(agent.energy*100).toFixed(0)}%`;
+    const _psychSub = document.getElementById('agpPsychMenuSub');
+    if (_psychSub && agent.mood) _psychSub.textContent = agent.mood + (agent.dominant_emotion ? ' · ' + agent.dominant_emotion : '');
+    const _genSub = document.getElementById('agpGeneticsMenuSub');
+    if (_genSub) _genSub.textContent = `ε ${((agent.exploration_rate||0.1)*100).toFixed(0)}% · ${agent.research_count||0} иссл.`;
+    const _lexSub = document.getElementById('agpLexiconMenuSub');
+    if (_lexSub) _lexSub.textContent = `${(agent.lexicon||[]).length} слов · связей: ${agent.network_size||0}`;
+
+    // Рендерим активный аналитический экран
+    _renderActiveAnalysisScreen(agent);
   }
 
   function renderFamilyTree(agent, allAgents) {
@@ -2795,6 +3207,13 @@
     const s = document.getElementById(screenId);
     if (s) s.classList.add('active');
     if (screenId === 'agpChatScreen') loadAgentChat();
+    const _ag = lastSnapshot && findMyAgent(lastSnapshot);
+    if (_ag) {
+      if (screenId === 'agpStatsScreen')    renderStatsScreen(_ag);
+      else if (screenId === 'agpPsychScreen')    renderPsychScreen(_ag);
+      else if (screenId === 'agpGeneticsScreen') renderGeneticsScreen(_ag);
+      else if (screenId === 'agpLexiconScreen')  renderLexiconScreen(_ag);
+    }
   }
   document.querySelectorAll('.agp-menu-item[data-goto]').forEach(item => {
     item.addEventListener('click', () => agpGoto(item.dataset.goto));

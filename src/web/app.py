@@ -2835,6 +2835,16 @@ class SimulationController:
                         "visited_cells": int(getattr(agent, 'visited_cells', 0)),
                         "pending_command": getattr(agent, 'pending_command', None),
                         "pending_command_ticks": int(getattr(agent, 'pending_command_ticks', 0)),
+                        "max_age": int(getattr(agent, 'max_age', 5000)),
+                        "offspring_count": int(getattr(agent, 'offspring_count', 0)),
+                        "total_reward": round(float(getattr(agent, 'total_reward', 0.0)), 2),
+                        "genes": agent.genes.to_dict() if hasattr(agent, 'genes') and hasattr(agent.genes, 'to_dict') else None,
+                        "research_count": len(getattr(agent, 'research_unlocks', set()) or set()),
+                        "research_bonuses": {k: round(v, 3) for k, v in (getattr(agent, 'research_bonuses', {}) or {}).items()},
+                        "lexicon": [
+                            {"meaning": m, "token": max(ws, key=lambda tk: ws[tk]), "confidence": round(max(ws.values()), 2)}
+                            for m, ws in list((getattr(agent, 'lexicon_out', {}) or {}).items())[:12] if ws
+                        ],
                     }
                 )
 
