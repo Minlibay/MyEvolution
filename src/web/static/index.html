@@ -76,6 +76,13 @@
     .diary-entry.cat-fight { border-left:2px solid #f97316; }
     .panel-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border-subtle); }
     .panel-head h3 { margin:0; font-size:0.85rem; font-weight:600; color:var(--text-accent); }
+    #cameraControls { position:absolute; bottom:14px; right:14px; display:flex; flex-direction:column; align-items:center; gap:3px; z-index:20; }
+    .cam-btn { width:30px; height:30px; border-radius:8px; border:1px solid rgba(255,255,255,0.13); background:rgba(10,14,26,0.78); color:var(--text-primary); font-size:15px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(8px); transition:background 0.15s,border-color 0.15s; user-select:none; }
+    .cam-btn:hover { background:rgba(99,102,241,0.28); border-color:rgba(99,102,241,0.55); }
+    .cam-btn.active { background:rgba(99,102,241,0.40); border-color:rgba(99,102,241,0.80); color:#a5b4fc; }
+    #camZoomLabel { font-size:9px; color:rgba(255,255,255,0.35); user-select:none; line-height:1; }
+    #canvasWrap canvas { cursor:grab; }
+    #canvasWrap canvas.grabbing { cursor:grabbing; }
     .build-card { display:flex; flex-direction:column; gap:4px; padding:10px 12px; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:rgba(255,255,255,0.03); margin-bottom:8px; transition:background 0.15s,border-color 0.15s; }
     .build-card:last-child { margin-bottom:0; }
     .build-card.can-build { border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.06); }
@@ -138,6 +145,13 @@
       <div id="canvasWrap">
         <canvas id="cv" width="1000" height="720"></canvas>
         <div id="agentTooltip"></div>
+        <div id="cameraControls">
+          <button class="cam-btn" id="camZoomIn"  title="Приблизить (+)">+</button>
+          <button class="cam-btn" id="camZoomOut" title="Отдалить (−)">−</button>
+          <div id="camZoomLabel">100%</div>
+          <button class="cam-btn" id="camReset"  title="Сбросить вид">⌖</button>
+          <button class="cam-btn" id="camFollow" title="Следовать за агентом">🎯</button>
+        </div>
       </div>
     </div>
 
@@ -736,8 +750,124 @@
     }
   }
 
-  // Camera (фиксированная, без управления)
-  const camera = { x: 0, y: 0, zoom: 1 };
+  // ── Camera ──────────────────────────────────────────────────────────────────
+  const camera = { x: 0, y: 0, zoom: 1, _follow: false };
+  const ZOOM_MIN = 1.0, ZOOM_MAX = 12;
+
+  function _camZoomAt(factor, mx, my) {
+    const nz = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, camera.zoom * factor));
+    camera.x = mx - (mx - camera.x) * (nz / camera.zoom);
+    camera.y = my - (my - camera.y) * (nz / camera.zoom);
+    camera.zoom = nz;
+    _camUpdateLabel();
+  }
+  function _camUpdateLabel() {
+    const el = document.getElementById('camZoomLabel');
+    if (el) el.textContent = Math.round(camera.zoom * 100) + '%';
+  }
+  function _camReset() {
+    camera.x = 0; camera.y = 0; camera.zoom = 1; camera._follow = false;
+    _camUpdateLabel();
+    const fb = document.getElementById('camFollow');
+    if (fb) fb.classList.remove('active');
+  }
+  function _camSetFollow(on) {
+    camera._follow = on;
+    const fb = document.getElementById('camFollow');
+    if (fb) fb.classList.toggle('active', on);
+  }
+
+  // Scroll-wheel zoom (centred on cursor)
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = cv.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (cv.width  / rect.width);
+    const my = (e.clientY - rect.top)  * (cv.height / rect.height);
+    _camSetFollow(false);
+    _camZoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, mx, my);
+    _camClamp();
+  }, { passive: false });
+
+  // Drag pan (mouse)
+  let _camDrag = null;
+  cv.addEventListener('mousedown', e => {
+    if (e.button === 0) {
+      _camDrag = { sx: e.clientX, sy: e.clientY, cx: camera.x, cy: camera.y };
+      cv.classList.add('grabbing');
+      _camSetFollow(false);
+    }
+  });
+  window.addEventListener('mousemove', e => {
+    if (!_camDrag) return;
+    const rect = cv.getBoundingClientRect();
+    const scaleX = cv.width  / rect.width;
+    const scaleY = cv.height / rect.height;
+    camera.x = _camDrag.cx + (e.clientX - _camDrag.sx) * scaleX;
+    camera.y = _camDrag.cy + (e.clientY - _camDrag.sy) * scaleY;
+  });
+  window.addEventListener('mouseup', e => {
+    if (e.button === 0) { _camDrag = null; cv.classList.remove('grabbing'); }
+  });
+
+  // Touch pinch + single-finger drag
+  let _camPinch = null, _camTouchDrag = null;
+  cv.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      _camTouchDrag = null;
+      const t0 = e.touches[0], t1 = e.touches[1];
+      _camPinch = {
+        d: Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY),
+        zoom: camera.zoom,
+        mx: (t0.clientX + t1.clientX) / 2,
+        my: (t0.clientY + t1.clientY) / 2,
+      };
+    } else if (e.touches.length === 1) {
+      _camPinch = null;
+      _camTouchDrag = { sx: e.touches[0].clientX, sy: e.touches[0].clientY, cx: camera.x, cy: camera.y };
+      _camSetFollow(false);
+    }
+  }, { passive: true });
+  cv.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 2 && _camPinch) {
+      const t0 = e.touches[0], t1 = e.touches[1];
+      const d = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      const nz = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, _camPinch.zoom * d / _camPinch.d));
+      const rect = cv.getBoundingClientRect();
+      const mx = (_camPinch.mx - rect.left) * (cv.width  / rect.width);
+      const my = (_camPinch.my - rect.top)  * (cv.height / rect.height);
+      camera.x = mx - (mx - camera.x) * (nz / camera.zoom);
+      camera.y = my - (my - camera.y) * (nz / camera.zoom);
+      camera.zoom = nz;
+      _camSetFollow(false);
+      _camUpdateLabel();
+    } else if (e.touches.length === 1 && _camTouchDrag) {
+      const rect = cv.getBoundingClientRect();
+      const scaleX = cv.width  / rect.width;
+      const scaleY = cv.height / rect.height;
+      camera.x = _camTouchDrag.cx + (e.touches[0].clientX - _camTouchDrag.sx) * scaleX;
+      camera.y = _camTouchDrag.cy + (e.touches[0].clientY - _camTouchDrag.sy) * scaleY;
+    }
+  }, { passive: false });
+  cv.addEventListener('touchend', () => { _camPinch = null; _camTouchDrag = null; });
+
+  // Clamp camera: мир всегда заполняет экран без пустых краёв
+  function _camClamp() {
+    // camera.x ∈ [cv.width*(1-zoom), 0]  — левый край мира = левый край экрана
+    camera.x = Math.max(cv.width  * (1 - camera.zoom), Math.min(0, camera.x));
+    camera.y = Math.max(cv.height * (1 - camera.zoom), Math.min(0, camera.y));
+  }
+
+  // Apply clamp after every pan
+  const _origWindowMousemove = window.onmousemove;
+  window.addEventListener('mousemove', () => { if (_camDrag) _camClamp(); });
+  cv.addEventListener('touchmove', () => _camClamp(), { passive: true });
+
+  // Overlay buttons
+  document.getElementById('camZoomIn') ?.addEventListener('click', () => { _camZoomAt(1.5, cv.width / 2, cv.height / 2); _camClamp(); });
+  document.getElementById('camZoomOut')?.addEventListener('click', () => { _camZoomAt(1 / 1.5, cv.width / 2, cv.height / 2); _camClamp(); });
+  document.getElementById('camReset') ?.addEventListener('click', _camReset);
+  document.getElementById('camFollow') ?.addEventListener('click', () => _camSetFollow(!camera._follow));
 
   function showWelcomeOnce() {
     try {
@@ -1233,6 +1363,7 @@
 
   cv.addEventListener('mousemove', (e) => {
     if (!lastSnapshot) return;
+    if (_camDrag) { renderAgentTooltip(null); return; }
     const rect = cv.getBoundingClientRect();
     // Mouse is in CSS pixels; convert to canvas pixels for hit-testing.
     const mxCss = e.clientX - rect.left;
@@ -1317,24 +1448,20 @@
 
     // Ground texture (tiled if available)
     if (groundReady && groundSprite.naturalWidth > 0) {
-      ctx.save();
-      ctx.globalAlpha = 1.0;
       const pat = ctx.createPattern(groundSprite, 'repeat');
       if (pat) {
-        const scaleX = sx / groundSprite.naturalWidth * 2;
-        const scaleY = sy / groundSprite.naturalHeight * 2;
+        // Scale pattern to cover 2×2 cells, accounting for camera zoom
+        const tileScaleX = sx * camera.zoom * 2 / groundSprite.naturalWidth;
+        const tileScaleY = sy * camera.zoom * 2 / groundSprite.naturalHeight;
+        ctx.save();
         ctx.fillStyle = pat;
-        ctx.setTransform(scaleX, 0, 0, scaleY, camera.x, camera.y);
-        ctx.fillRect(0, 0, w * groundSprite.naturalWidth / 2, h * groundSprite.naturalHeight / 2);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.translate(camera.x, camera.y);
-        ctx.scale(camera.zoom, camera.zoom);
+        ctx.setTransform(tileScaleX, 0, 0, tileScaleY, camera.x, camera.y);
+        // Fill exactly the visible screen area in pattern-local coords
+        ctx.fillRect(-camera.x / tileScaleX, -camera.y / tileScaleY,
+                     cv.width / tileScaleX, cv.height / tileScaleY);
+        ctx.restore();
+        // Camera transform restored — continue in world space
       }
-      ctx.restore();
-      // Re-apply camera after ground
-      ctx.save();
-      ctx.translate(camera.x, camera.y);
-      ctx.scale(camera.zoom, camera.zoom);
     }
 
     // Terrain (water) from saved map — rendered on top of ground texture
@@ -1598,39 +1725,7 @@
       ctx.restore();
     }
 
-    // Night overlay (с вырезом вокруг костров)
-    if (snapshot.world && snapshot.world.is_daytime === false) {
-      // Рисуем тёмный слой на отдельном canvas, чтобы destination-out
-      // не трогал основной canvas (иначе вырезались бы пиксели карты и агентов)
-      const nightCanvas = document.createElement('canvas');
-      nightCanvas.width  = cv.width;
-      nightCanvas.height = cv.height;
-      const nctx = nightCanvas.getContext('2d');
-
-      nctx.fillStyle = campfires.length > 0 ? 'rgba(2,4,13,0.78)' : 'rgba(2,4,13,0.32)';
-      nctx.fillRect(0, 0, nightCanvas.width, nightCanvas.height);
-
-      if (campfires.length > 0) {
-        // Вырезаем освещённые зоны — операция применяется только к nightCanvas
-        nctx.globalCompositeOperation = 'destination-out';
-        for (const cf of campfires) {
-          const px = (cf.x + 0.5) * sx;
-          const py = (cf.y + 0.5) * sy;
-          const litR = Math.max(sx, sy) * 5;
-          const litGrad = nctx.createRadialGradient(px, py, 0, px, py, litR);
-          litGrad.addColorStop(0,   'rgba(0,0,0,1)');    // полностью прозрачно у костра
-          litGrad.addColorStop(0.5, 'rgba(0,0,0,0.65)');
-          litGrad.addColorStop(1,   'rgba(0,0,0,0)');    // плавно темнеет к краям
-          nctx.fillStyle = litGrad;
-          nctx.beginPath();
-          nctx.arc(px, py, litR, 0, Math.PI * 2);
-          nctx.fill();
-        }
-      }
-
-      // Накладываем готовый ночной слой (с дырками) на основной canvas
-      ctx.drawImage(nightCanvas, 0, 0);
-    }
+    // Night overlay — drawn in screen space after camera restore (see end of draw)
 
     // Спрайт / fallback пламя (рисуем ПОСЛЕ ночного оверлея, поверх темноты)
     for (const cf of campfires) {
@@ -1769,6 +1864,37 @@
       ctx.shadowBlur = 0;
       ctx.fillText(b.owner_name, px, py + Math.max(sx, sy) * 0.5);
       ctx.restore();
+    }
+
+    // Завершаем camera-context
+    ctx.restore();
+
+    // Night overlay в экранных координатах (не сдвигается при панорамировании)
+    if (snapshot.world && snapshot.world.is_daytime === false) {
+      const nightCanvas = document.createElement('canvas');
+      nightCanvas.width  = cv.width;
+      nightCanvas.height = cv.height;
+      const nctx = nightCanvas.getContext('2d');
+      nctx.fillStyle = campfires.length > 0 ? 'rgba(2,4,13,0.78)' : 'rgba(2,4,13,0.32)';
+      nctx.fillRect(0, 0, cv.width, cv.height);
+      if (campfires.length > 0) {
+        nctx.globalCompositeOperation = 'destination-out';
+        for (const cf of campfires) {
+          // Экранная позиция = camera + мировая позиция * zoom
+          const cpx = camera.x + (cf.x + 0.5) * sx * camera.zoom;
+          const cpy = camera.y + (cf.y + 0.5) * sy * camera.zoom;
+          const litR = Math.max(sx, sy) * 5 * camera.zoom;
+          const litGrad = nctx.createRadialGradient(cpx, cpy, 0, cpx, cpy, litR);
+          litGrad.addColorStop(0,   'rgba(0,0,0,1)');
+          litGrad.addColorStop(0.5, 'rgba(0,0,0,0.65)');
+          litGrad.addColorStop(1,   'rgba(0,0,0,0)');
+          nctx.fillStyle = litGrad;
+          nctx.beginPath();
+          nctx.arc(cpx, cpy, litR, 0, Math.PI * 2);
+          nctx.fill();
+        }
+      }
+      ctx.drawImage(nightCanvas, 0, 0);
     }
   }
 
@@ -1957,6 +2083,21 @@
   function renderLoop(now) {
     try {
       if (lastSnapshot) {
+        // Follow-agent: smooth camera track (runs every frame, not just per snapshot)
+        if (camera._follow) {
+          const agent = findMyAgent(lastSnapshot);
+          if (agent && lastSnapshot.world) {
+            const w = lastSnapshot.world.width;
+            const h = lastSnapshot.world.height;
+            const sx = cv.width  / w;
+            const sy = cv.height / h;
+            const tx = cv.width  / 2 - agent.x * sx * camera.zoom;
+            const ty = cv.height / 2 - agent.y * sy * camera.zoom;
+            camera.x += (tx - camera.x) * 0.10;
+            camera.y += (ty - camera.y) * 0.10;
+          }
+        }
+
         if (now - lastPaintMs >= targetFrameMs) {
           draw(lastSnapshot);
           // Post-process effects in screen space
