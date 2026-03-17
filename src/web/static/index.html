@@ -1786,81 +1786,96 @@
   const objectsState = new Map();
   let lastRunNumber = null;
 
-  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  let ws = null;
+  let _pingInterval = null;
+  let _reconnectTimer = null;
 
-  function ping() {
-    try { ws.send('ping'); } catch (e) {}
+  function connectWs() {
+    if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+    if (_pingInterval) { clearInterval(_pingInterval); _pingInterval = null; }
+
+    ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+
+    ws.onopen = () => {
+      status.innerHTML = '';
+      _pingInterval = setInterval(() => { try { ws.send('ping'); } catch (e) {} }, 1000);
+    };
+
+    ws.onmessage = (ev) => {
+      let snapshot;
+      try {
+        snapshot = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+
+      // Agents may be omitted in delta snapshots; keep the last known list for hover.
+      try {
+        if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, 'agents') && Array.isArray(snapshot.agents)) {
+          lastAgents = snapshot.agents;
+        }
+      } catch (e) {}
+
+      // Apply object sync/deltas
+      try {
+        const runNo = snapshot.run_number ?? (snapshot.run_info ? snapshot.run_info.number : null);
+        const isNewRun = (runNo !== null && runNo !== undefined && lastRunNumber !== runNo);
+        const full = Boolean(snapshot.full_sync) || Boolean(snapshot.objects_full) || isNewRun;
+
+        if (full) {
+          objectsState.clear();
+          const fullList = snapshot.objects_full || snapshot.objects || [];
+          for (const o of fullList) {
+            if (!o || !o.id) continue;
+            objectsState.set(o.id, o);
+          }
+          lastRunNumber = runNo;
+        } else {
+          for (const o of (snapshot.objects_add || [])) {
+            if (!o || !o.id) continue;
+            objectsState.set(o.id, o);
+          }
+          for (const o of (snapshot.objects_update || [])) {
+            if (!o || !o.id) continue;
+            objectsState.set(o.id, o);
+          }
+          for (const oid of (snapshot.objects_remove || [])) {
+            if (!oid) continue;
+            objectsState.delete(oid);
+          }
+        }
+      } catch (e) {}
+
+      lastSnapshot = snapshot;
+      renderStatus(snapshot);
+      renderHistory(snapshot);
+      renderEvents(snapshot);
+      renderMyAgent(snapshot);
+      updateInfoBar(snapshot);
+      _checkAgentDeathNotify(snapshot);
+
+      if (!renderLoopStarted) {
+        renderLoopStarted = true;
+        lastPaintMs = performance.now();
+        requestAnimationFrame(renderLoop);
+      }
+    };
+
+    ws.onclose = () => {
+      if (_pingInterval) { clearInterval(_pingInterval); _pingInterval = null; }
+      let secs = 5;
+      status.innerHTML = `<b>WS disconnected</b> — переподключение через <span id="wsReconnectSecs">${secs}</span>с...`;
+      const countdown = setInterval(() => {
+        secs--;
+        const el = document.getElementById('wsReconnectSecs');
+        if (el) el.textContent = secs;
+        if (secs <= 0) clearInterval(countdown);
+      }, 1000);
+      _reconnectTimer = setTimeout(() => { clearInterval(countdown); connectWs(); }, 5000);
+    };
   }
 
-  ws.onopen = () => {
-    // Keep connection alive; server pushes updates.
-    setInterval(() => ping(), 1000);
-  };
-
-  ws.onmessage = (ev) => {
-    let snapshot;
-    try {
-      snapshot = JSON.parse(ev.data);
-    } catch {
-      return;
-    }
-
-    // Agents may be omitted in delta snapshots; keep the last known list for hover.
-    try {
-      if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, 'agents') && Array.isArray(snapshot.agents)) {
-        lastAgents = snapshot.agents;
-      }
-    } catch (e) {}
-
-    // Apply object sync/deltas
-    try {
-      const runNo = snapshot.run_number ?? (snapshot.run_info ? snapshot.run_info.number : null);
-      const isNewRun = (runNo !== null && runNo !== undefined && lastRunNumber !== runNo);
-      const full = Boolean(snapshot.full_sync) || Boolean(snapshot.objects_full) || isNewRun;
-
-      if (full) {
-        objectsState.clear();
-        const fullList = snapshot.objects_full || snapshot.objects || [];
-        for (const o of fullList) {
-          if (!o || !o.id) continue;
-          objectsState.set(o.id, o);
-        }
-        lastRunNumber = runNo;
-      } else {
-        for (const o of (snapshot.objects_add || [])) {
-          if (!o || !o.id) continue;
-          objectsState.set(o.id, o);
-        }
-        for (const o of (snapshot.objects_update || [])) {
-          if (!o || !o.id) continue;
-          objectsState.set(o.id, o);
-        }
-        for (const oid of (snapshot.objects_remove || [])) {
-          if (!oid) continue;
-          objectsState.delete(oid);
-        }
-      }
-    } catch (e) {}
-
-    lastSnapshot = snapshot;
-    renderStatus(snapshot);
-    renderHistory(snapshot);
-    renderEvents(snapshot);
-    renderMyAgent(snapshot);
-    updateInfoBar(snapshot);
-    _checkAgentDeathNotify(snapshot);
-
-    if (!renderLoopStarted) {
-      renderLoopStarted = true;
-      lastPaintMs = performance.now();
-      requestAnimationFrame(renderLoop);
-    }
-  };
-
-  ws.onclose = () => {
-    status.innerHTML = '<b>WS disconnected</b>';
-    setTimeout(() => location.reload(), 3000);
-  };
+  connectWs();
 
   const authUser = document.getElementById('authUser');
   const authPass = document.getElementById('authPass');
