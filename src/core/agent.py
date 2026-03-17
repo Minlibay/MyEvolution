@@ -212,10 +212,15 @@ SKILL_RU = {
 ACTION_TO_SKILL = {
     'gather': 'gathering', 'consume': 'gathering',
     'combine': 'crafting', 'break': 'crafting', 'build_shelter': 'crafting',
+    'repair': 'crafting', 'smelt': 'crafting', 'tan_hide': 'crafting',
+    'build': 'crafting', 'upgrade': 'crafting', 'repair_building': 'crafting',
+    'deposit': 'communication', 'collect_trade': 'communication',
     'attack': 'hunting',
+    'cook': 'cooking', 'fish': 'gathering',
     'communicate': 'communication', 'mate': 'communication',
     'move': 'survival', 'drink': 'survival', 'sleep': 'survival', 'treat': 'survival',
-    'care': 'communication',
+    'care': 'communication', 'share': 'communication',
+    'light_fire': 'survival', 'plant_berry': 'gathering',
 }
 
 

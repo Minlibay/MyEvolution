@@ -8,7 +8,7 @@ import time
 
 from .environment import Environment, EnvironmentConfig
 from .agent import Agent, AgentFactory, generate_thought, ACTION_TO_SKILL, Skills
-from .agent_actions import ActionExecutor, ActionResult
+from .agent_actions import ActionExecutor, ActionResult, BUILDING_RECIPES
 from .objects import ObjectFactory
 from .tools import ToolLibrary
 from ..learning.q_learning import LearningManager
@@ -258,6 +258,65 @@ class SimulationState:
                     and not self.environment.is_water(agent.position) and _no_shelter):
                 available_actions.append('build_shelter')
 
+            # build (settlement buildings): проверяем все рецепты зданий
+            if not self.environment.is_water(agent.position):
+                _cell_types = set(o.type for o in self.environment.get_objects_at_position(agent.position))
+                for _btype, _brecipe in BUILDING_RECIPES.items():
+                    if _btype in _cell_types:
+                        continue  # уже есть такое здание тут
+                    _bskill, _bmin = _brecipe['skill']
+                    if agent.skills.get(_bskill) < _bmin:
+                        continue
+                    _bok = True
+                    for _bmat, _bcnt in _brecipe['materials'].items():
+                        _bhave = sum(1 for oid in _inv
+                                     if (bo := self.environment.objects.get(oid)) and bo.type == _bmat)
+                        if _bhave < _bcnt:
+                            _bok = False
+                            break
+                    if _bok:
+                        available_actions.append('build')
+                        break  # достаточно одного доступного рецепта
+
+            # upgrade: улучшение здания рядом (lvl < 3) + материалы
+            _has_upgradeable = False
+            for _dx in range(-1, 2):
+                for _dy in range(-1, 2):
+                    for _uo in self.environment.get_objects_at_position(
+                            (agent.position[0] + _dx, agent.position[1] + _dy)):
+                        if (getattr(_uo, 'building_owner_id', None) == agent.id
+                                and getattr(_uo, 'building_level', 1) < 3
+                                and getattr(_uo, 'building_type', None) in BUILDING_RECIPES):
+                            _has_upgradeable = True
+                            break
+                    if _has_upgradeable:
+                        break
+                if _has_upgradeable:
+                    break
+            if _has_upgradeable and agent.skills.get('crafting') >= 0.3:
+                # Проверяем наличие хоть каких-то материалов
+                _has_mats = (_wood_cnt >= 2 or _stone_cnt >= 2)
+                if _has_mats:
+                    available_actions.append('upgrade')
+
+            # repair_building: починка повреждённого здания рядом (durability < 0.7)
+            _has_damaged_bld = False
+            for _dx in range(-1, 2):
+                for _dy in range(-1, 2):
+                    for _ro in self.environment.get_objects_at_position(
+                            (agent.position[0] + _dx, agent.position[1] + _dy)):
+                        if (getattr(_ro, 'building_owner_id', None) == agent.id
+                                and getattr(_ro, 'building_type', None) in BUILDING_RECIPES
+                                and getattr(_ro, 'durability', 1.0) < 0.7):
+                            _has_damaged_bld = True
+                            break
+                    if _has_damaged_bld:
+                        break
+                if _has_damaged_bld:
+                    break
+            if _has_damaged_bld and (_wood_cnt >= 2 or _stone_cnt >= 2):
+                available_actions.append('repair_building')
+
             # mate only when a valid close partner exists
             if mate_candidates:
                 available_actions.append('mate')
@@ -265,6 +324,124 @@ class SimulationState:
             # care when close child exists
             if any(getattr(a, 'is_child', lambda: False)() for a in close_agents):
                 available_actions.append('care')
+
+            # ── Торговля: deposit/collect_trade ──
+            _ax, _ay = agent.position
+            _has_own_post = False
+            _has_foreign_post = False
+            for _dx in range(-2, 3):
+                for _dy in range(-2, 3):
+                    for _to in self.environment.get_objects_at_position((_ax + _dx, _ay + _dy)):
+                        if getattr(_to, 'building_type', None) == 'trading_post':
+                            if getattr(_to, 'building_owner_id', None) == agent.id:
+                                _has_own_post = True
+                            elif len(getattr(_to, 'stored_items', [])) > 0:
+                                _has_foreign_post = True
+                    if _has_own_post and _has_foreign_post:
+                        break
+                if _has_own_post and _has_foreign_post:
+                    break
+            # deposit: свой пост + есть дубликаты в инвентаре
+            if _has_own_post and len(_inv) >= 2:
+                available_actions.append('deposit')
+            # collect_trade: чужой пост с предметами + есть место в инвентаре
+            if _has_foreign_post and len(_inv) < getattr(agent, 'inventory_capacity', 5):
+                available_actions.append('collect_trade')
+
+            # ── Новые действия: доступность ──
+
+            # cook: cooking lv2+ (>= 0.1) или clay_oven рядом, + еда в инвентаре
+            _has_cookable = any(
+                (fo := self.environment.objects.get(oid)) and fo.type in ('berry', 'plant', 'mushroom', 'fish')
+                for oid in _inv
+            )
+            if _has_cookable:
+                _ax, _ay = agent.position
+                _heat_near = False
+                for _dx in range(-2, 3):
+                    for _dy in range(-2, 3):
+                        for _o in self.environment.get_objects_at_position((_ax + _dx, _ay + _dy)):
+                            if (_o.type == 'campfire' and getattr(_o, 'fuel_ticks', 0) > 0) or _o.type == 'clay_oven':
+                                _heat_near = True
+                                break
+                        if _heat_near:
+                            break
+                    if _heat_near:
+                        break
+                if _heat_near and agent.skills.get('cooking') >= 0.1:
+                    available_actions.append('cook')
+
+            # fish: gathering lv3+ (>= 0.2) + fishing_rod + рядом вода
+            _has_rod = any(
+                (t := self.environment.tools.get(tid)) and getattr(t, 'kind', None) == 'fishing_rod' and not t.is_broken()
+                for tid in (getattr(agent, 'tools', []) or [])
+            )
+            if _has_rod and agent.skills.get('gathering') >= 0.2:
+                _ax, _ay = agent.position
+                _water_near = False
+                for _dx in range(-1, 2):
+                    for _dy in range(-1, 2):
+                        if self.environment.is_water((_ax + _dx, _ay + _dy)):
+                            _water_near = True
+                            break
+                    if _water_near:
+                        break
+                if _water_near:
+                    available_actions.append('fish')
+
+            # smelt: crafting lv5+ (>= 0.4) + ore + stone_furnace + campfire рядом
+            _has_ore = any(
+                (oo := self.environment.objects.get(oid)) and oo.type == 'ore'
+                for oid in _inv
+            )
+            if _has_ore and agent.skills.get('crafting') >= 0.4:
+                _ax, _ay = agent.position
+                _has_furn = False
+                _has_camp = False
+                for _dx in range(-2, 3):
+                    for _dy in range(-2, 3):
+                        for _o in self.environment.get_objects_at_position((_ax + _dx, _ay + _dy)):
+                            if _o.type == 'stone_furnace':
+                                _has_furn = True
+                            if _o.type == 'campfire' and getattr(_o, 'fuel_ticks', 0) > 0:
+                                _has_camp = True
+                        if _has_furn and _has_camp:
+                            break
+                    if _has_furn and _has_camp:
+                        break
+                if _has_furn and _has_camp:
+                    available_actions.append('smelt')
+
+            # repair: crafting lv3+ (>= 0.2) + повреждённый инструмент + материал
+            _has_damaged = any(
+                (t := self.environment.tools.get(tid)) and t.durability_left < 60
+                for tid in (getattr(agent, 'tools', []) or [])
+            )
+            _has_mat = any(
+                (mo := self.environment.objects.get(oid)) and mo.type in ('wood', 'stone', 'bone', 'fiber', 'ore', 'metal_ingot')
+                for oid in _inv
+            )
+            if _has_damaged and _has_mat and agent.skills.get('crafting') >= 0.2:
+                available_actions.append('repair')
+
+            # tan_hide: crafting lv2+ (>= 0.1) + bone + plant + campfire рядом
+            _has_bone_inv = any((bo := self.environment.objects.get(oid)) and bo.type == 'bone' for oid in _inv)
+            _has_plant_inv = any((po := self.environment.objects.get(oid)) and po.type == 'plant' for oid in _inv)
+            if _has_bone_inv and _has_plant_inv and agent.skills.get('crafting') >= 0.1:
+                _ax, _ay = agent.position
+                _fire_near = False
+                for _dx in range(-2, 3):
+                    for _dy in range(-2, 3):
+                        for _o in self.environment.get_objects_at_position((_ax + _dx, _ay + _dy)):
+                            if _o.type == 'campfire' and getattr(_o, 'fuel_ticks', 0) > 0:
+                                _fire_near = True
+                                break
+                        if _fire_near:
+                            break
+                    if _fire_near:
+                        break
+                if _fire_near:
+                    available_actions.append('tan_hide')
             
             # Простой инстинкт ухода: если рядом ребёнок и он голоден/без энергии — приоритет care
             hungry_child = None
@@ -293,12 +470,25 @@ class SimulationState:
                     except Exception:
                         continue
 
-            # Инстинкт жажды: искать/пить воду
+            # Инстинкт жажды: искать/пить воду (+ колодец рядом)
             thirsty_self = getattr(agent, 'thirst', 0.0) > 0.6
             water_here = False
             if thirsty_self:
                 try:
                     water_here = any(o.type == 'water' for o in self.environment.get_objects_at_position(agent.position))
+                    # Колодец рядом тоже считается источником воды
+                    if not water_here:
+                        _ax, _ay = agent.position
+                        for _dx in range(-2, 3):
+                            for _dy in range(-2, 3):
+                                for _wo in self.environment.get_objects_at_position((_ax + _dx, _ay + _dy)):
+                                    if getattr(_wo, 'building_type', None) == 'well':
+                                        water_here = True
+                                        break
+                                if water_here:
+                                    break
+                            if water_here:
+                                break
                 except Exception:
                     water_here = False
 
@@ -447,11 +637,97 @@ class SimulationState:
                         if random.random() < prob_plant:
                             action = 'plant_berry'
                             chosen = True
+
+                    # ── Инстинкты для новых действий ──
+
+                    # Готовка: если есть токсичная еда (mushroom) или просто голоден
+                    if not chosen and 'cook' in available_actions:
+                        _has_toxic = any(
+                            (fo := self.environment.objects.get(oid)) and fo.type in ('mushroom', 'fish')
+                            for oid in agent.inventory
+                        )
+                        prob_cook = (0.70 if _has_toxic else 0.15) + 0.15 * pers.patience
+                        if random.random() < prob_cook:
+                            action = 'cook'
+                            chosen = True
+
+                    # Рыбалка: при голоде и пустом инвентаре
+                    if not chosen and 'fish' in available_actions:
+                        prob_fish = 0.10 + 0.20 * pers.patience + (0.30 if agent.hunger > 0.4 else 0.0)
+                        if random.random() < prob_fish:
+                            action = 'fish'
+                            chosen = True
+
+                    # Плавка: если есть руда и рядом горн
+                    if not chosen and 'smelt' in available_actions:
+                        prob_smelt = 0.40 + 0.20 * pers.industriousness
+                        if random.random() < prob_smelt:
+                            action = 'smelt'
+                            chosen = True
+
+                    # Ремонт: если инструмент сильно повреждён
+                    if not chosen and 'repair' in available_actions:
+                        prob_repair = 0.50 + 0.20 * pers.patience
+                        if random.random() < prob_repair:
+                            action = 'repair'
+                            chosen = True
+
+                    # Выделка кожи: если есть кость и растение у костра
+                    if not chosen and 'tan_hide' in available_actions:
+                        prob_tan = 0.25 + 0.20 * pers.industriousness
+                        if random.random() < prob_tan:
+                            action = 'tan_hide'
+                            chosen = True
+
+                    # Ремонт зданий: высший приоритет для терпеливых
+                    if not chosen and 'repair_building' in available_actions:
+                        prob_rb = 0.70 + 0.20 * pers.patience
+                        if random.random() < prob_rb:
+                            action = 'repair_building'
+                            chosen = True
+
+                    # Улучшение зданий: трудолюбивые
+                    if not chosen and 'upgrade' in available_actions:
+                        prob_up = 0.20 + 0.25 * pers.industriousness + 0.15 * pers.patience
+                        if random.random() < prob_up:
+                            action = 'upgrade'
+                            chosen = True
+
+                    # Торговля: социальные/эмпатичные агенты кладут на пост
+                    if not chosen and 'deposit' in available_actions:
+                        prob_dep = 0.15 + 0.25 * pers.empathy + 0.15 * pers.sociability
+                        if random.random() < prob_dep:
+                            action = 'deposit'
+                            chosen = True
+
+                    # Сбор с чужого поста: любопытные/социальные
+                    if not chosen and 'collect_trade' in available_actions:
+                        prob_col = 0.30 + 0.20 * pers.curiosity + 0.15 * pers.sociability
+                        if random.random() < prob_col:
+                            action = 'collect_trade'
+                            chosen = True
+
+                    # Строительство зданий: трудолюбивые и терпеливые агенты
+                    if not chosen and 'build' in available_actions:
+                        prob_build = 0.35 + 0.25 * pers.industriousness + 0.10 * pers.patience
+                        if random.random() < prob_build:
+                            action = 'build'
+                            chosen = True
+
                     if not chosen:
                         action = decision_maker.select_action(local_env, available_actions)
+                # Ремонт зданий: высший приоритет
+                elif 'repair_building' in available_actions:
+                    action = 'repair_building'
                 # Убежище: строим при первой возможности
                 elif 'build_shelter' in available_actions:
                     action = 'build_shelter'
+                # Строительство зданий
+                elif 'build' in available_actions:
+                    action = 'build'
+                # Улучшение зданий
+                elif 'upgrade' in available_actions:
+                    action = 'upgrade'
                 # Лечение: при низком здоровье
                 elif 'treat' in available_actions and agent.health < 0.5:
                     action = 'treat'
@@ -496,6 +772,24 @@ class SimulationState:
                             setattr(agent, '_move_target', obj.position)
                             break
 
+            # Притяжение к поселениям: социальные агенты ходят в гости
+            if ('move' in available_actions and action == 'move'
+                    and pers and random.random() < 0.02 * pers.sociability):
+                # Ищем ближайшее чужое здание (trading_post, well, garden)
+                _visit_target = None
+                _visit_dist = 999
+                for _vobj in (local_env.get('perceived_objects', []) or []):
+                    _vbt = getattr(_vobj, 'building_type', None)
+                    if _vbt in ('trading_post', 'well', 'garden'):
+                        _vo = getattr(_vobj, 'building_owner_id', None)
+                        if _vo and _vo != agent.id:
+                            _vd = abs(_vobj.position[0] - agent.position[0]) + abs(_vobj.position[1] - agent.position[1])
+                            if _vd < _visit_dist:
+                                _visit_dist = _vd
+                                _visit_target = _vobj.position
+                if _visit_target:
+                    setattr(agent, '_move_target', _visit_target)
+
             # Команда владельца — переопределяет выбранное действие
             _pending = getattr(agent, 'pending_command', None)
             _pending_ticks = int(getattr(agent, 'pending_command_ticks', 0))
@@ -504,10 +798,30 @@ class SimulationState:
                 # Используем команду если действие доступно или всегда разрешено (rest/sleep/move)
                 if _pending in available_actions or _pending in ('rest', 'sleep', 'move'):
                     action = _pending
+                    # Передаём целевой крафт/сбор
+                    if _pending == 'combine':
+                        _ct = getattr(agent, 'pending_craft_target', None)
+                        if _ct:
+                            setattr(agent, '_craft_target_kind', _ct)
+                    if _pending == 'gather':
+                        _gt = getattr(agent, 'pending_gather_target', None)
+                        if _gt:
+                            setattr(agent, '_gather_target_type', _gt)
+                    if _pending == 'build':
+                        _bt = getattr(agent, 'pending_build_target', None)
+                        if _bt:
+                            setattr(agent, '_build_target', _bt)
+                    if _pending == 'upgrade':
+                        _ut = getattr(agent, 'pending_upgrade_target', None)
+                        if _ut:
+                            setattr(agent, '_upgrade_target', _ut)
                 setattr(agent, 'pending_command_ticks', _new_ticks)
                 if _new_ticks <= 0:
                     setattr(agent, 'pending_command', None)
                     setattr(agent, 'pending_command_ticks', 0)
+                    setattr(agent, 'pending_craft_target', None)
+                    setattr(agent, 'pending_gather_target', None)
+                    setattr(agent, 'pending_build_target', None)
 
             # Исполнение действия
             if action in ('communicate', 'mate', 'care', 'share'):
@@ -574,6 +888,119 @@ class SimulationState:
             except Exception:
                 pass
 
+            # ── Бонусы от зданий (Settlement System) ────────────────────────────
+            try:
+                ax, ay = agent.position
+                _agent_id = agent.id
+                _bld_radius = 3  # радиус действия зданий
+                # Альянсы: собираем ID союзников (trust > 0.5)
+                _ally_ids = set()
+                if hasattr(agent, 'social'):
+                    for _aid, _trust in agent.social.relationships.items():
+                        if _trust > 0.5:
+                            _ally_ids.add(_aid)
+                _my_buildings = []
+                for _dx in range(-_bld_radius, _bld_radius + 1):
+                    for _dy in range(-_bld_radius, _bld_radius + 1):
+                        for _bo in self.environment.get_objects_at_position((ax + _dx, ay + _dy)):
+                            _bo_owner = getattr(_bo, 'building_owner_id', None)
+                            if _bo_owner == _agent_id or _bo_owner in _ally_ids:
+                                _my_buildings.append(_bo)
+
+                for _bld in _my_buildings:
+                    _bt = getattr(_bld, 'building_type', None)
+                    _blvl = getattr(_bld, 'building_level', 1)
+                    # Повреждённые здания (< 30% прочности) не дают бонусов
+                    if getattr(_bld, 'durability', 1.0) < 0.3:
+                        continue
+
+                    # Склад: L1 +5, L2 +8, L3 +12 к вместимости
+                    if _bt == 'storage_hut':
+                        _s_bonus = {1: 5, 2: 8, 3: 12}.get(_blvl, 5)
+                        _prev = getattr(agent, '_storage_bonus_val', 0)
+                        if _prev != _s_bonus:
+                            agent.inventory_capacity += (_s_bonus - _prev)
+                            setattr(agent, '_storage_bonus_val', _s_bonus)
+                        if not getattr(agent, '_storage_bonus_applied', False):
+                            agent.inventory_capacity += _s_bonus
+                            setattr(agent, '_storage_bonus_applied', True)
+                            setattr(agent, '_storage_bonus_val', _s_bonus)
+
+                    # Мастерская: L1 флаг, L2 -15% энергии, L3 -25% энергии
+                    if _bt == 'workshop':
+                        setattr(agent, '_workshop_nearby', True)
+                        setattr(agent, '_workshop_level', _blvl)
+
+                    # Огород: L1 каждые 50, L2 каждые 35, L3 каждые 25 тиков + herbs
+                    if _bt == 'garden':
+                        _interval = {1: 50, 2: 35, 3: 25}.get(_blvl, 50)
+                        _max_store = {1: 5, 2: 8, 3: 12}.get(_blvl, 5)
+                        _pt = getattr(_bld, 'produce_timer', 0) + 1
+                        _stored = getattr(_bld, 'stored_produce', 0)
+                        if _pt >= _interval and _stored < _max_store:
+                            import uuid as _uuid_g
+                            # L3 иногда производит herb вместо plant
+                            _prod_type = 'herb' if (_blvl >= 3 and random.random() < 0.3) else 'plant'
+                            _food_id = f"garden_{_prod_type}_{_uuid_g.uuid4().hex[:8]}"
+                            _food = ObjectFactory.create_object(
+                                _prod_type, _bld.position, _food_id,
+                                getattr(self.environment, 'timestep', 0))
+                            self.environment.add_object(_food)
+                            setattr(_bld, 'stored_produce', _stored + 1)
+                            _pt = 0
+                        setattr(_bld, 'produce_timer', _pt)
+
+                    # Колодец: L1 radius 2, L2 radius 3, L3 radius 3 + -0.002 thirst/tick
+                    if _bt == 'well' and _blvl >= 3:
+                        agent.thirst = max(0.0, agent.thirst - 0.002)
+
+                    # Дозорная башня: L1 +3, L2 +4, L3 +5 к восприятию
+                    if _bt == 'watchtower':
+                        _w_bonus = {1: 3, 2: 4, 3: 5}.get(_blvl, 3)
+                        if not getattr(agent, '_watchtower_bonus_applied', False):
+                            agent.perception_radius += _w_bonus
+                            setattr(agent, '_watchtower_bonus_applied', True)
+                            setattr(agent, '_watchtower_bonus_val', _w_bonus)
+                        elif getattr(agent, '_watchtower_bonus_val', 3) != _w_bonus:
+                            _prev_w = getattr(agent, '_watchtower_bonus_val', 3)
+                            agent.perception_radius += (_w_bonus - _prev_w)
+                            setattr(agent, '_watchtower_bonus_val', _w_bonus)
+
+                    # Сушилка: L1 каждые 30, L2 каждые 20, L3 каждые 15 тиков
+                    if _bt == 'drying_rack':
+                        _d_interval = {1: 30, 2: 20, 3: 15}.get(_blvl, 30)
+                        _dt = getattr(_bld, 'dry_timer', 0) + 1
+                        if _dt >= _d_interval:
+                            for _fid in list(agent.inventory):
+                                _fobj = self.environment.objects.get(_fid)
+                                _dry_types = ('fish', 'mushroom') if _blvl >= 3 else ('fish',)
+                                if _fobj and _fobj.type in _dry_types:
+                                    agent.remove_from_inventory(_fid)
+                                    self.environment.remove_object(_fid)
+                                    import uuid as _uuid_d
+                                    _cf_id = f"dried_{_uuid_d.uuid4().hex[:8]}"
+                                    _cf = ObjectFactory.create_object(
+                                        'cooked_food', agent.position, _cf_id,
+                                        getattr(self.environment, 'timestep', 0))
+                                    self.environment.objects[_cf_id] = _cf
+                                    agent.add_to_inventory(_cf_id)
+                                    break
+                            _dt = 0
+                        setattr(_bld, 'dry_timer', _dt)
+
+                # Сбросить бонусы если нет зданий рядом
+                _bld_types = set(getattr(b, 'building_type', None) for b in _my_buildings)
+                if 'storage_hut' not in _bld_types and getattr(agent, '_storage_bonus_applied', False):
+                    agent.inventory_capacity = max(5, agent.inventory_capacity - 5)
+                    setattr(agent, '_storage_bonus_applied', False)
+                if 'watchtower' not in _bld_types and getattr(agent, '_watchtower_bonus_applied', False):
+                    agent.perception_radius = max(1, agent.perception_radius - 3)
+                    setattr(agent, '_watchtower_bonus_applied', False)
+                if 'workshop' not in _bld_types:
+                    setattr(agent, '_workshop_nearby', False)
+            except Exception:
+                pass
+
             # ── Термодинамика ─────────────────────────────────────────────────────
             try:
                 env_temp = self.environment.get_local_temperature(agent.position)
@@ -582,7 +1009,9 @@ class SimulationState:
                 metabolic_heat = 0.05   # °C/тик базовое тепло жизнедеятельности
                 action_heat = {
                     'move': 0.04, 'gather': 0.03, 'attack': 0.06,
-                    'combine': 0.04, 'build_shelter': 0.05,
+                    'combine': 0.04, 'build_shelter': 0.05, 'build': 0.05,
+                    'upgrade': 0.05, 'repair_building': 0.04,
+                    'deposit': 0.01, 'collect_trade': 0.01,
                     'sleep': -0.02, 'rest': -0.01,
                 }.get(getattr(agent, 'last_action', ''), 0.02)
 
@@ -842,6 +1271,20 @@ class SimulationState:
                     elif action == 'attack':
                         emo.add('pride', 0.08)
                         emo.add('anger', -0.05)
+                    elif action == 'collect_trade':
+                        emo.add('happiness', 0.05)
+                        _trade_owner = result.data.get('owner_id') if result.data else None
+                        if _trade_owner:
+                            soc.add_interaction(_trade_owner, 0.08)
+                            # Владелец тоже получает trust
+                            _owner_ag = self.agents.get(_trade_owner)
+                            if _owner_ag and hasattr(_owner_ag, 'social'):
+                                _owner_ag.social.add_interaction(agent.id, 0.08)
+                    elif action == 'deposit':
+                        emo.add('contentment', 0.04)
+                    elif action in ('build', 'upgrade'):
+                        emo.add('pride', 0.06)
+                        emo.add('contentment', 0.04)
                 else:
                     if action == 'combine':
                         emo.add('anger', 0.06)
@@ -891,8 +1334,22 @@ class SimulationState:
                     val_after = agent.skills.get(skill_name)
                     # Уведомление о разблокировке нового умения
                     _SKILL_UNLOCKS = {
-                        'survival': [(0.3, '🌿 Навык выживания lv4 — разблокировано: лечение травами')],
-                        'crafting': [(0.4, '🏠 Навык крафта lv5 — разблокировано: постройка убежища')],
+                        'survival': [
+                            (0.2, '🌿 Выживание lv3 — разблокировано: сбор трав'),
+                            (0.3, '🌿 Выживание lv4 — разблокировано: лечение травами'),
+                        ],
+                        'crafting': [
+                            (0.1, '🧶 Крафт lv2 — разблокировано: выделка кожи'),
+                            (0.2, '🔧 Крафт lv3 — разблокировано: ремонт инструментов, рецепты Tier 2'),
+                            (0.4, '🏠 Крафт lv5 — разблокировано: убежище, плавка, рецепты Tier 3'),
+                            (0.6, '⚔️ Крафт lv7 — разблокировано: металлические орудия, рецепты Tier 4'),
+                        ],
+                        'cooking': [
+                            (0.1, '🍳 Кулинария lv2 — разблокировано: готовка еды'),
+                        ],
+                        'gathering': [
+                            (0.2, '🐟 Собирательство lv3 — разблокировано: рыбалка'),
+                        ],
                     }
                     for threshold, msg in _SKILL_UNLOCKS.get(skill_name, []):
                         if val_before < threshold <= val_after:
@@ -1242,6 +1699,40 @@ class SimulationState:
                     if ts - planted_at >= 100:
                         setattr(obj, 'ripe', True)
                         obj.nutrition = 0.8  # теперь edible
+
+        # ── Деградация зданий ────────────────────────────────────────────
+        for obj_id, obj in list(self.environment.objects.items()):
+            bt = getattr(obj, 'building_type', None)
+            if bt and bt in BUILDING_RECIPES:
+                dur = getattr(obj, 'durability', 1.0)
+                # Деградация: 0.0005 за тик → ~2000 тиков до разрушения
+                dur -= 0.0005
+                obj.durability = dur
+                if dur <= 0:
+                    to_remove.append(obj_id)
+                    # Уведомление в лог владельца
+                    try:
+                        _oid = getattr(obj, 'building_owner_id', None)
+                        if _oid and _oid in self.agents:
+                            _label = BUILDING_RECIPES[bt].get('label', bt)
+                            self.agents[_oid].life_log.add(
+                                ts, 'alert',
+                                f'⚠️ {_label} разрушен(а)!', icon='💥')
+                    except Exception:
+                        pass
+                elif dur < 0.3:
+                    # Предупреждение (раз в 100 тиков)
+                    if ts % 100 == 0:
+                        try:
+                            _oid = getattr(obj, 'building_owner_id', None)
+                            if _oid and _oid in self.agents:
+                                _label = BUILDING_RECIPES[bt].get('label', bt)
+                                _pct = int(dur * 100)
+                                self.agents[_oid].life_log.add(
+                                    ts, 'alert',
+                                    f'⚠️ {_label} повреждён ({_pct}%)!', icon='🔧')
+                        except Exception:
+                            pass
 
         for obj_id in to_remove:
             try:

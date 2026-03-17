@@ -166,10 +166,11 @@ class ToolFactory:
         return None
     
     @staticmethod
-    def create_tool_from_objects(component_objects: List, creator_id: str, 
-                                tool_id: str, timestamp: int) -> Optional[Tool]:
+    def create_tool_from_objects(component_objects: List, creator_id: str,
+                                tool_id: str, timestamp: int,
+                                agent_skills: Optional[Dict[str, float]] = None) -> Optional[Tool]:
         """Создает инструмент из списка объектов"""
-        
+
         if len(component_objects) < 2:
             return None
 
@@ -183,8 +184,8 @@ class ToolFactory:
 
         # Simple named recipes next (keep emergent tools as fallback)
         try:
-            # Named recipes only support pure object combinations.
-            recipe_tool = ToolFactory._try_create_named_tool(component_objects, creator_id, tool_id, timestamp)
+            recipe_tool = ToolFactory._try_create_named_tool(component_objects, creator_id, tool_id, timestamp,
+                                                              agent_skills=agent_skills)
             if recipe_tool is not None:
                 return recipe_tool
         except Exception:
@@ -215,77 +216,214 @@ class ToolFactory:
         
         return tool
 
+    # ── Таблица именованных рецептов ─────────────────────────────────────
+    # Ключ: отсортированный кортеж токенов ("obj:<type>" или "tool:<kind>")
+    # skill_req: минимальные уровни навыков для крафта
+    # produces_object: если задан — рецепт создаёт Object, а не Tool
+    NAMED_RECIPES: Dict[tuple, Dict[str, Any]] = {
+        # ── Tier 1: без требований к навыкам ──
+        ("obj:stone", "obj:wood"): {
+            'kind': 'wooden_axe',
+            'effectiveness': {'gather': 1.8, 'break': 1.4, 'attack': 1.1, 'craft': 1.1},
+            'durability_left': 80.0,
+            'props': {'sharpness': 0.75, 'effectiveness': 1.6, 'durability': 0.8},
+        },
+        ("obj:bone", "obj:wood"): {
+            'kind': 'wooden_spear',
+            'effectiveness': {'gather': 1.2, 'break': 1.1, 'attack': 1.7, 'craft': 1.1},
+            'durability_left': 70.0,
+            'props': {'sharpness': 0.65, 'effectiveness': 1.5, 'durability': 0.7},
+        },
+        ("obj:stone", "obj:stone"): {
+            'kind': 'stone_hammer',
+            'effectiveness': {'gather': 1.1, 'break': 1.9, 'attack': 1.2, 'craft': 1.1},
+            'durability_left': 90.0,
+            'props': {'sharpness': 0.2, 'effectiveness': 1.6, 'durability': 0.9},
+        },
+        ("obj:fiber", "obj:fiber"): {
+            'kind': 'rope',
+            'produces_object': 'rope',  # создаёт объект rope, а не инструмент
+        },
+        ("obj:stone", "obj:wood", "obj:wood"): {
+            'kind': 'wooden_pickaxe',
+            'effectiveness': {'gather': 1.5, 'break': 1.8, 'attack': 0.9, 'craft': 1.0},
+            'durability_left': 75.0,
+            'props': {'sharpness': 0.5, 'effectiveness': 1.5, 'durability': 0.75},
+        },
+        ("obj:bone", "obj:bone", "obj:stone"): {
+            'kind': 'bone_knife',
+            'effectiveness': {'gather': 1.3, 'break': 1.0, 'attack': 1.5, 'craft': 1.3},
+            'durability_left': 65.0,
+            'props': {'sharpness': 0.8, 'effectiveness': 1.4, 'durability': 0.65},
+        },
+
+        # ── Tier 2: crafting >= 0.2 (lv3) ──
+        ("obj:clay", "obj:clay"): {
+            'kind': 'clay_pot',
+            'skill_req': {'crafting': 0.2},
+            'effectiveness': {'gather': 1.0, 'craft': 1.4, 'break': 1.0, 'attack': 1.0},
+            'durability_left': 50.0,
+            'props': {'sharpness': 0.0, 'effectiveness': 1.4, 'durability': 0.5},
+        },
+        ("obj:fiber", "obj:leather"): {
+            'kind': 'leather_bag',
+            'skill_req': {'crafting': 0.2},
+            'effectiveness': {'gather': 1.0, 'craft': 1.0, 'break': 1.0, 'attack': 1.0},
+            'durability_left': 80.0,
+            'props': {'sharpness': 0.0, 'effectiveness': 1.0, 'durability': 0.8},
+            'passive_bonus': {'inventory_bonus': 3},
+        },
+        ("obj:rope", "obj:wood", "obj:wood"): {
+            'kind': 'fishing_rod',
+            'skill_req': {'crafting': 0.2, 'gathering': 0.2},
+            'effectiveness': {'gather': 2.0, 'break': 0.8, 'attack': 0.8, 'craft': 1.0},
+            'durability_left': 60.0,
+            'props': {'sharpness': 0.1, 'effectiveness': 1.5, 'durability': 0.6},
+        },
+        ("obj:clay", "obj:wood"): {
+            'kind': 'torch',
+            'skill_req': {'crafting': 0.2},
+            'effectiveness': {'gather': 1.0, 'break': 1.0, 'attack': 1.3, 'craft': 1.0},
+            'durability_left': 40.0,
+            'props': {'sharpness': 0.0, 'effectiveness': 1.2, 'durability': 0.4},
+        },
+        ("obj:herb", "obj:herb"): {
+            'kind': 'medicine_pouch',
+            'skill_req': {'survival': 0.2},
+            'produces_object': 'herb',  # улучшенное лекарство (qty=3)
+            'produces_quantity': 3,
+        },
+        ("obj:bone", "obj:fiber"): {
+            'kind': 'bone_needle',
+            'skill_req': {'crafting': 0.2},
+            'effectiveness': {'gather': 1.0, 'break': 1.0, 'attack': 1.0, 'craft': 1.6},
+            'durability_left': 45.0,
+            'props': {'sharpness': 0.6, 'effectiveness': 1.5, 'durability': 0.45},
+        },
+
+        # ── Tier 3: crafting >= 0.4 (lv5) ──
+        ("obj:leather", "obj:leather", "obj:rope"): {
+            'kind': 'leather_armor',
+            'skill_req': {'crafting': 0.4},
+            'effectiveness': {'gather': 1.0, 'break': 1.0, 'attack': 1.0, 'craft': 1.0},
+            'durability_left': 70.0,
+            'props': {'sharpness': 0.0, 'effectiveness': 1.0, 'durability': 0.7},
+            'passive_bonus': {'damage_reduction': 0.25},
+        },
+        ("obj:ore", "obj:stone", "obj:wood"): {
+            'kind': 'stone_furnace',
+            'skill_req': {'crafting': 0.4},
+            'placed_object': 'stone_furnace',  # размещается на карте
+        },
+        ("obj:clay", "obj:clay", "obj:wood"): {
+            'kind': 'clay_oven',
+            'skill_req': {'crafting': 0.4},
+            'placed_object': 'clay_oven',  # размещается на карте
+        },
+        ("obj:ore", "tool:stone_hammer"): {
+            'kind': 'metal_ingot',
+            'skill_req': {'crafting': 0.4},
+            'produces_object': 'metal_ingot',
+        },
+        ("obj:leather", "obj:wood", "obj:rope"): {
+            'kind': 'sling',
+            'skill_req': {'crafting': 0.4},
+            'effectiveness': {'gather': 1.0, 'break': 1.2, 'attack': 1.8, 'craft': 1.0},
+            'durability_left': 55.0,
+            'props': {'sharpness': 0.3, 'effectiveness': 1.4, 'durability': 0.55},
+        },
+
+        # ── Tier 4: crafting >= 0.6 (lv7) ──
+        ("obj:metal_ingot", "obj:wood"): {
+            'kind': 'metal_axe',
+            'skill_req': {'crafting': 0.6},
+            'effectiveness': {'gather': 2.5, 'break': 2.0, 'attack': 1.5, 'craft': 1.3},
+            'durability_left': 95.0,
+            'props': {'sharpness': 0.9, 'effectiveness': 2.2, 'durability': 0.95},
+        },
+        ("obj:metal_ingot", "obj:bone"): {
+            'kind': 'metal_spear',
+            'skill_req': {'crafting': 0.6},
+            'effectiveness': {'gather': 1.5, 'break': 1.3, 'attack': 2.5, 'craft': 1.1},
+            'durability_left': 90.0,
+            'props': {'sharpness': 0.85, 'effectiveness': 2.0, 'durability': 0.9},
+        },
+        ("obj:metal_ingot", "obj:metal_ingot"): {
+            'kind': 'metal_shield',
+            'skill_req': {'crafting': 0.6},
+            'effectiveness': {'gather': 1.0, 'break': 1.0, 'attack': 1.2, 'craft': 1.0},
+            'durability_left': 95.0,
+            'props': {'sharpness': 0.0, 'effectiveness': 1.2, 'durability': 0.95},
+            'passive_bonus': {'damage_reduction': 0.4},
+        },
+        ("obj:leather", "obj:metal_ingot", "obj:rope"): {
+            'kind': 'metal_armor',
+            'skill_req': {'crafting': 0.6},
+            'effectiveness': {'gather': 1.0, 'break': 1.0, 'attack': 1.0, 'craft': 1.0},
+            'durability_left': 90.0,
+            'props': {'sharpness': 0.0, 'effectiveness': 1.0, 'durability': 0.9},
+            'passive_bonus': {'damage_reduction': 0.45},
+        },
+        ("obj:metal_ingot", "obj:wood", "obj:rope"): {
+            'kind': 'metal_pickaxe',
+            'skill_req': {'crafting': 0.6},
+            'effectiveness': {'gather': 2.0, 'break': 2.5, 'attack': 1.0, 'craft': 1.2},
+            'durability_left': 95.0,
+            'props': {'sharpness': 0.7, 'effectiveness': 2.0, 'durability': 0.95},
+        },
+    }
+
+    # Обратный индекс: kind -> ключ рецепта (для целевого крафта по команде)
+    RECIPE_BY_KIND: Dict[str, tuple] = {}
+    for _k, _v in NAMED_RECIPES.items():
+        RECIPE_BY_KIND[_v['kind']] = _k
+
     @staticmethod
     def _try_create_named_tool(component_objects: List, creator_id: str,
-                               tool_id: str, timestamp: int) -> Optional[Tool]:
-        """Try to create a named tool from simple recipes."""
+                               tool_id: str, timestamp: int,
+                               agent_skills: Optional[Dict[str, float]] = None) -> Optional[Tool]:
+        """Try to create a named tool from the recipe dictionary."""
         if len(component_objects) < 2:
             return None
 
-        types = sorted([getattr(o, 'type', None) for o in component_objects if o is not None])
-        if len(types) != len(component_objects) or any(t is None for t in types):
+        # Собираем токены из компонентов
+        tokens = []
+        for it in component_objects:
+            tok = ToolFactory._item_token(it)
+            if tok is None:
+                # plain object without type — fallback to type attr
+                t = getattr(it, 'type', None)
+                if t is not None:
+                    tok = f"obj:{t}"
+                else:
+                    return None
+            tokens.append(tok)
+        tokens_key = tuple(sorted(tokens))
+
+        recipe = ToolFactory.NAMED_RECIPES.get(tokens_key)
+        if recipe is None:
             return None
 
-        type_set = set(types)
+        # Проверка навыков
+        skill_req = recipe.get('skill_req', {})
+        if skill_req and agent_skills:
+            for sk, req_val in skill_req.items():
+                if agent_skills.get(sk, 0.0) < req_val:
+                    return None
 
-        # Recipes (2 components)
-        if type_set == {'wood', 'stone'}:
-            kind = 'wooden_axe'
-            effectiveness = {
-                'gather': 1.8,
-                'break': 1.4,
-                'attack': 1.1,
-                'craft': 1.1,
-                'move': 1.0,
-                'rest': 1.0,
-            }
-            durability_left = 80.0
-            props = {
-                'sharpness': 0.75,
-                'effectiveness': 1.6,
-                'weight': float(sum(getattr(o, 'weight', 0.5) for o in component_objects) / max(1, len(component_objects))),
-                'durability': 0.8,
-            }
-        elif type_set == {'wood', 'bone'}:
-            kind = 'wooden_spear'
-            effectiveness = {
-                'gather': 1.2,
-                'break': 1.1,
-                'attack': 1.7,
-                'craft': 1.1,
-                'move': 1.0,
-                'rest': 1.0,
-            }
-            durability_left = 70.0
-            props = {
-                'sharpness': 0.65,
-                'effectiveness': 1.5,
-                'weight': float(sum(getattr(o, 'weight', 0.5) for o in component_objects) / max(1, len(component_objects))),
-                'durability': 0.7,
-            }
-        elif type_set == {'stone'}:
-            kind = 'stone_hammer'
-            effectiveness = {
-                'gather': 1.1,
-                'break': 1.9,
-                'attack': 1.2,
-                'craft': 1.1,
-                'move': 1.0,
-                'rest': 1.0,
-            }
-            durability_left = 90.0
-            props = {
-                'sharpness': 0.2,
-                'effectiveness': 1.6,
-                'weight': float(sum(getattr(o, 'weight', 0.5) for o in component_objects) / max(1, len(component_objects))),
-                'durability': 0.9,
-            }
-        else:
-            return None
+        # Рецепт, создающий объект или размещаемый — обрабатывается отдельно
+        if recipe.get('produces_object') or recipe.get('placed_object'):
+            return None  # будет обработан в _try_create_named_object
+
+        kind = recipe['kind']
+        effectiveness = dict(recipe['effectiveness'])
+        durability_left = recipe['durability_left']
+        props = dict(recipe['props'])
+        props['weight'] = float(sum(getattr(o, 'weight', 0.5) for o in component_objects) / max(1, len(component_objects)))
 
         return Tool(
             id=tool_id,
-            components=[obj.id for obj in component_objects],
+            components=[getattr(obj, 'id', str(obj)) for obj in component_objects],
             creator_id=creator_id,
             created_at=timestamp,
             kind=kind,
@@ -293,6 +431,67 @@ class ToolFactory:
             durability_left=durability_left,
             properties=props,
         )
+
+    @staticmethod
+    def _try_create_named_object(component_objects: List,
+                                 agent_skills: Optional[Dict[str, float]] = None) -> Optional[Dict[str, Any]]:
+        """Check if components match a recipe that produces an Object or placed structure.
+        Returns a dict describing the result, or None."""
+        if len(component_objects) < 2:
+            return None
+
+        tokens = []
+        for it in component_objects:
+            tok = ToolFactory._item_token(it)
+            if tok is None:
+                t = getattr(it, 'type', None)
+                if t is not None:
+                    tok = f"obj:{t}"
+                else:
+                    return None
+            tokens.append(tok)
+        tokens_key = tuple(sorted(tokens))
+
+        recipe = ToolFactory.NAMED_RECIPES.get(tokens_key)
+        if recipe is None:
+            return None
+
+        skill_req = recipe.get('skill_req', {})
+        if skill_req and agent_skills:
+            for sk, req_val in skill_req.items():
+                if agent_skills.get(sk, 0.0) < req_val:
+                    return None
+
+        if recipe.get('produces_object'):
+            return {
+                'type': 'object',
+                'object_type': recipe['produces_object'],
+                'quantity': recipe.get('produces_quantity', 1),
+                'kind': recipe['kind'],
+            }
+        elif recipe.get('placed_object'):
+            return {
+                'type': 'placed',
+                'object_type': recipe['placed_object'],
+                'kind': recipe['kind'],
+            }
+        return None
+
+    @staticmethod
+    def get_recipes_for_api() -> List[Dict[str, Any]]:
+        """Return recipe list for the /api/recipes endpoint."""
+        result = []
+        for tokens_key, recipe in ToolFactory.NAMED_RECIPES.items():
+            result.append({
+                'kind': recipe['kind'],
+                'components': list(tokens_key),
+                'skill_req': recipe.get('skill_req', {}),
+                'produces_object': recipe.get('produces_object'),
+                'placed_object': recipe.get('placed_object'),
+                'passive_bonus': recipe.get('passive_bonus'),
+                'durability_left': recipe.get('durability_left'),
+            })
+        return result
 
     @staticmethod
     def _try_create_custom_recipe_tool(component_objects: List, creator_id: str,

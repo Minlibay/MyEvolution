@@ -183,6 +183,80 @@ class ObjectFactory:
             'hardness': 0.8, 'nutrition': 0.0, 'toxicity': 0.0,
             'weight': 5.0, 'durability': 1.0, 'flammability': 0.3, 'energy_cost': 0.0
         },
+        # ── Новые типы объектов ──
+        'clay': {
+            'hardness': 0.3, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 0.7, 'durability': 0.5, 'flammability': 0.0, 'energy_cost': 0.2
+        },
+        'leather': {
+            'hardness': 0.2, 'nutrition': 0.1, 'toxicity': 0.0,
+            'weight': 0.3, 'durability': 0.7, 'flammability': 0.2, 'energy_cost': 0.15
+        },
+        'ore': {
+            'hardness': 0.95, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 0.9, 'durability': 0.95, 'flammability': 0.0, 'energy_cost': 0.4
+        },
+        'rope': {
+            'hardness': 0.05, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 0.1, 'durability': 0.6, 'flammability': 0.2, 'energy_cost': 0.05
+        },
+        'herb': {
+            'hardness': 0.05, 'nutrition': 0.3, 'toxicity': 0.1,
+            'weight': 0.1, 'durability': 0.2, 'flammability': 0.3, 'energy_cost': 0.05
+        },
+        'mushroom': {
+            'hardness': 0.05, 'nutrition': 0.6, 'toxicity': 0.5,
+            'weight': 0.1, 'durability': 0.15, 'flammability': 0.1, 'energy_cost': 0.05
+        },
+        'cooked_food': {
+            'hardness': 0.05, 'nutrition': 0.9, 'toxicity': 0.0,
+            'weight': 0.15, 'durability': 0.2, 'flammability': 0.1, 'energy_cost': 0.05
+        },
+        'fish': {
+            'hardness': 0.1, 'nutrition': 0.85, 'toxicity': 0.05,
+            'weight': 0.3, 'durability': 0.2, 'flammability': 0.1, 'energy_cost': 0.1
+        },
+        'metal_ingot': {
+            'hardness': 0.95, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 0.85, 'durability': 0.95, 'flammability': 0.0, 'energy_cost': 0.35
+        },
+        'stone_furnace': {
+            'hardness': 0.9, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 5.0, 'durability': 1.0, 'flammability': 0.0, 'energy_cost': 0.0
+        },
+        'clay_oven': {
+            'hardness': 0.7, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 4.0, 'durability': 0.9, 'flammability': 0.0, 'energy_cost': 0.0
+        },
+        # ── Здания (Settlement System) ──
+        'storage_hut': {
+            'hardness': 0.6, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 4.0, 'durability': 0.9, 'flammability': 0.4, 'energy_cost': 0.0
+        },
+        'workshop': {
+            'hardness': 0.7, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 5.0, 'durability': 0.95, 'flammability': 0.3, 'energy_cost': 0.0
+        },
+        'garden': {
+            'hardness': 0.2, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 3.0, 'durability': 0.7, 'flammability': 0.2, 'energy_cost': 0.0
+        },
+        'well': {
+            'hardness': 0.9, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 5.0, 'durability': 0.95, 'flammability': 0.0, 'energy_cost': 0.0
+        },
+        'watchtower': {
+            'hardness': 0.5, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 6.0, 'durability': 0.85, 'flammability': 0.5, 'energy_cost': 0.0
+        },
+        'drying_rack': {
+            'hardness': 0.3, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 3.0, 'durability': 0.7, 'flammability': 0.4, 'energy_cost': 0.0
+        },
+        'trading_post': {
+            'hardness': 0.6, 'nutrition': 0.0, 'toxicity': 0.0,
+            'weight': 5.0, 'durability': 0.9, 'flammability': 0.3, 'energy_cost': 0.0
+        },
     }
     
     @classmethod
@@ -243,10 +317,14 @@ class ObjectFactory:
         """Возвращает случайный тип объекта с учетом сезона"""
         # Сезонные вероятности
         season_weights = {
-            0: {'plant': 0.3, 'berry': 0.2, 'wood': 0.2, 'stone': 0.2, 'bone': 0.05, 'fiber': 0.05},
-            1: {'plant': 0.2, 'berry': 0.4, 'wood': 0.2, 'stone': 0.1, 'bone': 0.05, 'fiber': 0.05},
-            2: {'plant': 0.25, 'berry': 0.25, 'wood': 0.25, 'stone': 0.15, 'bone': 0.05, 'fiber': 0.05},
-            3: {'plant': 0.1, 'berry': 0.05, 'wood': 0.3, 'stone': 0.4, 'bone': 0.1, 'fiber': 0.05},
+            0: {'plant': 0.25, 'berry': 0.17, 'wood': 0.17, 'stone': 0.15, 'bone': 0.04, 'fiber': 0.05,
+                'clay': 0.04, 'herb': 0.05, 'mushroom': 0.05, 'ore': 0.03},
+            1: {'plant': 0.17, 'berry': 0.30, 'wood': 0.15, 'stone': 0.08, 'bone': 0.04, 'fiber': 0.05,
+                'clay': 0.04, 'herb': 0.06, 'mushroom': 0.06, 'ore': 0.02, 'fiber': 0.03},
+            2: {'plant': 0.20, 'berry': 0.20, 'wood': 0.20, 'stone': 0.12, 'bone': 0.04, 'fiber': 0.05,
+                'clay': 0.04, 'herb': 0.04, 'mushroom': 0.08, 'ore': 0.03},
+            3: {'plant': 0.08, 'berry': 0.04, 'wood': 0.25, 'stone': 0.30, 'bone': 0.08, 'fiber': 0.05,
+                'clay': 0.03, 'herb': 0.02, 'mushroom': 0.02, 'ore': 0.05, 'fiber': 0.08},
         }
         
         weights = season_weights.get(season, season_weights[0])

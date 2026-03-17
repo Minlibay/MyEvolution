@@ -11,6 +11,63 @@ from .tools import Tool, ToolFactory
 from .environment import Environment
 
 
+# ── Рецепты построек (Settlement System) ──────────────────────────────────
+BUILDING_RECIPES = {
+    'storage_hut': {
+        'materials': {'wood': 8, 'rope': 2},
+        'skill': ('crafting', 0.3),
+        'energy_cost': 0.20,
+        'emoji': '🏚️',
+        'label': 'Склад',
+    },
+    'workshop': {
+        'materials': {'wood': 6, 'stone': 4, 'rope': 1},
+        'skill': ('crafting', 0.5),
+        'energy_cost': 0.30,
+        'emoji': '🔨',
+        'label': 'Мастерская',
+    },
+    'garden': {
+        'materials': {'plant': 3, 'wood': 2, 'clay': 1},
+        'skill': ('gathering', 0.3),
+        'energy_cost': 0.15,
+        'emoji': '🌱',
+        'label': 'Огород',
+    },
+    'well': {
+        'materials': {'stone': 6, 'rope': 2},
+        'skill': ('crafting', 0.4),
+        'energy_cost': 0.25,
+        'emoji': '🪣',
+        'label': 'Колодец',
+    },
+    'watchtower': {
+        'materials': {'wood': 10, 'stone': 4},
+        'skill': ('survival', 0.4),
+        'energy_cost': 0.30,
+        'emoji': '🗼',
+        'label': 'Дозорная башня',
+    },
+    'drying_rack': {
+        'materials': {'wood': 4, 'rope': 2},
+        'skill': ('crafting', 0.2),
+        'energy_cost': 0.12,
+        'emoji': '🥩',
+        'label': 'Сушилка',
+    },
+    'trading_post': {
+        'materials': {'wood': 6, 'stone': 4, 'rope': 2},
+        'skill': ('crafting', 0.4),
+        'energy_cost': 0.25,
+        'emoji': '🏪',
+        'label': 'Торговый пост',
+    },
+}
+
+# Типы зданий, которые нельзя подбирать при сборе
+BUILDING_TYPES = frozenset(BUILDING_RECIPES.keys()) | {'shelter', 'campfire', 'stone_furnace', 'clay_oven'}
+
+
 class ActionResult:
     """Результат выполнения действия"""
     
@@ -199,12 +256,19 @@ class AgentActions:
         _bc = _bonuses.get('bountiful_chance', 0.0)
         _gs = _bonuses.get('gather_success', 0.0)
 
+        # Целевой сбор: предпочитаем указанный тип
+        _gather_target = getattr(agent, '_gather_target_type', None)
+        if _gather_target:
+            setattr(agent, '_gather_target_type', None)
+            # Сортируем: целевые объекты первыми
+            cell_objects = sorted(cell_objects, key=lambda o: (0 if o.type == _gather_target else 1))
+
         for obj in cell_objects[:]:  # Копия для безопасного удаления
             if len(agent.inventory) >= _inv_cap:
                 break
 
-            # Нельзя собирать: незрелый куст, костёр, воду, кампфайр
-            if obj.type in ('campfire', 'water'):
+            # Нельзя собирать: незрелый куст, костёр, воду, размещённые структуры
+            if obj.type in BUILDING_TYPES or obj.type == 'water':
                 continue
             if obj.type == 'berry_bush' and not getattr(obj, 'ripe', False):
                 continue
@@ -326,9 +390,26 @@ class AgentActions:
 
     @staticmethod
     def execute_drink(agent: Agent, environment: Environment) -> ActionResult:
-        """Пьёт воду из источника в текущей клетке."""
+        """Пьёт воду из источника в текущей клетке или из колодца рядом."""
         cell_objects = environment.get_objects_at_position(agent.position)
         has_water = any(o.type == 'water' for o in cell_objects)
+        # Колодец в радиусе 2 тоже считается источником воды
+        if not has_water:
+            ax, ay = agent.position
+            for _dx in range(-2, 3):
+                for _dy in range(-2, 3):
+                    for _wo in environment.get_objects_at_position((ax + _dx, ay + _dy)):
+                        if getattr(_wo, 'building_type', None) == 'well':
+                            has_water = True
+                            # Trust бонус при использовании чужого колодца
+                            _well_owner = getattr(_wo, 'building_owner_id', None)
+                            if _well_owner and _well_owner != agent.id and hasattr(agent, 'social'):
+                                agent.social.add_interaction(_well_owner, 0.03)
+                            break
+                    if has_water:
+                        break
+                if has_water:
+                    break
         if not has_water:
             return ActionResult('drink', False, -0.02, 0.0, {'reason': 'no_water_here'})
 
@@ -534,169 +615,72 @@ class AgentActions:
     
     @staticmethod
     def execute_combine(agent: Agent, environment: Environment) -> ActionResult:
-        """Выполняет комбинирование объектов"""
-        # We can combine both objects (inventory) and existing tools (if tool.kind exists)
+        """Выполняет комбинирование объектов (с поддержкой целевого крафта)"""
         if (len(agent.inventory) + len(getattr(agent, 'tools', []) or [])) < 2:
             return ActionResult('combine', False, -0.1, 0.0, {'reason': 'insufficient_objects'})
-        
+
         energy_cost = 0.2
         energy_cost *= AgentActions._night_multiplier(environment, agent.position, radius=1)
         energy_cost *= max(0.2, 1.0 + getattr(agent, 'research_bonuses', {}).get('craft_energy_mult', 0.0))
 
         if agent.energy < energy_cost:
             return ActionResult('combine', False, -0.2, 0.0, {'reason': 'insufficient_energy'})
-        
-        # First: try custom recipes by checking if agent has the required ingredients.
-        crafted_tool = None
-        crafted_components = None
-        try:
-            recipes = ToolFactory.get_custom_recipes()
-        except Exception:
-            recipes = []
 
-        if recipes:
-            try:
-                random.shuffle(recipes)
-            except Exception:
-                pass
+        # Навыки агента для проверки рецептов
+        agent_skills = {s: agent.skills.get(s) for s in ['gathering', 'crafting', 'hunting', 'cooking', 'communication', 'survival']}
 
-        if recipes:
-            for r in recipes:
-                try:
-                    comps = r.get('components') or []
-                    if not isinstance(comps, list) or len(comps) < 2:
-                        continue
+        # Целевой крафт: если указан _craft_target_kind
+        target_kind = getattr(agent, '_craft_target_kind', None)
+        if target_kind:
+            setattr(agent, '_craft_target_kind', None)
 
-                    # Build available pools
-                    inv_ids = list(agent.inventory or [])
-                    tool_ids = list(getattr(agent, 'tools', []) or [])
+        # ── Хелпер: попробовать собрать ингредиенты для конкретного рецепта ──
+        def _try_gather_for_recipe(tokens_key):
+            inv_ids = list(agent.inventory or [])
+            tool_ids = list(getattr(agent, 'tools', []) or [])
+            selected_items = []
+            selected_obj_ids = []
+            selected_tool_ids = []
+            for tok in tokens_key:
+                tok = str(tok)
+                if tok.startswith('obj:'):
+                    need = tok.split(':', 1)[1]
+                    found = None
+                    for oid in inv_ids:
+                        o = environment.objects.get(oid)
+                        if o and getattr(o, 'type', None) == need:
+                            found = oid
+                            break
+                    if found is None:
+                        return None
+                    inv_ids.remove(found)
+                    selected_items.append(environment.objects[found])
+                    selected_obj_ids.append(found)
+                elif tok.startswith('tool:'):
+                    need = tok.split(':', 1)[1]
+                    found = None
+                    for tid in tool_ids:
+                        t = environment.tools.get(tid)
+                        if t and getattr(t, 'kind', None) == need:
+                            found = tid
+                            break
+                    if found is None:
+                        return None
+                    tool_ids.remove(found)
+                    selected_items.append(environment.tools[found])
+                    selected_tool_ids.append(found)
+            return {'items': selected_items, 'objects': selected_obj_ids, 'tools': selected_tool_ids}
 
-                    selected_items = []
-                    selected_obj_ids = []
-                    selected_tool_ids = []
-
-                    for c in comps:
-                        c = str(c)
-                        if c.startswith('obj:'):
-                            need = c.split(':', 1)[1]
-                            found = None
-                            for oid in inv_ids:
-                                o = environment.objects.get(oid)
-                                if o is None:
-                                    continue
-                                if getattr(o, 'type', None) == need:
-                                    found = oid
-                                    break
-                            if found is None:
-                                selected_items = None
-                                break
-                            inv_ids.remove(found)
-                            o = environment.objects.get(found)
-                            if o is None:
-                                selected_items = None
-                                break
-                            selected_items.append(o)
-                            selected_obj_ids.append(found)
-                        elif c.startswith('tool:'):
-                            need = c.split(':', 1)[1]
-                            found = None
-                            for tid in tool_ids:
-                                t = environment.tools.get(tid)
-                                if t is None:
-                                    continue
-                                if getattr(t, 'kind', None) == need:
-                                    found = tid
-                                    break
-                            if found is None:
-                                selected_items = None
-                                break
-                            tool_ids.remove(found)
-                            t = environment.tools.get(found)
-                            if t is None:
-                                selected_items = None
-                                break
-                            selected_items.append(t)
-                            selected_tool_ids.append(found)
-                        else:
-                            # Backward compatibility: plain object type
-                            need = c
-                            found = None
-                            for oid in inv_ids:
-                                o = environment.objects.get(oid)
-                                if o is None:
-                                    continue
-                                if getattr(o, 'type', None) == need:
-                                    found = oid
-                                    break
-                            if found is None:
-                                selected_items = None
-                                break
-                            inv_ids.remove(found)
-                            o = environment.objects.get(found)
-                            if o is None:
-                                selected_items = None
-                                break
-                            selected_items.append(o)
-                            selected_obj_ids.append(found)
-
-                    if not selected_items:
-                        continue
-
-                    tool = ToolFactory.create_tool_from_objects(
-                        selected_items,
-                        agent.id,
-                        f"tool_{environment.timestep}_{random.randint(1000, 9999)}",
-                        environment.timestep,
-                    )
-                    if tool is None:
-                        continue
-
-                    crafted_tool = tool
-                    crafted_components = {
-                        'objects': selected_obj_ids,
-                        'tools': selected_tool_ids,
-                    }
-                    break
-                except Exception:
-                    continue
-
-        tool = crafted_tool
-        
-        if tool is None:
-            # Fallback: random 2 objects (legacy emergent tools)
-            obj_ids = random.sample(agent.inventory, 2)
-            obj1 = environment.objects.get(obj_ids[0])
-            obj2 = environment.objects.get(obj_ids[1])
-
-            if not obj1 or not obj2:
-                return ActionResult('combine', False, -0.1, 0.0, {'reason': 'objects_not_found'})
-
-            tool = ToolFactory.create_tool_from_objects(
-                [obj1, obj2], agent.id, f"tool_{environment.timestep}_{random.randint(1000, 9999)}",
-                environment.timestep
-            )
-
-        if tool is None:
-            # Неудачная комбинация
-            agent.energy -= energy_cost * 0.5
-            return ActionResult(
-                'combine', 
-                False, 
-                -0.1, 
-                energy_cost * 0.5,
-                {'reason': 'ineffective_combination', 'attempted_objects': obj_ids}
-            )
-        
-        # Успешное создание инструмента
-        if crafted_components is not None:
-            for oid in crafted_components.get('objects', []) or []:
+        # ── Хелпер: потратить компоненты ──
+        def _consume_components(comp_info):
+            for oid in comp_info.get('objects', []):
                 try:
                     agent.remove_from_inventory(oid)
                 except Exception:
                     pass
-            for tid in crafted_components.get('tools', []) or []:
+            for tid in comp_info.get('tools', []):
                 try:
-                    if tid in getattr(agent, 'tools', []) or []:
+                    if tid in (getattr(agent, 'tools', []) or []):
                         agent.tools.remove(tid)
                 except Exception:
                     pass
@@ -704,35 +688,187 @@ class AgentActions:
                     environment.remove_tool(tid)
                 except Exception:
                     pass
-        else:
+
+        crafted_tool = None
+        crafted_components = None
+        crafted_object_result = None
+
+        # 1) Целевой крафт по kind
+        if target_kind:
+            tokens_key = ToolFactory.RECIPE_BY_KIND.get(target_kind)
+            if tokens_key:
+                comp_info = _try_gather_for_recipe(tokens_key)
+                if comp_info:
+                    # Сначала проверяем — рецепт создаёт объект?
+                    obj_result = ToolFactory._try_create_named_object(comp_info['items'], agent_skills)
+                    if obj_result:
+                        crafted_object_result = obj_result
+                        crafted_components = comp_info
+                    else:
+                        tool = ToolFactory.create_tool_from_objects(
+                            comp_info['items'], agent.id,
+                            f"tool_{environment.timestep}_{random.randint(1000, 9999)}",
+                            environment.timestep, agent_skills=agent_skills)
+                        if tool:
+                            crafted_tool = tool
+                            crafted_components = comp_info
+
+        # 2) Admin custom recipes
+        if crafted_tool is None and crafted_object_result is None:
+            try:
+                recipes = ToolFactory.get_custom_recipes()
+            except Exception:
+                recipes = []
+            if recipes:
+                try:
+                    random.shuffle(recipes)
+                except Exception:
+                    pass
+                for r in recipes:
+                    try:
+                        comps = r.get('components') or []
+                        if not isinstance(comps, list) or len(comps) < 2:
+                            continue
+                        comp_info = _try_gather_for_recipe(tuple(sorted(str(c) for c in comps)))
+                        if not comp_info:
+                            continue
+                        tool = ToolFactory.create_tool_from_objects(
+                            comp_info['items'], agent.id,
+                            f"tool_{environment.timestep}_{random.randint(1000, 9999)}",
+                            environment.timestep, agent_skills=agent_skills)
+                        if tool:
+                            crafted_tool = tool
+                            crafted_components = comp_info
+                            break
+                    except Exception:
+                        continue
+
+        # 3) Перебор NAMED_RECIPES (автоматический поиск подходящего)
+        if crafted_tool is None and crafted_object_result is None:
+            recipe_keys = list(ToolFactory.NAMED_RECIPES.keys())
+            random.shuffle(recipe_keys)
+            for tokens_key in recipe_keys:
+                comp_info = _try_gather_for_recipe(tokens_key)
+                if not comp_info:
+                    continue
+                # Объектный рецепт?
+                obj_result = ToolFactory._try_create_named_object(comp_info['items'], agent_skills)
+                if obj_result:
+                    crafted_object_result = obj_result
+                    crafted_components = comp_info
+                    break
+                # Инструмент?
+                tool = ToolFactory.create_tool_from_objects(
+                    comp_info['items'], agent.id,
+                    f"tool_{environment.timestep}_{random.randint(1000, 9999)}",
+                    environment.timestep, agent_skills=agent_skills)
+                if tool:
+                    crafted_tool = tool
+                    crafted_components = comp_info
+                    break
+
+        # 4) Fallback: random 2 objects (legacy emergent tools)
+        obj_ids = None
+        if crafted_tool is None and crafted_object_result is None and len(agent.inventory) >= 2:
+            obj_ids = random.sample(agent.inventory, 2)
+            obj1 = environment.objects.get(obj_ids[0])
+            obj2 = environment.objects.get(obj_ids[1])
+            if obj1 and obj2:
+                tool = ToolFactory.create_tool_from_objects(
+                    [obj1, obj2], agent.id,
+                    f"tool_{environment.timestep}_{random.randint(1000, 9999)}",
+                    environment.timestep, agent_skills=agent_skills)
+                if tool:
+                    crafted_tool = tool
+
+        # ── Обработка результата: рецепт создающий объект ──
+        if crafted_object_result and crafted_components:
+            _consume_components(crafted_components)
+            agent.energy -= energy_cost
+            ts = getattr(environment, 'timestep', 0)
+            result_type = crafted_object_result['object_type']
+            result_kind = crafted_object_result['kind']
+
+            if crafted_object_result.get('type') == 'placed':
+                # Размещаемый объект (печь, горн и т.п.)
+                placed_id = f"{result_type}_{agent.id}_{ts}"
+                placed_obj = ObjectFactory.create_object(result_type, agent.position, placed_id, ts)
+                setattr(placed_obj, 'placed_by', agent.id)
+                setattr(placed_obj, 'permanent', True)
+                environment.add_object(placed_obj)
+                try:
+                    agent.life_log.add(ts, 'craft', f'Построил {result_kind} 🏗️', icon='🏗️')
+                except Exception:
+                    pass
+                return ActionResult('combine', True, 1.5, energy_cost,
+                                    {'placed_id': placed_id, 'kind': result_kind})
+            else:
+                # Создаёт объект в инвентарь (rope, metal_ingot и т.п.)
+                qty = crafted_object_result.get('quantity', 1)
+                new_id = f"{result_type}_{ts}_{random.randint(1000, 9999)}"
+                new_obj = ObjectFactory.create_object(result_type, agent.position, new_id, ts)
+                new_obj.quantity = qty
+                environment.objects[new_id] = new_obj
+                if len(agent.inventory) < getattr(agent, 'inventory_capacity', 5):
+                    agent.add_to_inventory(new_id)
+                try:
+                    agent.life_log.add(ts, 'craft', f'Создал {result_kind} ⚒️', icon='⚒️')
+                except Exception:
+                    pass
+                return ActionResult('combine', True, 0.8, energy_cost,
+                                    {'object_id': new_id, 'kind': result_kind})
+
+        # ── Нет результата ──
+        if crafted_tool is None:
+            agent.energy -= energy_cost * 0.5
+            return ActionResult('combine', False, -0.1, energy_cost * 0.5,
+                                {'reason': 'ineffective_combination'})
+
+        # ── Успешное создание инструмента ──
+        if crafted_components:
+            _consume_components(crafted_components)
+        elif obj_ids:
             agent.remove_from_inventory(obj_ids[0])
             agent.remove_from_inventory(obj_ids[1])
-        agent.add_tool(tool.id)
-        environment.add_tool(tool)
-        
-        # Проверка на новое открытие
-        discovery_type = environment.tool_library.register_tool(tool)
-        
+
+        agent.add_tool(crafted_tool.id)
+        environment.add_tool(crafted_tool)
+
+        # Пассивные бонусы (leather_bag → inventory_bonus и т.п.)
+        recipe_key = ToolFactory.RECIPE_BY_KIND.get(crafted_tool.kind)
+        if recipe_key:
+            recipe = ToolFactory.NAMED_RECIPES.get(recipe_key, {})
+            passive = recipe.get('passive_bonus', {})
+            if passive:
+                for bk, bv in passive.items():
+                    if bk == 'inventory_bonus':
+                        agent.inventory_capacity = getattr(agent, 'inventory_capacity', 5) + int(bv)
+                    elif bk == 'damage_reduction':
+                        _rb = getattr(agent, 'research_bonuses', {})
+                        _rb['damage_reduction'] = _rb.get('damage_reduction', 0.0) + float(bv)
+                        agent.research_bonuses = _rb
+
+        discovery_type = environment.tool_library.register_tool(crafted_tool)
         if discovery_type == 'new_discovery':
             reward = 1.0
-            if tool.id not in agent.discoveries_made:
-                agent.discoveries_made.append(tool.id)
+            if crafted_tool.id not in agent.discoveries_made:
+                agent.discoveries_made.append(crafted_tool.id)
         else:
             reward = 0.2
-        
+
         agent.energy -= energy_cost
-        
+
+        ts = getattr(environment, 'timestep', 0)
+        kind_label = crafted_tool.kind or crafted_tool.get_tool_type()
+        try:
+            agent.life_log.add(ts, 'craft', f'Создал {kind_label} 🔨', icon='🔨')
+        except Exception:
+            pass
+
         return ActionResult(
-            'combine',
-            True,
-            reward,
-            energy_cost,
-            {
-                'tool_id': tool.id,
-                'tool_type': tool.get_tool_type(),
-                'discovery_type': discovery_type,
-                'components': (crafted_components if crafted_components is not None else obj_ids)
-            }
+            'combine', True, reward, energy_cost,
+            {'tool_id': crafted_tool.id, 'tool_type': crafted_tool.get_tool_type(),
+             'kind': crafted_tool.kind, 'discovery_type': discovery_type}
         )
     
     @staticmethod
@@ -773,6 +909,18 @@ class AgentActions:
             # Успешная охота
             environment.remove_object(target.id)
             agent.add_to_inventory(target.id)
+
+            # Дроп кожи (leather) при охоте
+            try:
+                ts = getattr(environment, 'timestep', 0)
+                leather_id = f"leather_{ts}_{random.randint(1000, 9999)}"
+                leather_drop = ObjectFactory.create_object('leather', agent.position, leather_id, ts)
+                leather_drop.quantity = 1
+                environment.objects[leather_id] = leather_drop
+                if len(agent.inventory) < getattr(agent, 'inventory_capacity', 5):
+                    agent.add_to_inventory(leather_id)
+            except Exception:
+                pass
 
             # Использование инструмента
             if tool:
@@ -1095,6 +1243,387 @@ class AgentActions:
         return ActionResult('build_shelter', True, 3.0, energy_cost, {'shelter_id': sh_id})
 
     @staticmethod
+    def execute_build(agent: Agent, environment: Environment) -> ActionResult:
+        """Строит здание из BUILDING_RECIPES. Тип здания берётся из agent._build_target."""
+        import uuid as _uuid
+
+        target = getattr(agent, '_build_target', None)
+
+        # Если цель не задана — выбираем первое доступное по материалам
+        if not target:
+            for btype, recipe in BUILDING_RECIPES.items():
+                skill_name, skill_min = recipe['skill']
+                if agent.skills.get(skill_name) < skill_min:
+                    continue
+                # Проверяем материалы
+                ok = True
+                for mat, cnt in recipe['materials'].items():
+                    have = sum(1 for oid in agent.inventory
+                               if (o := environment.objects.get(oid)) and o.type == mat)
+                    if have < cnt:
+                        ok = False
+                        break
+                if ok:
+                    target = btype
+                    break
+
+        if not target or target not in BUILDING_RECIPES:
+            return ActionResult('build', False, -0.05, 0.0, {'reason': 'no_target'})
+
+        recipe = BUILDING_RECIPES[target]
+        skill_name, skill_min = recipe['skill']
+
+        # Проверка скилла
+        if agent.skills.get(skill_name) < skill_min:
+            return ActionResult('build', False, -0.05, 0.0, {'reason': 'insufficient_skill'})
+
+        # Проверка энергии
+        energy_cost = recipe['energy_cost']
+        energy_cost *= max(0.2, 1.0 + getattr(agent, 'research_bonuses', {}).get('craft_energy_mult', 0.0))
+        if agent.energy < energy_cost:
+            return ActionResult('build', False, -0.1, 0.0, {'reason': 'insufficient_energy'})
+
+        # Нельзя строить на воде
+        if environment.is_water(agent.position):
+            return ActionResult('build', False, -0.1, 0.0, {'reason': 'on_water'})
+
+        # Нельзя ставить здание того же типа в той же клетке
+        cell = environment.get_objects_at_position(agent.position)
+        if any(o.type == target for o in cell):
+            return ActionResult('build', False, -0.05, 0.0, {'reason': 'building_exists'})
+
+        # Проверка и списание материалов
+        mat_ids = {}  # mat_type -> [obj_ids]
+        for mat, cnt in recipe['materials'].items():
+            ids = [oid for oid in agent.inventory
+                   if (o := environment.objects.get(oid)) and o.type == mat]
+            if len(ids) < cnt:
+                return ActionResult('build', False, -0.1, 0.0, {'reason': 'not_enough_materials'})
+            mat_ids[mat] = ids[:cnt]
+
+        # Списать энергию и материалы
+        agent.energy -= energy_cost
+        for mat, ids in mat_ids.items():
+            for oid in ids:
+                agent.remove_from_inventory(oid)
+                environment.remove_object(oid)
+
+        # Создать здание
+        ts = getattr(environment, 'timestep', 0)
+        b_id = f"{target}_{agent.id}_{ts}"
+        building = ObjectFactory.create_object(target, agent.position, b_id, ts)
+        setattr(building, 'building_owner_id', agent.id)
+        setattr(building, 'building_owner_name', getattr(agent, 'display_name', agent.id))
+        setattr(building, 'building_type', target)
+        setattr(building, 'building_level', 1)
+        setattr(building, 'permanent', True)
+        # Для огорода: счётчик производства
+        if target == 'garden':
+            setattr(building, 'produce_timer', 0)
+            setattr(building, 'stored_produce', 0)
+        # Для сушилки: счётчик
+        if target == 'drying_rack':
+            setattr(building, 'dry_timer', 0)
+        # Для торгового поста: хранилище
+        if target == 'trading_post':
+            setattr(building, 'stored_items', [])
+        environment.add_object(building)
+
+        emoji = recipe['emoji']
+        label = recipe['label']
+        try:
+            agent.life_log.add(ts, 'craft', f'Построил {label} {emoji}', icon=emoji)
+        except Exception:
+            pass
+
+        # Сброс таргета
+        setattr(agent, '_build_target', None)
+        setattr(agent, 'pending_build_target', None)
+
+        return ActionResult('build', True, 3.0, energy_cost,
+                            {'building_id': b_id, 'building_type': target})
+
+    @staticmethod
+    def execute_upgrade(agent: Agent, environment: Environment) -> ActionResult:
+        """Улучшает здание до следующего уровня. Стоимость: L2 = 1.5x базы, L3 = 2x базы + metal_ingot."""
+        import uuid as _uuid
+        import math
+
+        # Ищем здание рядом (радиус 1) принадлежащее агенту
+        target_type = getattr(agent, '_upgrade_target', None)
+        building = None
+        ax, ay = agent.position
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                for obj in environment.get_objects_at_position((ax + dx, ay + dy)):
+                    if getattr(obj, 'building_owner_id', None) != agent.id:
+                        continue
+                    bt = getattr(obj, 'building_type', None)
+                    if bt and bt in BUILDING_RECIPES:
+                        if target_type and bt != target_type:
+                            continue
+                        lvl = getattr(obj, 'building_level', 1)
+                        if lvl < 3:
+                            building = obj
+                            break
+                if building:
+                    break
+            if building:
+                break
+
+        if not building:
+            return ActionResult('upgrade', False, -0.05, 0.0, {'reason': 'no_upgradeable_building'})
+
+        bt = getattr(building, 'building_type')
+        lvl = getattr(building, 'building_level', 1)
+        recipe = BUILDING_RECIPES[bt]
+        next_lvl = lvl + 1
+
+        # Множитель материалов по уровню
+        mat_mult = {2: 1.5, 3: 2.0}.get(next_lvl, 1.5)
+        energy_cost = recipe['energy_cost'] * mat_mult
+        energy_cost *= max(0.2, 1.0 + getattr(agent, 'research_bonuses', {}).get('craft_energy_mult', 0.0))
+
+        if agent.energy < energy_cost:
+            return ActionResult('upgrade', False, -0.1, 0.0, {'reason': 'insufficient_energy'})
+
+        # Проверка скилла (на 0.1 выше за уровень)
+        skill_name, skill_min = recipe['skill']
+        required_skill = skill_min + (next_lvl - 1) * 0.1
+        if agent.skills.get(skill_name) < required_skill:
+            return ActionResult('upgrade', False, -0.05, 0.0, {'reason': 'insufficient_skill'})
+
+        # Проверка материалов
+        mat_ids = {}
+        for mat, cnt in recipe['materials'].items():
+            need = math.ceil(cnt * mat_mult)
+            ids = [oid for oid in agent.inventory
+                   if (o := environment.objects.get(oid)) and o.type == mat]
+            if len(ids) < need:
+                return ActionResult('upgrade', False, -0.1, 0.0,
+                                    {'reason': 'not_enough_materials'})
+            mat_ids[mat] = ids[:need]
+
+        # L3 дополнительно требует metal_ingot
+        if next_lvl == 3:
+            ingot_ids = [oid for oid in agent.inventory
+                         if (o := environment.objects.get(oid)) and o.type == 'metal_ingot']
+            if not ingot_ids:
+                return ActionResult('upgrade', False, -0.1, 0.0,
+                                    {'reason': 'need_metal_ingot'})
+            mat_ids['metal_ingot'] = ingot_ids[:1]
+
+        # Списать
+        agent.energy -= energy_cost
+        for mat, ids in mat_ids.items():
+            for oid in ids:
+                agent.remove_from_inventory(oid)
+                environment.remove_object(oid)
+
+        # Повысить уровень
+        setattr(building, 'building_level', next_lvl)
+        # Восстановить прочность при апгрейде
+        building.durability = min(1.0, building.durability + 0.5)
+
+        emoji = recipe['emoji']
+        label = recipe['label']
+        ts = getattr(environment, 'timestep', 0)
+        try:
+            agent.life_log.add(ts, 'craft',
+                               f'Улучшил {label} до ур.{next_lvl} {emoji}⬆', icon='⬆️')
+        except Exception:
+            pass
+
+        setattr(agent, '_upgrade_target', None)
+        return ActionResult('upgrade', True, 4.0, energy_cost,
+                            {'building_type': bt, 'new_level': next_lvl})
+
+    @staticmethod
+    def execute_repair_building(agent: Agent, environment: Environment) -> ActionResult:
+        """Ремонтирует ближайшее повреждённое здание. Нужно 2 wood или 2 stone."""
+        building = None
+        ax, ay = agent.position
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                for obj in environment.get_objects_at_position((ax + dx, ay + dy)):
+                    if getattr(obj, 'building_owner_id', None) != agent.id:
+                        continue
+                    bt = getattr(obj, 'building_type', None)
+                    if bt and bt in BUILDING_RECIPES and getattr(obj, 'durability', 1.0) < 0.7:
+                        building = obj
+                        break
+                if building:
+                    break
+            if building:
+                break
+
+        if not building:
+            return ActionResult('repair_building', False, -0.05, 0.0,
+                                {'reason': 'no_damaged_building'})
+
+        # Нужно 2 wood или 2 stone
+        wood_ids = [oid for oid in agent.inventory
+                    if (o := environment.objects.get(oid)) and o.type == 'wood']
+        stone_ids = [oid for oid in agent.inventory
+                     if (o := environment.objects.get(oid)) and o.type == 'stone']
+        if len(wood_ids) >= 2:
+            use_ids = wood_ids[:2]
+        elif len(stone_ids) >= 2:
+            use_ids = stone_ids[:2]
+        else:
+            return ActionResult('repair_building', False, -0.05, 0.0,
+                                {'reason': 'no_repair_materials'})
+
+        energy_cost = 0.08
+        if agent.energy < energy_cost:
+            return ActionResult('repair_building', False, -0.05, 0.0,
+                                {'reason': 'insufficient_energy'})
+
+        agent.energy -= energy_cost
+        for oid in use_ids:
+            agent.remove_from_inventory(oid)
+            environment.remove_object(oid)
+
+        # Восстановить 0.3 прочности
+        building.durability = min(1.0, building.durability + 0.3)
+
+        bt = getattr(building, 'building_type', '?')
+        label = BUILDING_RECIPES.get(bt, {}).get('label', bt)
+        ts = getattr(environment, 'timestep', 0)
+        try:
+            agent.life_log.add(ts, 'craft',
+                               f'Починил {label} 🔧', icon='🔧')
+        except Exception:
+            pass
+
+        return ActionResult('repair_building', True, 1.0, energy_cost,
+                            {'building_type': bt, 'durability': building.durability})
+
+    # ── Торговля (Trading Post) ─────────────────────────────────────────
+
+    @staticmethod
+    def execute_deposit(agent: Agent, environment: Environment) -> ActionResult:
+        """Кладёт предмет из инвентаря на торговый пост. Макс 10 предметов на посте."""
+        energy_cost = 0.02
+        if agent.energy < energy_cost:
+            return ActionResult('deposit', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        # Найти свой торговый пост рядом (радиус 2)
+        post = None
+        ax, ay = agent.position
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                for obj in environment.get_objects_at_position((ax + dx, ay + dy)):
+                    if (getattr(obj, 'building_type', None) == 'trading_post'
+                            and getattr(obj, 'building_owner_id', None) == agent.id):
+                        post = obj
+                        break
+                if post:
+                    break
+            if post:
+                break
+
+        if not post:
+            return ActionResult('deposit', False, -0.05, 0.0, {'reason': 'no_trading_post'})
+
+        stored = getattr(post, 'stored_items', [])
+        if len(stored) >= 10:
+            return ActionResult('deposit', False, -0.02, 0.0, {'reason': 'post_full'})
+
+        # Выбираем предмет для депозита: дубликаты или излишки
+        # Приоритет: cooked_food > plant > berry > stone > wood > herb > fiber
+        _deposit_priority = ['cooked_food', 'plant', 'berry', 'stone', 'wood', 'herb', 'fiber',
+                             'bone', 'clay', 'mushroom', 'fish', 'leather', 'rope', 'ore', 'metal_ingot']
+        deposited = None
+        for ptype in _deposit_priority:
+            ids = [oid for oid in agent.inventory
+                   if (o := environment.objects.get(oid)) and o.type == ptype]
+            if len(ids) >= 2:  # только если есть дубликат
+                deposited = ids[0]
+                break
+
+        if not deposited:
+            return ActionResult('deposit', False, -0.02, 0.0, {'reason': 'nothing_to_deposit'})
+
+        obj = environment.objects.get(deposited)
+        obj_type = obj.type if obj else '?'
+
+        agent.remove_from_inventory(deposited)
+        stored.append(deposited)
+        setattr(post, 'stored_items', stored)
+        # Перемещаем объект на позицию поста (но не в grid — он "внутри" поста)
+        if obj:
+            obj.position = post.position
+
+        agent.energy -= energy_cost
+
+        ts = getattr(environment, 'timestep', 0)
+        try:
+            agent.life_log.add(ts, 'trade', f'Положил {obj_type} на торговый пост', icon='🏪')
+        except Exception:
+            pass
+
+        return ActionResult('deposit', True, 0.3, energy_cost,
+                            {'item_type': obj_type, 'post_items': len(stored)})
+
+    @staticmethod
+    def execute_collect_trade(agent: Agent, environment: Environment) -> ActionResult:
+        """Берёт предмет с чужого торгового поста. Повышает trust с владельцем."""
+        energy_cost = 0.02
+        if agent.energy < energy_cost:
+            return ActionResult('collect_trade', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        if len(agent.inventory) >= agent.inventory_capacity:
+            return ActionResult('collect_trade', False, -0.02, 0.0, {'reason': 'inventory_full'})
+
+        # Найти чужой торговый пост рядом с предметами
+        post = None
+        ax, ay = agent.position
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                for obj in environment.get_objects_at_position((ax + dx, ay + dy)):
+                    if (getattr(obj, 'building_type', None) == 'trading_post'
+                            and getattr(obj, 'building_owner_id', None) != agent.id
+                            and len(getattr(obj, 'stored_items', [])) > 0):
+                        post = obj
+                        break
+                if post:
+                    break
+            if post:
+                break
+
+        if not post:
+            return ActionResult('collect_trade', False, -0.02, 0.0, {'reason': 'no_trade_available'})
+
+        stored = getattr(post, 'stored_items', [])
+        item_id = stored.pop(0)  # FIFO
+        setattr(post, 'stored_items', stored)
+
+        item_obj = environment.objects.get(item_id)
+        item_type = item_obj.type if item_obj else '?'
+
+        agent.add_to_inventory(item_id)
+        if item_obj:
+            item_obj.position = agent.position
+
+        agent.energy -= energy_cost
+
+        # Повышаем trust между агентом и владельцем поста
+        owner_id = getattr(post, 'building_owner_id', None)
+        if owner_id and hasattr(agent, 'social'):
+            agent.social.add_interaction(owner_id, 0.08)
+
+        ts = getattr(environment, 'timestep', 0)
+        try:
+            agent.life_log.add(ts, 'trade',
+                               f'Взял {item_type} с торгового поста', icon='🤝')
+        except Exception:
+            pass
+
+        return ActionResult('collect_trade', True, 0.4, energy_cost,
+                            {'item_type': item_type, 'owner_id': owner_id})
+
+    @staticmethod
     def execute_treat(agent: Agent, environment: Environment) -> ActionResult:
         """Лечит себя травами (plant или berry). Требует survival lv4 (>= 0.3)."""
         energy_cost = 0.03
@@ -1183,6 +1712,291 @@ class AgentActions:
                             {'target_id': target.id, 'amount': share_count})
 
 
+    # ══════════════════════════════════════════════════════════════════════
+    # Новые действия
+    # ══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def execute_cook(agent: Agent, environment: Environment) -> ActionResult:
+        """Готовит еду у костра/печи. Убирает токсичность, повышает питательность."""
+        energy_cost = 0.08
+        if agent.energy < energy_cost:
+            return ActionResult('cook', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        # Нужна еда в инвентаре
+        food_ids = [oid for oid in agent.inventory
+                    if (o := environment.objects.get(oid)) and o.type in ('berry', 'plant', 'mushroom', 'fish')]
+        if not food_ids:
+            return ActionResult('cook', False, -0.05, 0.0, {'reason': 'no_food_to_cook'})
+
+        # Нужен костёр или печь рядом (радиус 2)
+        ax, ay = agent.position
+        has_heat = False
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                for o in environment.get_objects_at_position((ax + dx, ay + dy)):
+                    if (o.type == 'campfire' and getattr(o, 'fuel_ticks', 0) > 0) or o.type == 'clay_oven':
+                        has_heat = True
+                        break
+                if has_heat:
+                    break
+            if has_heat:
+                break
+        if not has_heat:
+            return ActionResult('cook', False, -0.05, 0.0, {'reason': 'no_heat_source'})
+
+        # Готовим первый подходящий предмет
+        food_obj = environment.objects.get(food_ids[0])
+        if not food_obj:
+            return ActionResult('cook', False, -0.05, 0.0, {'reason': 'food_gone'})
+
+        if getattr(food_obj, 'quantity', 1) > 1:
+            food_obj.quantity -= 1
+        else:
+            agent.remove_from_inventory(food_ids[0])
+            environment.remove_object(food_ids[0])
+
+        # Создаём cooked_food
+        ts = getattr(environment, 'timestep', 0)
+        cooked_id = f"cooked_{ts}_{random.randint(1000, 9999)}"
+        cooked = ObjectFactory.create_object('cooked_food', agent.position, cooked_id, ts)
+        cooked.quantity = 1
+        environment.objects[cooked_id] = cooked
+        if len(agent.inventory) < getattr(agent, 'inventory_capacity', 5):
+            agent.add_to_inventory(cooked_id)
+
+        agent.energy -= energy_cost
+        try:
+            agent.life_log.add(ts, 'craft', 'Приготовил еду 🍳', icon='🍳')
+        except Exception:
+            pass
+        return ActionResult('cook', True, 0.4, energy_cost, {'cooked_id': cooked_id})
+
+    @staticmethod
+    def execute_fish(agent: Agent, environment: Environment) -> ActionResult:
+        """Ловит рыбу удочкой рядом с водой."""
+        energy_cost = 0.12
+        if agent.energy < energy_cost:
+            return ActionResult('fish', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        # Проверяем наличие удочки
+        has_rod = False
+        rod_tool = None
+        for tid in (getattr(agent, 'tools', []) or []):
+            t = environment.tools.get(tid)
+            if t and getattr(t, 'kind', None) == 'fishing_rod' and not t.is_broken():
+                has_rod = True
+                rod_tool = t
+                break
+        if not has_rod:
+            return ActionResult('fish', False, -0.05, 0.0, {'reason': 'no_fishing_rod'})
+
+        # Нужна вода рядом (радиус 1)
+        ax, ay = agent.position
+        near_water = False
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                if environment.is_water((ax + dx, ay + dy)):
+                    near_water = True
+                    break
+            if near_water:
+                break
+        if not near_water:
+            return ActionResult('fish', False, -0.05, 0.0, {'reason': 'no_water_nearby'})
+
+        # Шанс успеха зависит от навыка gathering
+        skill_val = agent.skills.get('gathering')
+        success_chance = 0.4 + 0.4 * min(1.0, skill_val)
+        success_chance *= AgentActions._performance_mult(agent)
+
+        agent.energy -= energy_cost
+        rod_tool.use('gather')
+
+        if random.random() > success_chance:
+            return ActionResult('fish', False, 0.0, energy_cost, {'reason': 'fish_escaped'})
+
+        ts = getattr(environment, 'timestep', 0)
+        fish_id = f"fish_{ts}_{random.randint(1000, 9999)}"
+        fish_obj = ObjectFactory.create_object('fish', agent.position, fish_id, ts)
+        fish_obj.quantity = 1
+        environment.objects[fish_id] = fish_obj
+        if len(agent.inventory) < getattr(agent, 'inventory_capacity', 5):
+            agent.add_to_inventory(fish_id)
+
+        try:
+            agent.life_log.add(ts, 'craft', 'Поймал рыбу 🐟', icon='🐟')
+        except Exception:
+            pass
+        return ActionResult('fish', True, 0.5, energy_cost, {'fish_id': fish_id})
+
+    @staticmethod
+    def execute_smelt(agent: Agent, environment: Environment) -> ActionResult:
+        """Выплавляет metal_ingot из ore рядом с stone_furnace + костром."""
+        energy_cost = 0.2
+        energy_cost *= max(0.2, 1.0 + getattr(agent, 'research_bonuses', {}).get('craft_energy_mult', 0.0))
+        if agent.energy < energy_cost:
+            return ActionResult('smelt', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        # Руда в инвентаре
+        ore_ids = [oid for oid in agent.inventory
+                   if (o := environment.objects.get(oid)) and o.type == 'ore']
+        if not ore_ids:
+            return ActionResult('smelt', False, -0.05, 0.0, {'reason': 'no_ore'})
+
+        # stone_furnace + campfire рядом (радиус 2)
+        ax, ay = agent.position
+        has_furnace = False
+        has_fire = False
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                for o in environment.get_objects_at_position((ax + dx, ay + dy)):
+                    if o.type == 'stone_furnace':
+                        has_furnace = True
+                    if o.type == 'campfire' and getattr(o, 'fuel_ticks', 0) > 0:
+                        has_fire = True
+                if has_furnace and has_fire:
+                    break
+            if has_furnace and has_fire:
+                break
+        if not (has_furnace and has_fire):
+            return ActionResult('smelt', False, -0.05, 0.0, {'reason': 'no_furnace_or_fire'})
+
+        # Потребляем руду
+        ore_obj = environment.objects.get(ore_ids[0])
+        if ore_obj and getattr(ore_obj, 'quantity', 1) > 1:
+            ore_obj.quantity -= 1
+        else:
+            agent.remove_from_inventory(ore_ids[0])
+            environment.remove_object(ore_ids[0])
+
+        agent.energy -= energy_cost
+
+        ts = getattr(environment, 'timestep', 0)
+        ingot_id = f"metal_ingot_{ts}_{random.randint(1000, 9999)}"
+        ingot = ObjectFactory.create_object('metal_ingot', agent.position, ingot_id, ts)
+        ingot.quantity = 1
+        environment.objects[ingot_id] = ingot
+        if len(agent.inventory) < getattr(agent, 'inventory_capacity', 5):
+            agent.add_to_inventory(ingot_id)
+
+        try:
+            agent.life_log.add(ts, 'craft', 'Выплавил слиток ⚙️', icon='⚙️')
+        except Exception:
+            pass
+        return ActionResult('smelt', True, 0.8, energy_cost, {'ingot_id': ingot_id})
+
+    @staticmethod
+    def execute_repair(agent: Agent, environment: Environment) -> ActionResult:
+        """Ремонтирует самый изношенный инструмент, расходуя 1 материал."""
+        energy_cost = 0.1
+        if agent.energy < energy_cost:
+            return ActionResult('repair', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        # Ищем инструмент с durability < 60
+        worst_tool = None
+        worst_dur = 100.0
+        for tid in (getattr(agent, 'tools', []) or []):
+            t = environment.tools.get(tid)
+            if t and t.durability_left < 60 and t.durability_left < worst_dur:
+                worst_tool = t
+                worst_dur = t.durability_left
+
+        if worst_tool is None:
+            return ActionResult('repair', False, -0.05, 0.0, {'reason': 'no_damaged_tools'})
+
+        # Определяем нужный материал: metal → ore/metal_ingot, остальные → wood или stone
+        need_types = ['wood', 'stone', 'bone', 'fiber', 'ore', 'metal_ingot']
+        mat_id = None
+        for oid in agent.inventory:
+            o = environment.objects.get(oid)
+            if o and o.type in need_types:
+                mat_id = oid
+                break
+        if mat_id is None:
+            return ActionResult('repair', False, -0.05, 0.0, {'reason': 'no_repair_material'})
+
+        # Потребляем материал
+        mat_obj = environment.objects.get(mat_id)
+        if mat_obj and getattr(mat_obj, 'quantity', 1) > 1:
+            mat_obj.quantity -= 1
+        else:
+            agent.remove_from_inventory(mat_id)
+            environment.remove_object(mat_id)
+
+        repair_amount = 25.0 + 10.0 * agent.skills.get('crafting')
+        worst_tool.repair(repair_amount)
+        agent.energy -= energy_cost
+
+        ts = getattr(environment, 'timestep', 0)
+        try:
+            agent.life_log.add(ts, 'craft', f'Починил {worst_tool.kind or "инструмент"} 🔧', icon='🔧')
+        except Exception:
+            pass
+        return ActionResult('repair', True, 0.3, energy_cost,
+                            {'tool_id': worst_tool.id, 'new_durability': worst_tool.durability_left})
+
+    @staticmethod
+    def execute_tan_hide(agent: Agent, environment: Environment) -> ActionResult:
+        """Выделка кожи: bone + plant у костра → leather."""
+        energy_cost = 0.1
+        if agent.energy < energy_cost:
+            return ActionResult('tan_hide', False, -0.05, 0.0, {'reason': 'insufficient_energy'})
+
+        bone_id = None
+        plant_id = None
+        for oid in agent.inventory:
+            o = environment.objects.get(oid)
+            if not o:
+                continue
+            if o.type == 'bone' and bone_id is None:
+                bone_id = oid
+            elif o.type == 'plant' and plant_id is None:
+                plant_id = oid
+        if bone_id is None or plant_id is None:
+            return ActionResult('tan_hide', False, -0.05, 0.0, {'reason': 'missing_materials'})
+
+        # Нужен костёр рядом (радиус 2)
+        ax, ay = agent.position
+        has_fire = False
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                for o in environment.get_objects_at_position((ax + dx, ay + dy)):
+                    if o.type == 'campfire' and getattr(o, 'fuel_ticks', 0) > 0:
+                        has_fire = True
+                        break
+                if has_fire:
+                    break
+            if has_fire:
+                break
+        if not has_fire:
+            return ActionResult('tan_hide', False, -0.05, 0.0, {'reason': 'no_campfire'})
+
+        # Потребляем bone + plant
+        for mid in [bone_id, plant_id]:
+            m = environment.objects.get(mid)
+            if m and getattr(m, 'quantity', 1) > 1:
+                m.quantity -= 1
+            else:
+                agent.remove_from_inventory(mid)
+                environment.remove_object(mid)
+
+        agent.energy -= energy_cost
+
+        ts = getattr(environment, 'timestep', 0)
+        leather_id = f"leather_{ts}_{random.randint(1000, 9999)}"
+        leather = ObjectFactory.create_object('leather', agent.position, leather_id, ts)
+        leather.quantity = 1
+        environment.objects[leather_id] = leather
+        if len(agent.inventory) < getattr(agent, 'inventory_capacity', 5):
+            agent.add_to_inventory(leather_id)
+
+        try:
+            agent.life_log.add(ts, 'craft', 'Выделал кожу 🧶', icon='🧶')
+        except Exception:
+            pass
+        return ActionResult('tan_hide', True, 0.4, energy_cost, {'leather_id': leather_id})
+
+
 class ActionExecutor:
     """Основной класс для выполнения действий агента"""
 
@@ -1204,7 +2018,17 @@ class ActionExecutor:
             'plant_berry': AgentActions.execute_plant_berry,
             'share': AgentActions.execute_share,
             'build_shelter': AgentActions.execute_build_shelter,
+            'build': AgentActions.execute_build,
+            'upgrade': AgentActions.execute_upgrade,
+            'repair_building': AgentActions.execute_repair_building,
+            'deposit': AgentActions.execute_deposit,
+            'collect_trade': AgentActions.execute_collect_trade,
             'treat': AgentActions.execute_treat,
+            'cook': AgentActions.execute_cook,
+            'fish': AgentActions.execute_fish,
+            'smelt': AgentActions.execute_smelt,
+            'repair': AgentActions.execute_repair,
+            'tan_hide': AgentActions.execute_tan_hide,
         }
     
     def execute_action(self, agent: Agent, environment: Environment, 

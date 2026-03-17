@@ -517,6 +517,7 @@
     <button class="lb-tab active" data-tab="age" data-i18n="lb.tab_age">По возрасту</button>
     <button class="lb-tab" data-tab="family" data-i18n="lb.tab_family">По семье</button>
     <button class="lb-tab" data-tab="skills" data-i18n="lb.tab_skills">По навыкам</button>
+    <button class="lb-tab" data-tab="settlements" data-i18n="lb.tab_settlements">Поселения</button>
   </div>
   <div id="lbBody" class="lb-body"></div>
 </div>
@@ -586,6 +587,8 @@
   const sprites = {
     male: new Image(),
     female: new Image(),
+    child_boy: new Image(),
+    child_girl: new Image(),
     rip: new Image(),
     tree: new Image(),
     stone: new Image(),
@@ -597,6 +600,8 @@
 
   sprites.male.src = '/static/sprites/male.png';
   sprites.female.src = '/static/sprites/female.png';
+  sprites.child_boy.src = '/static/sprites/child_boy.png';
+  sprites.child_girl.src = '/static/sprites/child_girl.png';
   sprites.rip.src = '/static/sprites/rip.png';
   sprites.tree.src = '/static/sprites/tree.png';
   sprites.stone.src = '/static/sprites/stone.png';
@@ -839,7 +844,8 @@
     }
   }
 
-  function getSpriteSheet(sex) {
+  function getSpriteSheet(sex, is_child) {
+    if (is_child) return sex === 'female' ? sprites.child_girl : sprites.child_boy;
     if (sex === 'female') return sprites.female;
     return sprites.male;
   }
@@ -1051,6 +1057,17 @@
       ? `<div style="color:#f8a4c8;font-size:11px;margin-top:2px">${escapeHtml(t('tooltip.pregnant', agent.pregnancy_remaining || 0))}</div>`
       : '';
 
+    const childLine = agent.is_child
+      ? (() => {
+          const sexIcon = agent.sex === 'female' ? '♀' : '♂';
+          const sexLabel = agent.sex === 'female' ? 'девочка' : 'мальчик';
+          const adultAge = agent.adulthood_age || 800;
+          const pct = Math.round((agent.age / adultAge) * 100);
+          const remaining = Math.max(0, adultAge - agent.age);
+          return `<div style="color:#fbbf24;font-size:11px;margin-top:2px">${sexIcon} ${sexLabel} · рост ${pct}% · ещё ~${remaining} тиков</div>`;
+        })()
+      : '';
+
     const swimLine = agent.is_swimming
       ? `<div class="muted">${t('tooltip.status')}: <span class="mono">${t('tooltip.swimming_label')}</span> (${escapeHtml(agent.water_ticks ?? 0)})</div>`
       : '';
@@ -1110,6 +1127,7 @@
     agentTooltip.innerHTML = `
       <div class="title">${title}</div>
       ${pregnantLine}
+      ${childLine}
       ${ownerLine}
       ${personalityLine}
       ${moodLine}
@@ -1338,7 +1356,7 @@
       const facing = dx < 0 ? 'left' : dx > 0 ? 'right' : prev.facing;
       agentRenderState.set(a.id, { x: a.x, y: a.y, facing });
 
-      const img = getSpriteSheet(a.sex);
+      const img = getSpriteSheet(a.sex, a.is_child);
       const ready = img.complete && img.naturalWidth > 0;
       const px = a.x * sx;
       const py = a.y * sy;
@@ -1376,7 +1394,7 @@
       if (ready) {
         const frame = chooseFrame({ ...a, facing }, snapshot.timestep);
         const r = getFrameRect(img, frame.col, frame.row);
-        const drawH = a.is_child ? 30 : 44;
+        const drawH = 44;
         const drawW = Math.round((r.sw / r.sh) * drawH);
 
         ctx.save();
@@ -1420,7 +1438,8 @@
       let bubbleColor = '#e7e9ee';
 
       if (a.is_child) {
-        bubbleText = `${who} ${t('canvas.child')}`;
+        const sexIcon = a.sex === 'female' ? '♀' : '♂';
+        bubbleText = `${who} ${sexIcon} ${t('canvas.child')}`;
       }
       if (a.pregnant) {
         const pr = a.pregnancy_remaining ?? 0;
@@ -1611,6 +1630,64 @@
       ctx.shadowColor = '#fbbf24';
       ctx.shadowBlur = 6;
       ctx.fillText('🏠', px, py);
+      ctx.restore();
+    }
+
+    // ── Здания (Settlement System) ──────────────────────────────────────
+    const BUILDING_EMOJI = {
+      storage_hut: '🏚️', workshop: '🔨', garden: '🌱',
+      well: '🪣', watchtower: '🗼', drying_rack: '🥩', trading_post: '🏪'
+    };
+    const BUILDING_GLOW = {
+      storage_hut: '#a78bfa', workshop: '#f59e0b', garden: '#22c55e',
+      well: '#3b82f6', watchtower: '#ef4444', drying_rack: '#f97316', trading_post: '#ec4899'
+    };
+    const buildings = snapshot.buildings || [];
+    for (const b of buildings) {
+      const px = (b.x + 0.5) * sx;
+      const py = (b.y + 0.5) * sy;
+      const emoji = BUILDING_EMOJI[b.type] || '🏗️';
+      const glow = BUILDING_GLOW[b.type] || '#fbbf24';
+      const dur = b.durability ?? 1;
+      ctx.save();
+      ctx.font = `${Math.max(sx, sy) * 0.8}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = dur < 0.3 ? 1 : 5;
+      ctx.globalAlpha = dur < 0.3 ? 0.4 : 1.0;
+      ctx.fillText(emoji, px, py);
+      // Уровень (если > 1)
+      if (b.level > 1) {
+        ctx.font = `bold ${Math.max(sx, sy) * 0.3}px sans-serif`;
+        ctx.fillStyle = '#fbbf24';
+        ctx.shadowBlur = 0;
+        ctx.fillText('★'.repeat(b.level - 1), px, py - Math.max(sx, sy) * 0.4);
+      }
+      // Полоска прочности
+      if (dur < 0.7) {
+        const bw = sx * 0.7, bh = 2;
+        const bx = px - bw / 2, by = py + Math.max(sx, sy) * 0.35;
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = dur < 0.3 ? '#ef4444' : '#f59e0b';
+        ctx.fillRect(bx, by, bw * dur, bh);
+      }
+      // Торговый пост: количество товаров
+      if (b.type === 'trading_post' && (b.stored_items || 0) > 0) {
+        ctx.font = `bold ${Math.max(sx, sy) * 0.28}px sans-serif`;
+        ctx.fillStyle = '#ec4899';
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1.0;
+        ctx.fillText(`×${b.stored_items}`, px + Math.max(sx, sy) * 0.35, py - Math.max(sx, sy) * 0.2);
+      }
+      // Имя владельца
+      ctx.globalAlpha = 1.0;
+      ctx.font = `${Math.max(sx, sy) * 0.25}px sans-serif`;
+      ctx.fillStyle = glow;
+      ctx.shadowBlur = 0;
+      ctx.fillText(b.owner_name, px, py + Math.max(sx, sy) * 0.5);
       ctx.restore();
     }
   }
@@ -3033,6 +3110,21 @@
 
   function renderLbRows(rows) {
     if (!rows || !rows.length) return `<div class="text-muted" style="padding:8px 0">${t('lb.no_data')}</div>`;
+    if (_lbTab === 'settlements') {
+      return rows.map((r, i) => {
+        const medal = ['🥇','🥈','🥉'][i] || `${i+1}.`;
+        const bldIcons = (r.buildings || []).map(b => {
+          const em = {storage_hut:'🏚️',workshop:'🔨',garden:'🌱',well:'🪣',watchtower:'🗼',drying_rack:'🥩',shelter:'🏠'}[b.type]||'🏗️';
+          return b.level > 1 ? em + b.level : em;
+        }).join('');
+        return `<div class="lb-row">
+          <span class="lb-medal">${medal}</span>
+          <span class="lb-name">🏘️ ${escapeHtml(r.owner_name)} <span style="font-size:10px;color:#888">(${r.buildings_count} ${t('lb.buildings')})</span></span>
+          <span class="lb-val">${r.score} ${t('lb.pts')}</span>
+        </div>
+        <div style="font-size:10px;color:#888;padding:0 0 4px 32px">${bldIcons}</div>`;
+      }).join('');
+    }
     const sexIcon = s => s === 'female' ? '♀' : s === 'male' ? '♂' : '?';
     return rows.map((r, i) => {
       const medal = ['🥇','🥈','🥉'][i] || `${i+1}.`;

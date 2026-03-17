@@ -870,11 +870,23 @@ def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
             ])
 
     # Команды / просьбы
-    if any(w in u for w in ["иди", "пойди", "найди", "принеси", "сделай", "помоги", "возьми", "атакуй", "беги",
-                             "отдохни", "восстановись", "попей", "поешь", "исследуй", "пообщайся", "поговори"]):
-        # Определяем какое действие симуляции соответствует команде
+    _CMD_KEYWORDS = [
+        "иди", "пойди", "найди", "принеси", "сделай", "помоги", "возьми", "атакуй", "беги",
+        "отдохни", "восстановись", "попей", "поешь", "исследуй", "пообщайся", "поговори",
+        "построй", "строй", "разведи", "почини", "выплави", "приготовь", "свари", "выдуби",
+        "лови", "рыбач", "посади", "вылечи", "лечи", "крафт", "создай",
+        "склад", "мастерск", "огород", "колодец", "башн", "вышк", "сушилк",
+        "storage", "workshop", "garden", "well", "tower", "drying", "build",
+        "улучши", "апгрейд", "upgrade",
+        "торгов", "trading", "рынок", "базар", "положи", "deposit", "продай", "купи", "обмен",
+    ]
+    if any(w in u for w in _CMD_KEYWORDS):
         _cmd_action: Optional[str] = None
         _cmd_ticks: int = 1
+        _craft_target: Optional[str] = None
+        _build_target: Optional[str] = None
+
+        # ── Базовые действия ──
         if any(w in u for w in ["еду", "поешь", "найди еду", "пропитание", "поест"]):
             _cmd_action = "gather"; _cmd_ticks = 5
         elif any(w in u for w in ["воды", "попей", "пить", "водоём"]):
@@ -885,14 +897,145 @@ def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
             _cmd_action = "move"; _cmd_ticks = 6
         elif any(w in u for w in ["пообщайся", "поговори", "поболтай"]):
             _cmd_action = "communicate"; _cmd_ticks = 3
+
+        # ── Крафт-команды (целевой рецепт) ──
+        elif any(w in u for w in ["топор", "axe"]):
+            if any(w in u for w in ["метал", "metal"]):
+                _cmd_action = "combine"; _craft_target = "metal_axe"; _cmd_ticks = 3
+            else:
+                _cmd_action = "combine"; _craft_target = "wooden_axe"; _cmd_ticks = 2
+        elif any(w in u for w in ["копьё", "копье", "spear"]):
+            if any(w in u for w in ["метал", "metal"]):
+                _cmd_action = "combine"; _craft_target = "metal_spear"; _cmd_ticks = 3
+            else:
+                _cmd_action = "combine"; _craft_target = "wooden_spear"; _cmd_ticks = 2
+        elif any(w in u for w in ["молот", "hammer"]):
+            _cmd_action = "combine"; _craft_target = "stone_hammer"; _cmd_ticks = 2
+        elif any(w in u for w in ["кирк", "pickaxe"]):
+            if any(w in u for w in ["метал", "metal"]):
+                _cmd_action = "combine"; _craft_target = "metal_pickaxe"; _cmd_ticks = 3
+            else:
+                _cmd_action = "combine"; _craft_target = "wooden_pickaxe"; _cmd_ticks = 2
+        elif any(w in u for w in ["нож", "knife"]):
+            _cmd_action = "combine"; _craft_target = "bone_knife"; _cmd_ticks = 2
+        elif any(w in u for w in ["горшок", "pot"]):
+            _cmd_action = "combine"; _craft_target = "clay_pot"; _cmd_ticks = 2
+        elif any(w in u for w in ["сумк", "bag", "рюкзак"]):
+            _cmd_action = "combine"; _craft_target = "leather_bag"; _cmd_ticks = 2
+        elif any(w in u for w in ["удочк", "rod"]):
+            _cmd_action = "combine"; _craft_target = "fishing_rod"; _cmd_ticks = 2
+        elif any(w in u for w in ["факел", "torch"]):
+            _cmd_action = "combine"; _craft_target = "torch"; _cmd_ticks = 2
+        elif any(w in u for w in ["верёвк", "веревк", "rope"]):
+            _cmd_action = "combine"; _craft_target = "rope"; _cmd_ticks = 2
+        elif any(w in u for w in ["иглу", "игл", "needle"]):
+            _cmd_action = "combine"; _craft_target = "bone_needle"; _cmd_ticks = 2
+        elif any(w in u for w in ["брон", "armor"]):
+            if any(w in u for w in ["метал", "metal"]):
+                _cmd_action = "combine"; _craft_target = "metal_armor"; _cmd_ticks = 3
+            else:
+                _cmd_action = "combine"; _craft_target = "leather_armor"; _cmd_ticks = 3
+        elif any(w in u for w in ["щит", "shield"]):
+            _cmd_action = "combine"; _craft_target = "metal_shield"; _cmd_ticks = 3
+        elif any(w in u for w in ["пращ", "sling"]):
+            _cmd_action = "combine"; _craft_target = "sling"; _cmd_ticks = 2
+        elif any(w in u for w in ["печь", "furnace", "горн"]):
+            _cmd_action = "combine"; _craft_target = "stone_furnace"; _cmd_ticks = 3
+        elif any(w in u for w in ["духовк", "oven"]):
+            _cmd_action = "combine"; _craft_target = "clay_oven"; _cmd_ticks = 3
+        elif any(w in u for w in ["слиток", "ingot"]):
+            _cmd_action = "combine"; _craft_target = "metal_ingot"; _cmd_ticks = 3
+        elif any(w in u for w in ["лекарств", "potion", "аптечк"]):
+            _cmd_action = "combine"; _craft_target = "medicine_pouch"; _cmd_ticks = 2
+
+        # ── Действия ──
+        elif any(w in u for w in ["костёр", "костер", "fire", "огонь"]):
+            _cmd_action = "light_fire"; _cmd_ticks = 3
+        elif any(w in u for w in ["убежищ", "shelter", "дом"]):
+            _cmd_action = "build_shelter"; _cmd_ticks = 5
+        # ── Команды строительства зданий ──
+        elif any(w in u for w in ["склад", "storage", "хранилищ"]):
+            _cmd_action = "build"; _cmd_ticks = 5; _build_target = "storage_hut"
+        elif any(w in u for w in ["мастерск", "workshop"]):
+            _cmd_action = "build"; _cmd_ticks = 5; _build_target = "workshop"
+        elif any(w in u for w in ["огород", "garden", "грядк"]):
+            _cmd_action = "build"; _cmd_ticks = 5; _build_target = "garden"
+        elif any(w in u for w in ["колодец", "колодц", "well"]):
+            _cmd_action = "build"; _cmd_ticks = 5; _build_target = "well"
+        elif any(w in u for w in ["башн", "вышк", "tower", "дозорн"]):
+            _cmd_action = "build"; _cmd_ticks = 5; _build_target = "watchtower"
+        elif any(w in u for w in ["сушилк", "drying", "rack"]):
+            _cmd_action = "build"; _cmd_ticks = 5; _build_target = "drying_rack"
+        elif any(w in u for w in ["торгов", "trading", "пост", "рынок", "базар"]):
+            _cmd_action = "build"; _cmd_ticks = 5; _build_target = "trading_post"
+        elif any(w in u for w in ["положи", "deposit", "продай"]):
+            _cmd_action = "deposit"; _cmd_ticks = 3
+        elif any(w in u for w in ["купи", "collect", "возьми с пост", "обмен"]):
+            _cmd_action = "collect_trade"; _cmd_ticks = 2
+        elif any(w in u for w in ["построй", "build", "строй"]):
+            _cmd_action = "build"; _cmd_ticks = 5; _build_target = None
+        elif any(w in u for w in ["улучши", "апгрейд", "upgrade"]):
+            _cmd_action = "upgrade"; _cmd_ticks = 5
+        elif any(w in u for w in ["почини здани", "repair build", "ремонт здани"]):
+            _cmd_action = "repair_building"; _cmd_ticks = 3
+        elif any(w in u for w in ["почини", "repair", "ремонт"]):
+            _cmd_action = "repair"; _cmd_ticks = 3
+        elif any(w in u for w in ["выплави", "smelt", "плавк"]):
+            _cmd_action = "smelt"; _cmd_ticks = 3
+        elif any(w in u for w in ["приготовь", "свари", "cook", "готовь"]):
+            _cmd_action = "cook"; _cmd_ticks = 3
+        elif any(w in u for w in ["выдуби", "tan", "кож"]):
+            _cmd_action = "tan_hide"; _cmd_ticks = 3
+        elif any(w in u for w in ["лови рыб", "fish", "рыбач", "рыбалк"]):
+            _cmd_action = "fish"; _cmd_ticks = 4
+        elif any(w in u for w in ["посади", "plant"]):
+            _cmd_action = "plant_berry"; _cmd_ticks = 2
+        elif any(w in u for w in ["лечи", "вылечи", "heal"]):
+            _cmd_action = "treat"; _cmd_ticks = 3
+        elif any(w in u for w in ["атакуй", "охоть", "attack", "hunt"]):
+            _cmd_action = "attack"; _cmd_ticks = 4
+        elif any(w in u for w in ["подели", "share"]):
+            _cmd_action = "share"; _cmd_ticks = 2
+        elif any(w in u for w in ["крафт", "создай", "сделай"]):
+            _cmd_action = "combine"; _cmd_ticks = 3
         elif any(w in u for w in ["иди", "пойди", "двигайся"]):
             _cmd_action = "move"; _cmd_ticks = 4
 
+        # ── Целевой сбор ──
+        _gather_target: Optional[str] = None
+        if _cmd_action == "gather" or any(w in u for w in ["собирай", "собери", "gather"]):
+            if _cmd_action is None:
+                _cmd_action = "gather"
+                _cmd_ticks = 5
+            if any(w in u for w in ["камн", "stone"]):
+                _gather_target = "stone"
+            elif any(w in u for w in ["дерев", "wood", "палк"]):
+                _gather_target = "wood"
+            elif any(w in u for w in ["руд", "ore"]):
+                _gather_target = "ore"
+            elif any(w in u for w in ["глин", "clay"]):
+                _gather_target = "clay"
+            elif any(w in u for w in ["кост", "bone"]):
+                _gather_target = "bone"
+            elif any(w in u for w in ["волокн", "fiber"]):
+                _gather_target = "fiber"
+            elif any(w in u for w in ["ягод", "berry"]):
+                _gather_target = "berry"
+            elif any(w in u for w in ["трав", "herb"]):
+                _gather_target = "herb"
+            elif any(w in u for w in ["гриб", "mushroom"]):
+                _gather_target = "mushroom"
+
         if agreeableness > 0.65:
-            # Выполняем команду
             if _cmd_action:
                 setattr(agent, 'pending_command', _cmd_action)
                 setattr(agent, 'pending_command_ticks', _cmd_ticks)
+                if _craft_target:
+                    setattr(agent, 'pending_craft_target', _craft_target)
+                if _gather_target:
+                    setattr(agent, 'pending_gather_target', _gather_target)
+                if _build_target:
+                    setattr(agent, 'pending_build_target', _build_target)
             return random.choice([
                 "Попробую! Не обещаю, но постараюсь.",
                 "Хорошо, посмотрю что смогу.",
@@ -900,10 +1043,15 @@ def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
                 "Хорошо! Сделаю что могу.",
             ])
         elif agreeableness > 0.35:
-            # Иногда выполняем, иногда нет
             if _cmd_action and random.random() < 0.5:
                 setattr(agent, 'pending_command', _cmd_action)
                 setattr(agent, 'pending_command_ticks', max(1, _cmd_ticks - 2))
+                if _craft_target:
+                    setattr(agent, 'pending_craft_target', _craft_target)
+                if _gather_target:
+                    setattr(agent, 'pending_gather_target', _gather_target)
+                if _build_target:
+                    setattr(agent, 'pending_build_target', _build_target)
             return random.choice([
                 "Может быть.",
                 "Посмотрим.",
@@ -2737,6 +2885,19 @@ class SimulationController:
                     for o in env.objects.values()
                     if o.type == 'shelter'
                 ],
+                "buildings": [
+                    {"x": int(o.position[0]), "y": int(o.position[1]),
+                     "type": getattr(o, 'building_type', o.type),
+                     "level": getattr(o, 'building_level', 1),
+                     "durability": round(getattr(o, 'durability', 1.0), 2),
+                     "owner_name": getattr(o, 'building_owner_name', '?'),
+                     "owner_id": getattr(o, 'building_owner_id', ''),
+                     "stored_items": len(getattr(o, 'stored_items', []))}
+                    for o in env.objects.values()
+                    if getattr(o, 'building_type', None) in (
+                        'storage_hut', 'workshop', 'garden', 'well',
+                        'watchtower', 'drying_rack', 'trading_post')
+                ],
                 "dead_agents": list(state.dead_agents) if hasattr(state, 'dead_agents') else [],
                 "objects": (objects_full if objects_full is not None else []),
                 "objects_full": objects_full,
@@ -3717,11 +3878,89 @@ async def api_leaderboard():
         reverse=True,
     )[:5]
 
+    # ── Settlement leaderboard ──
+    settlements = _detect_settlements()
+    top_settlements = sorted(settlements, key=lambda s: s["score"], reverse=True)[:5]
+
     return JSONResponse({
         "age":    [_agent_lb_entry(a) for a in top_age],
         "family": [_agent_lb_entry(a) for a in top_family],
         "skills": [_agent_lb_entry(a) for a in top_skills],
+        "settlements": top_settlements,
     })
+
+
+def _detect_settlements() -> list:
+    """Обнаруживает поселения: кластеры зданий одного владельца в радиусе 4."""
+    try:
+        sim = controller.simulation
+        state = getattr(sim, "state", None) if sim else None
+        env = state.environment if state else None
+        if not env:
+            return []
+    except Exception:
+        return []
+
+    from ..core.agent_actions import BUILDING_RECIPES
+
+    # Собираем все здания по владельцу
+    owner_buildings: dict = {}  # owner_id -> [obj, ...]
+    for obj in env.objects.values():
+        bt = getattr(obj, 'building_type', None)
+        oid = getattr(obj, 'building_owner_id', None)
+        if bt and bt in BUILDING_RECIPES and oid:
+            owner_buildings.setdefault(oid, []).append(obj)
+        # Также считаем shelter
+        if obj.type == 'shelter':
+            oid = getattr(obj, 'shelter_owner_id', None)
+            if oid:
+                owner_buildings.setdefault(oid, []).append(obj)
+
+    settlements = []
+    SCORE_WEIGHTS = {
+        'shelter': 3, 'storage_hut': 2, 'workshop': 4, 'garden': 3,
+        'well': 3, 'watchtower': 4, 'drying_rack': 2, 'trading_post': 5,
+    }
+
+    for owner_id, buildings in owner_buildings.items():
+        if len(buildings) < 3:
+            continue
+        # Проверяем кластер: все здания в радиусе 5 от центра масс
+        xs = [b.position[0] for b in buildings]
+        ys = [b.position[1] for b in buildings]
+        cx, cy = sum(xs) / len(xs), sum(ys) / len(ys)
+        cluster = [b for b in buildings
+                   if abs(b.position[0] - cx) <= 5 and abs(b.position[1] - cy) <= 5]
+        if len(cluster) < 3:
+            continue
+
+        score = 0
+        types_list = []
+        for b in cluster:
+            bt = getattr(b, 'building_type', b.type)
+            lvl = getattr(b, 'building_level', 1)
+            w = SCORE_WEIGHTS.get(bt, 1)
+            score += w * lvl
+            types_list.append({"type": bt, "level": lvl})
+
+        owner_name = getattr(cluster[0], 'building_owner_name',
+                             getattr(cluster[0], 'shelter_owner_name', '?'))
+        settlements.append({
+            "owner_id": owner_id,
+            "owner_name": owner_name,
+            "x": int(cx), "y": int(cy),
+            "buildings_count": len(cluster),
+            "score": score,
+            "buildings": types_list,
+        })
+
+    return settlements
+
+
+@app.get("/api/settlements")
+async def api_settlements():
+    """Возвращает все обнаруженные поселения."""
+    return JSONResponse({"settlements": _detect_settlements()})
 
 
 @app.get("/api/quests")
@@ -3941,6 +4180,13 @@ async def api_research_unlock(token: str, payload: Dict[str, Any]):
     agent.research_bonuses = _compute_research_bonuses(agent.research_unlocks)
 
     return JSONResponse({"ok": True, "available": max(0, earned - new_spent)})
+
+
+@app.get("/api/recipes")
+async def api_recipes():
+    """Возвращает список всех рецептов крафта."""
+    from src.core.tools import ToolFactory
+    return {"recipes": ToolFactory.get_recipes_for_api()}
 
 
 @app.get("/api/news")
