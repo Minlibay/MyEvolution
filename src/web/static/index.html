@@ -39,7 +39,7 @@
     #bannerSlot:empty { display:none; }
     #bannerContainer { width:728px; height:90px; border-radius:var(--radius-sm); border:1px dashed rgba(255,255,255,0.10); display:flex; align-items:center; justify-content:center; overflow:hidden; color:var(--text-muted); font-size:12px; flex-shrink:0; }
     @media(max-width:780px){ #bannerSlot{display:none;} }
-    #cookieBar { position:fixed; left:0; right:0; bottom:0; z-index:60; padding:12px 20px; display:none; gap:16px; align-items:center; justify-content:space-between; }
+    #cookieBar { position:fixed; left:0; right:0; bottom:0; z-index:70; padding:12px 20px; display:none; gap:16px; align-items:center; justify-content:space-between; }
     #cookieText { font-size:12px; color:var(--text-secondary); line-height:1.35; max-width:980px; }
     #cookieText b { color:var(--text-primary); }
     #cookieText a { color:var(--text-accent); text-decoration:underline; }
@@ -3893,6 +3893,136 @@
 
   // Apply translations on load
   applyTranslations();
+
+  // ===== MOBILE NAVIGATION =====
+  (function() {
+    const sidebar = document.getElementById('mobileSidebar');
+    const mobileNav = document.getElementById('mobileNav');
+    const drawerHandle = document.getElementById('mobDrawerHandle');
+    if (!sidebar || !mobileNav) return;
+
+    function isMobile() { return window.innerWidth <= 768; }
+
+    // Open / close sidebar drawer on mobile
+    function mobOpenSidebar() {
+      sidebar.classList.add('mob-open');
+      document.body.classList.add('mob-sidebar-open');
+    }
+    function mobCloseSidebar() {
+      sidebar.classList.remove('mob-open');
+      document.body.classList.remove('mob-sidebar-open');
+      // highlight map tab
+      mobileNav.querySelectorAll('.mob-nav-item').forEach(i => i.classList.remove('active'));
+      const mapBtn = mobileNav.querySelector('.mob-nav-item[data-tab="map"]');
+      if (mapBtn) mapBtn.classList.add('active');
+    }
+
+    // Switch sidebar to specific tab
+    function mobSwitchTab(tabId) {
+      document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
+      const tab = document.querySelector(`.sidebar-tab[data-tab="${tabId}"]`);
+      if (tab) tab.classList.add('active');
+      const panel = document.getElementById(tabId);
+      if (panel) panel.classList.add('active');
+      // Trigger agent chat load if needed
+      if (tabId === 'tab-agent') {
+        const active = document.getElementById('agpChatScreen');
+        if (active && active.classList.contains('active')) {
+          if (typeof loadAgentChat === 'function') loadAgentChat();
+        }
+      }
+    }
+
+    // Bottom nav click handler
+    mobileNav.querySelectorAll('.mob-nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (!isMobile()) return;
+        mobileNav.querySelectorAll('.mob-nav-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        const tab = item.dataset.tab;
+        if (tab === 'map') {
+          mobCloseSidebar();
+        } else {
+          mobSwitchTab(tab);
+          mobOpenSidebar();
+        }
+      });
+    });
+
+    // Sync mobile nav highlight when desktop tabs are clicked
+    document.querySelectorAll('.sidebar-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        if (!isMobile()) return;
+        const tabId = tab.dataset.tab;
+        mobileNav.querySelectorAll('.mob-nav-item').forEach(i => i.classList.remove('active'));
+        const mItem = mobileNav.querySelector(`.mob-nav-item[data-tab="${tabId}"]`);
+        if (mItem) mItem.classList.add('active');
+        mobOpenSidebar();
+      });
+    });
+
+    // Swipe up on canvas to open sidebar
+    const cv2 = document.getElementById('cv');
+    let _swipeY0 = null;
+    cv2.addEventListener('touchstart', e => {
+      if (!isMobile()) return;
+      if (e.touches.length === 1) _swipeY0 = e.touches[0].clientY;
+    }, {passive:true});
+    cv2.addEventListener('touchend', e => {
+      if (!isMobile() || _swipeY0 === null) return;
+      const dy = _swipeY0 - e.changedTouches[0].clientY;
+      if (dy > 55 && !sidebar.classList.contains('mob-open')) {
+        // open last-used tab or default to chat
+        const lastActive = sidebar.querySelector('.sidebar-panel.active');
+        if (!lastActive) mobSwitchTab('tab-chat');
+        mobOpenSidebar();
+        mobileNav.querySelectorAll('.mob-nav-item').forEach(i => i.classList.remove('active'));
+        const activeTab = sidebar.querySelector('.sidebar-tab.active');
+        const tabId = activeTab ? activeTab.dataset.tab : 'tab-chat';
+        const mItem = mobileNav.querySelector(`.mob-nav-item[data-tab="${tabId}"]`);
+        if (mItem) mItem.classList.add('active');
+      }
+      _swipeY0 = null;
+    }, {passive:true});
+
+    // Swipe down on drawer handle to close
+    let _dragY0 = null, _dragging = false;
+    drawerHandle.addEventListener('touchstart', e => {
+      if (!isMobile()) return;
+      _dragY0 = e.touches[0].clientY;
+      _dragging = true;
+    }, {passive:true});
+    drawerHandle.addEventListener('touchmove', e => {
+      if (!isMobile() || !_dragging || _dragY0 === null) return;
+      const dy = e.touches[0].clientY - _dragY0;
+      if (dy > 0) sidebar.style.transform = `translateY(${Math.min(dy, sidebar.offsetHeight)}px)`;
+    }, {passive:true});
+    drawerHandle.addEventListener('touchend', e => {
+      if (!isMobile() || !_dragging) return;
+      _dragging = false;
+      sidebar.style.transform = '';
+      const dy = e.changedTouches[0].clientY - (_dragY0 || 0);
+      if (dy > 70) mobCloseSidebar();
+      _dragY0 = null;
+    }, {passive:true});
+
+    // Tap on backdrop (canvas area) to close open drawer
+    cv2.addEventListener('click', () => {
+      if (isMobile() && sidebar.classList.contains('mob-open')) {
+        mobCloseSidebar();
+      }
+    });
+
+    // On window resize: reset state
+    window.addEventListener('resize', () => {
+      if (!isMobile()) {
+        sidebar.classList.remove('mob-open');
+        sidebar.style.transform = '';
+        document.body.classList.remove('mob-sidebar-open');
+      }
+    });
+  })();
 
 </script>
 
