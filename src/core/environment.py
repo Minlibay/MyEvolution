@@ -345,14 +345,14 @@ class Environment:
         
         for dx in range(-radius, radius + 1):
             for dy in range(-radius, radius + 1):
-                x, y = position[0] + dx, position[1] + dy
-                if 0 <= x < self.width and 0 <= y < self.height:
-                    cell_objects = self.grid.get((x, y), [])
-                    
-                    for obj_id in cell_objects:
-                        obj = self.objects.get(obj_id)
-                        if obj:
-                            local_objects.append(obj)
+                x = (position[0] + dx) % self.width
+                y = (position[1] + dy) % self.height
+                cell_objects = self.grid.get((x, y), [])
+
+                for obj_id in cell_objects:
+                    obj = self.objects.get(obj_id)
+                    if obj:
+                        local_objects.append(obj)
         
         # Поиск инструментов в локальной области
         for tool in self.tools.values():

@@ -1720,17 +1720,20 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
           <div>
             <b>${u.username}</b>
             <span class="muted">#${u.id}</span>
-            ${u.is_admin ? '<span class="muted"> > Администратор</span>' : ''}
+            ${u.is_admin ? '<span class="muted"> › Администратор</span>' : ''}
+            ${u.is_supporter ? '<span style="color:#f97316;font-size:12px;"> 🧡 Boosty</span>' : ''}
             <div class="muted">создан: ${created}</div>
           </div>
           <div class="row">
             <button class="btn btn-secondary btn-xs" data-act="toggle">${u.is_admin ? 'Снять admin' : 'Сделать admin'}</button>
+            <button class="btn btn-xs" style="background:${u.is_supporter ? 'rgba(249,115,22,0.15)' : 'rgba(249,115,22,0.06)'};color:#f97316;border:1px solid rgba(249,115,22,0.3);" data-act="toggleSupporter">${u.is_supporter ? 'Снять Boosty' : '🧡 Boosty'}</button>
             <button class="btn btn-danger btn-xs" data-act="delete">Удалить</button>
           </div>
         </div>
       `;
 
       const btnToggle = div.querySelector('button[data-act="toggle"]');
+      const btnToggleSupporter = div.querySelector('button[data-act="toggleSupporter"]');
       const btnDel = div.querySelector('button[data-act="delete"]');
 
       btnToggle.addEventListener('click', async () => {
@@ -1740,6 +1743,21 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_admin: makeAdmin })
+          });
+          if (!r.ok) {
+            setText(usersState, localizeDetail(d.detail) || `Ошибка ${r.status}`);
+            return;
+          }
+          await loadUsers();
+        } catch (e) {}
+      });
+
+      btnToggleSupporter.addEventListener('click', async () => {
+        try {
+          const { res: r, data: d } = await jsonFetch('/api/admin/users/' + u.id + '/set_supporter?token=' + encodeURIComponent(token), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_supporter: !u.is_supporter })
           });
           if (!r.ok) {
             setText(usersState, localizeDetail(d.detail) || `Ошибка ${r.status}`);

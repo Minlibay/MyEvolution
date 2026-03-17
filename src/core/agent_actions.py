@@ -160,18 +160,8 @@ class AgentActions:
             (1, 1), (-1, -1), (1, -1), (-1, 1)
         ]
         
-        valid_directions = []
-        for dx, dy in directions:
-            new_x = agent.position[0] + dx
-            new_y = agent.position[1] + dy
-            
-            if (0 <= new_x < environment.width and 
-                0 <= new_y < environment.height):
-                valid_directions.append((dx, dy))
-        
-        if not valid_directions:
-            return None
-        
+        valid_directions = list(directions)  # все 8 направлений всегда доступны (тороидальный мир)
+
         # Выбор направления с учетом исследования
         if random.random() < agent.exploration_rate:
             # Исследование - выбираем случайное направление
@@ -181,8 +171,10 @@ class AgentActions:
             dx, dy = AgentActions._choose_direction_towards_resources(
                 agent, environment, valid_directions
             )
-        
-        return (agent.position[0] + dx, agent.position[1] + dy)
+
+        new_x = (agent.position[0] + dx) % environment.width
+        new_y = (agent.position[1] + dy) % environment.height
+        return (new_x, new_y)
     
     @staticmethod
     def _choose_direction_towards_resources(agent: Agent, environment: Environment,

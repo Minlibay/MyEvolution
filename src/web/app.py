@@ -1379,6 +1379,10 @@ def _db_init() -> None:
             cur.execute("ALTER TABLE chat_messages ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN is_supporter INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
 
         try:
             cur.execute("ALTER TABLE user_agents ADD COLUMN stats_json TEXT NOT NULL DEFAULT '{}' ")
@@ -4342,13 +4346,14 @@ async def api_admin_users(token: str):
     conn = _db_connect()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT id, username, is_admin, created_at FROM users ORDER BY id ASC")
+        cur.execute("SELECT id, username, is_admin, is_supporter, created_at FROM users ORDER BY id ASC")
         rows = cur.fetchall() or []
         items = [
             {
                 "id": int(r["id"]),
                 "username": str(r["username"]),
                 "is_admin": bool(int(r["is_admin"] or 0)),
+                "is_supporter": bool(int(r["is_supporter"] or 0)),
                 "created_at": str(r["created_at"]),
             }
             for r in rows
@@ -4395,6 +4400,20 @@ async def api_admin_user_set_admin(user_id: int, token: str, payload: Dict[str, 
     try:
         cur = conn.cursor()
         cur.execute("UPDATE users SET is_admin = ? WHERE id = ?", (int(make_admin), int(user_id)))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/users/{user_id}/set_supporter")
+async def api_admin_user_set_supporter(user_id: int, token: str, payload: Dict[str, Any]):
+    _require_admin(token)
+    is_supporter = bool(payload.get("is_supporter", False))
+    conn = _db_connect()
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET is_supporter = ? WHERE id = ?", (int(is_supporter), int(user_id)))
         conn.commit()
         return JSONResponse({"ok": True})
     finally:
@@ -4498,12 +4517,20 @@ async def chat_ws(ws: WebSocket):
     except Exception:
         pass
 
-    # Send last 50 messages on connect
+    # Read is_supporter for this user and send last 50 messages on connect
     conn = _db_connect()
     try:
         cur = conn.cursor()
+        cur.execute("SELECT is_supporter FROM users WHERE id = ?", (int(user["uid"]),))
+        row = cur.fetchone()
+        user["is_supporter"] = bool(int((row["is_supporter"] if row else 0) or 0))
+
         cur.execute(
-            "SELECT id, username, is_admin, text, created_at FROM chat_messages ORDER BY id DESC LIMIT 50"
+            """SELECT cm.id, cm.username, cm.is_admin, cm.text, cm.created_at,
+                      COALESCE(u.is_supporter, 0) AS is_supporter
+               FROM chat_messages cm
+               LEFT JOIN users u ON cm.user_id = u.id
+               ORDER BY cm.id DESC LIMIT 50"""
         )
         rows = cur.fetchall() or []
         items = [
@@ -4511,6 +4538,7 @@ async def chat_ws(ws: WebSocket):
                 "id": int(r["id"]),
                 "username": str(r["username"]),
                 "is_admin": bool(int(r["is_admin"] or 0)),
+                "is_supporter": bool(int(r["is_supporter"] or 0)),
                 "text": str(r["text"]),
                 "created_at": str(r["created_at"]),
             }
@@ -4578,6 +4606,7 @@ async def chat_ws(ws: WebSocket):
                     "id": msg_id,
                     "username": str(user["username"]),
                     "is_admin": bool(user.get("is_admin", False)),
+                    "is_supporter": bool(user.get("is_supporter", False)),
                     "text": text,
                     "created_at": created_at,
                 },
