@@ -76,6 +76,22 @@
     .diary-entry.cat-fight { border-left:2px solid #f97316; }
     .panel-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border-subtle); }
     .panel-head h3 { margin:0; font-size:0.85rem; font-weight:600; color:var(--text-accent); }
+    .build-card { display:flex; flex-direction:column; gap:4px; padding:10px 12px; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:rgba(255,255,255,0.03); margin-bottom:8px; transition:background 0.15s,border-color 0.15s; }
+    .build-card:last-child { margin-bottom:0; }
+    .build-card.can-build { border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.06); }
+    .build-card.can-build:hover { background:rgba(99,102,241,0.12); border-color:rgba(99,102,241,0.55); }
+    .build-card-head { display:flex; align-items:center; gap:8px; }
+    .build-card-emoji { font-size:22px; line-height:1; }
+    .build-card-label { font-size:14px; font-weight:600; color:var(--text-primary); flex:1; }
+    .build-card-req { font-size:11px; color:var(--text-muted); }
+    .build-card-mats { display:flex; flex-wrap:wrap; gap:4px; }
+    .build-mat { display:inline-flex; align-items:center; gap:3px; font-size:11px; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); }
+    .build-mat.ok { color:#4ade80; border-color:rgba(74,222,128,0.25); background:rgba(74,222,128,0.06); }
+    .build-mat.short { color:#f87171; border-color:rgba(248,113,113,0.25); background:rgba(248,113,113,0.06); }
+    .build-btn { align-self:flex-end; margin-top:2px; font-size:12px; padding:4px 14px; border-radius:var(--radius-sm); border:1px solid rgba(99,102,241,0.5); background:rgba(99,102,241,0.15); color:#a5b4fc; cursor:pointer; transition:background 0.15s; }
+    .build-btn:hover:not(:disabled) { background:rgba(99,102,241,0.28); }
+    .build-btn:disabled { opacity:0.4; cursor:default; }
+    .build-skill-warn { font-size:11px; color:#fbbf24; margin-top:2px; }
   </style>
 </head>
 <body>
@@ -297,6 +313,14 @@
                 </div>
                 <span class="agp-menu-chevron">›</span>
               </div>
+              <div class="agp-menu-item" data-goto="agpBuildScreen">
+                <span class="agp-menu-icon">🏗️</span>
+                <div class="agp-menu-text">
+                  <div class="agp-menu-title">Строить</div>
+                  <div class="agp-menu-sub">Возвести здание или поселение</div>
+                </div>
+                <span class="agp-menu-chevron">›</span>
+              </div>
               <div class="agp-menu-item" id="researchTreeBtn">
                 <span class="agp-menu-icon">🌳</span>
                 <div class="agp-menu-text">
@@ -334,6 +358,17 @@
             </div>
             <div class="agp-screen-body" id="agpQuestsBody">
               <div class="text-xs text-muted" style="padding:12px 0 4px" data-i18n="ui.loading">Загрузка...</div>
+            </div>
+          </div>
+
+          <!-- ЭКРАН 6: Строительство -->
+          <div class="agp-screen" id="agpBuildScreen">
+            <div class="agp-screen-top">
+              <button class="agp-back" data-to="agpMainScreen" data-i18n="agp.back">‹ Назад</button>
+              <span class="agp-screen-title">🏗️ Строить</span>
+            </div>
+            <div class="agp-screen-body" id="agpBuildBody">
+              <div style="padding:12px 0 8px;font-size:12px;color:var(--text-muted);">Загрузка...</div>
             </div>
           </div>
 
@@ -1342,8 +1377,8 @@
     for (const d of (snapshot.dead_agents || [])) {
       const dpx = d.x * sx;
       const dpy = d.y * sy;
+      const ripH = Math.max(10, Math.min(40, sy * 2.2));
       if (ripReady) {
-        const ripH = 32;
         const ripW = Math.round((sprites.rip.naturalWidth / sprites.rip.naturalHeight) * ripH);
         ctx.save();
         ctx.globalAlpha = 0.85;
@@ -1353,7 +1388,8 @@
         ctx.save();
         ctx.globalAlpha = 0.6;
         ctx.fillStyle = '#555';
-        ctx.fillRect(dpx - 4, dpy - 8, 8, 8);
+        const rs = Math.max(3, ripH * 0.25);
+        ctx.fillRect(dpx - rs, dpy - ripH, rs * 2, rs * 2);
         ctx.restore();
       }
       // Подпись "Имя: Умер"
@@ -1364,7 +1400,7 @@
       const dtw = ctx.measureText(dText).width;
       const dbw = dtw + 10;
       const dbx = dpx - dbw / 2;
-      const dby = dpy - 46;
+      const dby = dpy - ripH - 14;
       ctx.globalAlpha = 0.7;
       ctx.fillStyle = '#1a1012';
       ctx.strokeStyle = 'rgba(180,60,60,0.4)';
@@ -1392,11 +1428,14 @@
       const px = a.x * sx;
       const py = a.y * sy;
 
+      // Размер спрайта масштабируется с размером мира (~3 тайла в высоту)
+      const drawH = Math.max(14, Math.min(48, sy * 3.0));
+
       // Подсветка своего агента
       const isMyAgent = _myUsername && a.owner_username === _myUsername;
       if (isMyAgent) {
-        const haloR = a.is_child ? 20 : 28;
-        const haloY = py - (a.is_child ? 15 : 22);
+        const haloR = a.is_child ? drawH * 0.45 : drawH * 0.64;
+        const haloY = py - (a.is_child ? drawH * 0.34 : drawH * 0.5);
         ctx.save();
         ctx.shadowColor = '#6366f1';
         ctx.shadowBlur = 18;
@@ -1411,11 +1450,12 @@
         ctx.fillStyle = '#818cf8';
         ctx.shadowColor = '#6366f1';
         ctx.shadowBlur = 8;
-        const tx = px, ty = haloY - haloR - 7;
+        const arw = drawH * 0.11, arh = drawH * 0.18;
+        const tx = px, ty = haloY - haloR - arh;
         ctx.beginPath();
         ctx.moveTo(tx, ty);
-        ctx.lineTo(tx - 5, ty + 8);
-        ctx.lineTo(tx + 5, ty + 8);
+        ctx.lineTo(tx - arw, ty + arh);
+        ctx.lineTo(tx + arw, ty + arh);
         ctx.closePath();
         ctx.fill();
         ctx.restore();
@@ -1425,7 +1465,6 @@
       if (ready) {
         const frame = chooseFrame({ ...a, facing }, snapshot.timestep);
         const r = getFrameRect(img, frame.col, frame.row);
-        const drawH = 44;
         const drawW = Math.round((r.sw / r.sh) * drawH);
 
         ctx.save();
@@ -1454,7 +1493,7 @@
       } else {
         ctx.globalAlpha = 1.0;
         ctx.fillStyle = colorForAgent(a);
-        const r = 4;
+        const r = Math.max(3, drawH * 0.09);
         ctx.beginPath();
         ctx.arc(px, py, r, 0, Math.PI * 2);
         ctx.fill();
@@ -1466,7 +1505,7 @@
         ctx.strokeStyle = 'rgba(70,160,255,0.95)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(px, py - 2, 9, 0, Math.PI * 2);
+        ctx.arc(px, py - drawH * 0.05, drawH * 0.20, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
@@ -1519,7 +1558,7 @@
       const bw = textW + padX * 2;
       const bh = 18;
       const bx = px - bw / 2;
-      const by = py - 58;
+      const by = py - drawH - 14;
       ctx.globalAlpha = 0.85;
       ctx.fillStyle = bubbleBg;
       ctx.strokeStyle = bubbleBorder;
@@ -2003,6 +2042,7 @@
       renderMyAgent(snapshot);
       updateInfoBar(snapshot);
       _checkAgentDeathNotify(snapshot);
+      if (window._buildScreenHook) window._buildScreenHook(snapshot);
 
       if (!renderLoopStarted) {
         renderLoopStarted = true;
@@ -2619,6 +2659,117 @@
   document.querySelectorAll('.agp-back').forEach(btn => {
     btn.onclick = () => agpGotoWithPoll(btn.dataset.to);
   });
+
+  // ─── Строительство — экран agpBuildScreen ─────────────────────────────────
+  const BUILDING_DATA = [
+    { key: 'storage_hut',  emoji: '🏚️', label: 'Склад',          materials: {wood:8, rope:2},               skill: 'crafting',  skill_req: 0.3,  energy: 0.20, cmd: 'склад'  },
+    { key: 'workshop',     emoji: '🔨', label: 'Мастерская',      materials: {wood:6, stone:4, rope:1},       skill: 'crafting',  skill_req: 0.5,  energy: 0.30, cmd: 'мастерскую' },
+    { key: 'garden',       emoji: '🌱', label: 'Огород',          materials: {plant:3, wood:2, clay:1},       skill: 'gathering', skill_req: 0.3,  energy: 0.15, cmd: 'огород' },
+    { key: 'well',         emoji: '🪣', label: 'Колодец',         materials: {stone:6, rope:2},               skill: 'crafting',  skill_req: 0.4,  energy: 0.25, cmd: 'колодец' },
+    { key: 'watchtower',   emoji: '🗼', label: 'Дозорная башня',  materials: {wood:10, stone:4},              skill: 'survival',  skill_req: 0.4,  energy: 0.30, cmd: 'башню'  },
+    { key: 'drying_rack',  emoji: '🥩', label: 'Сушилка',         materials: {wood:4, rope:2},                skill: 'crafting',  skill_req: 0.2,  energy: 0.12, cmd: 'сушилку' },
+    { key: 'trading_post', emoji: '🏪', label: 'Торговый пост',   materials: {wood:6, stone:4, rope:2},       skill: 'crafting',  skill_req: 0.4,  energy: 0.25, cmd: 'торговый пост' },
+  ];
+
+  const MAT_LABELS = {
+    wood: 'Дерево', stone: 'Камень', rope: 'Верёвка',
+    plant: 'Растение', clay: 'Глина', metal_ingot: 'Слиток',
+  };
+  const SKILL_LABELS = { crafting: 'Крафт', gathering: 'Сбор', survival: 'Выживание' };
+
+  async function sendBuildCmd(cmdText) {
+    const token = getToken ? getToken() : localStorage.getItem('evosim_token');
+    if (!token) return;
+    try {
+      const res = await fetch('/api/agents/message?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cmdText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast('Ошибка отправки команды', 'error'); return; }
+      showToast(data.reply || 'Команда отправлена', 'success');
+    } catch (e) {
+      showToast('Ошибка сети', 'error');
+    }
+  }
+
+  function renderBuildScreen() {
+    const body = document.getElementById('agpBuildBody');
+    if (!body) return;
+
+    // Получаем данные агента из последнего снимка
+    const agent = lastSnapshot ? findMyAgent(lastSnapshot) : null;
+
+    const inv = (agent && agent.inventory && agent.inventory.by_type) ? agent.inventory.by_type : {};
+    const skills = (agent && agent.skills) ? agent.skills : {};
+
+    let html = '';
+    for (const b of BUILDING_DATA) {
+      const skillVal = (skills[b.skill] && skills[b.skill].value) || 0;
+      const hasSkill = skillVal >= b.skill_req;
+      const matEntries = Object.entries(b.materials);
+      const allMats = matEntries.every(([k, need]) => (inv[k] || 0) >= need);
+      const canBuild = hasSkill && allMats;
+
+      html += `<div class="build-card${canBuild ? ' can-build' : ''}">
+        <div class="build-card-head">
+          <span class="build-card-emoji">${b.emoji}</span>
+          <span class="build-card-label">${b.label}</span>
+          <span class="build-card-req">${SKILL_LABELS[b.skill] || b.skill} ≥ ${Math.round(b.skill_req * 100)}%</span>
+        </div>
+        <div class="build-card-mats">`;
+      for (const [mat, need] of matEntries) {
+        const has = inv[mat] || 0;
+        const ok = has >= need;
+        html += `<span class="build-mat ${ok ? 'ok' : 'short'}">${MAT_LABELS[mat] || mat}: ${has}/${need}</span>`;
+      }
+      html += `</div>`;
+      if (!hasSkill) {
+        html += `<div class="build-skill-warn">⚠️ Нужен ${SKILL_LABELS[b.skill] || b.skill} ≥ ${Math.round(b.skill_req * 100)}% (сейчас ${Math.round(skillVal * 100)}%)</div>`;
+      }
+      const energyPct = Math.round(b.energy * 100);
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px;">
+        <span style="font-size:11px;color:var(--text-muted);">⚡ Энергия: ${energyPct}%</span>
+        <button class="build-btn" data-buildcmd="${b.cmd}"${canBuild ? '' : ' disabled'}>Построить</button>
+      </div>
+      </div>`;
+    }
+
+    // Кнопки улучшения/ремонта
+    html += `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-subtle);">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Управление зданиями рядом</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="build-btn" style="opacity:1;border-color:rgba(251,191,36,0.4);color:#fbbf24;background:rgba(251,191,36,0.08);" data-buildcmd="__upgrade">🔧 Улучшить ближайшее</button>
+        <button class="build-btn" style="opacity:1;border-color:rgba(248,113,113,0.4);color:#f87171;background:rgba(248,113,113,0.08);" data-buildcmd="__repair">🩹 Починить ближайшее</button>
+      </div>
+    </div>`;
+
+    body.innerHTML = html;
+
+    // Навешиваем обработчики
+    body.querySelectorAll('.build-btn[data-buildcmd]').forEach(btn => {
+      if (btn.disabled) return;
+      btn.addEventListener('click', () => {
+        const cmd = btn.dataset.buildcmd;
+        if (cmd === '__upgrade') sendBuildCmd('улучши');
+        else if (cmd === '__repair') sendBuildCmd('почини здание');
+        else sendBuildCmd('построй ' + cmd);
+        btn.disabled = true;
+        btn.textContent = '…';
+        setTimeout(() => renderBuildScreen(), 2000);
+      });
+    });
+  }
+
+  // Навешиваем переход на экран строительства + автообновление при снимке
+  document.querySelectorAll('.agp-menu-item[data-goto="agpBuildScreen"]').forEach(item => {
+    item.onclick = () => { agpGotoWithPoll('agpBuildScreen'); renderBuildScreen(); };
+  });
+  window._buildScreenHook = function() {
+    const screen = document.getElementById('agpBuildScreen');
+    if (screen && screen.classList.contains('active')) renderBuildScreen();
+  };
 
   // ─── Тост-уведомления ────────────────────────────────────────────────────
   function showToast(msg, type = 'info') {
