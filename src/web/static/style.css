@@ -1703,9 +1703,18 @@ tbody tr:last-child td {
     display: flex;
   }
 
-  /* Hide original tab bar (replaced by bottom nav) */
+  /* Tab bar inside drawer: compact, scrollable */
   .sidebar-tabs {
-    display: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+  .sidebar-tabs::-webkit-scrollbar { display: none; }
+  .sidebar-tab {
+    white-space: nowrap;
+    padding: 9px 12px;
+    font-size: 12px;
+    flex: none;
   }
 
   /* Show bottom nav */
@@ -1775,20 +1784,12 @@ tbody tr:last-child td {
   }
 }
 
-@media (max-width: 600px) and (min-width: 769px) {
-  .navbar {
-    padding: 0 12px;
-    height: 48px;
-  }
-
-  .sim-info-bar {
-    font-size: 0.72rem;
-    gap: 8px;
-    padding: 6px 10px;
-  }
-
-  .sidebar-panel {
-    padding: 8px;
+/* Tablet: side-by-side but compact */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .sidebar {
+    width: 300px;
+    min-width: 260px;
+    max-width: 340px;
   }
 }
 
