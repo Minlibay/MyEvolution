@@ -676,11 +676,13 @@
     fiber: new Image(),
   };
 
-  sprites.male.src = '/static/sprites/male.png';
-  sprites.female.src = '/static/sprites/female.png';
-  sprites.child_boy.src = '/static/sprites/child_boy.png';
-  sprites.child_girl.src = '/static/sprites/child_girl.png';
-  sprites.rip.src = '/static/sprites/rip.png';
+  // Agent sprites load from API (supports custom uploads from admin panel)
+  const _spV = Date.now(); // cache-bust on page load
+  sprites.male.src      = `/api/sprites/agent_male?_v=${_spV}`;
+  sprites.female.src    = `/api/sprites/agent_female?_v=${_spV}`;
+  sprites.child_boy.src = `/api/sprites/agent_child_boy?_v=${_spV}`;
+  sprites.child_girl.src= `/api/sprites/agent_child_girl?_v=${_spV}`;
+  sprites.rip.src       = `/api/sprites/agent_rip?_v=${_spV}`;
   sprites.tree.src = '/static/sprites/tree.png';
   sprites.stone.src = '/static/sprites/stone.png';
   sprites.flans.src = '/static/sprites/flans.png';
@@ -1051,14 +1053,17 @@
   }
 
   function chooseFrame(agent, timestep) {
-    // Sheet layout assumption:
-    // row 0: walk cycle (2 frames) + (unused/back)
-    // row 1: sit, gather/crouch, eat frame A, eat frame B
+    // Sheet layout: 4 cols × 2 rows
+    // row 0: ход1, ход2, спит1, спит2
+    // row 1: стоит, работает/сбор, ест1, ест2
     const action = agent.last_action || 'rest';
     const phase = timestep % 2;
 
     if (action === 'move') {
       return { col: phase, row: 0, flip: agent.facing === 'right' };
+    }
+    if (action === 'sleep') {
+      return { col: 2 + phase, row: 0, flip: false };
     }
     if (action === 'gather' || action === 'combine') {
       return { col: 1, row: 1, flip: agent.facing === 'right' };

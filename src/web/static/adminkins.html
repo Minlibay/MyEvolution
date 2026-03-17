@@ -85,6 +85,7 @@
       <div class="admin-nav-item" id="tabPrivacy" data-panel="privacyPanel"><span class="nav-icon">🔒</span> Политика</div>
       <div class="admin-nav-item" id="tabChat" data-panel="chatPanel"><span class="nav-icon">💬</span> Чат</div>
       <div class="admin-nav-item" id="tabSprites" data-panel="spritesPanel"><span class="nav-icon">🎨</span> Текстуры</div>
+      <div class="admin-nav-item" id="tabAgentSprites" data-panel="agentSpritesPanel"><span class="nav-icon">🧬</span> Персонажи</div>
       <div class="admin-nav-item" id="tabAnimals" data-panel="animalsPanel"><span class="nav-icon">🐾</span> Животные</div>
     </nav>
     <div class="admin-sidebar-footer">
@@ -515,6 +516,40 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
         </div>
       </div>
 
+      <!-- ══════ AGENT SPRITES PANEL ══════ -->
+      <div id="agentSpritesPanel" class="admin-section">
+
+        <div class="panel" style="margin-bottom:16px;">
+          <h3>🧬 Спрайты персонажей — Инструкция</h3>
+          <div class="pad">
+            <div class="muted" style="line-height:1.7;">
+              <b>Формат спрайт-листа (sprite sheet):</b><br>
+              • Изображение делится на <b>4 колонки × 2 строки</b> = 8 кадров<br>
+              • Строка 0 (верхняя) — <b>ходьба + сон</b>: ход 1, ход 2, спит 1, спит 2<br>
+              • Строка 1 (нижняя) — <b>действия</b>: стоит, работает/сбор, ест 1, ест 2<br>
+              • Формат: <b>PNG</b> или <b>GIF</b>, до <b>4 МБ</b><br>
+              • Рекомендуемый размер: <b>256×128 px</b> (64×64 на кадр) или кратный<br>
+              • Фон: прозрачный<br>
+              • Персонаж смотрит <b>влево</b> — при движении вправо зеркалится автоматически<br><br>
+              <b>Слоты:</b><br>
+              • <b>agent_male</b> — взрослый мужчина<br>
+              • <b>agent_female</b> — взрослая женщина<br>
+              • <b>agent_child_boy</b> — ребёнок (мальчик)<br>
+              • <b>agent_child_girl</b> — ребёнок (девочка)<br>
+              • <b>agent_rip</b> — надгробие (одиночный кадр или 4×2 лист)<br>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Управление спрайтами <span id="agentSpritesState" class="muted"></span></h3>
+          <div class="pad">
+            <div id="agentSpriteCards" style="display:flex;flex-direction:column;gap:20px;"></div>
+          </div>
+        </div>
+
+      </div>
+
       <!-- ══════ ANIMALS PANEL ══════ -->
       <div id="animalsPanel" class="admin-section">
         <div class="panel" style="margin-bottom:16px;">
@@ -601,6 +636,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   const tabPrivacy = document.getElementById('tabPrivacy');
   const tabChat = document.getElementById('tabChat');
   const tabSprites = document.getElementById('tabSprites');
+  const tabAgentSprites = document.getElementById('tabAgentSprites');
   const tabAnimals = document.getElementById('tabAnimals');
   const usersPanel = document.getElementById('usersPanel');
   const newsPanel = document.getElementById('newsPanel');
@@ -610,6 +646,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   const privacyPanel = document.getElementById('privacyPanel');
   const chatPanel = document.getElementById('chatPanel');
   const spritesPanel = document.getElementById('spritesPanel');
+  const agentSpritesPanel = document.getElementById('agentSpritesPanel');
   const animalsPanel = document.getElementById('animalsPanel');
 
   const bootUser = document.getElementById('bootUser');
@@ -840,6 +877,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     const isPrivacy = which === 'privacy';
     const isChat = which === 'chat';
     const isSprites = which === 'sprites';
+    const isAgentSpritesTab = which === 'agent_sprites';
     const isAnimals = which === 'animals';
     // Update sidebar nav active state
     document.querySelectorAll('.admin-nav-item').forEach(el => el.classList.remove('active'));
@@ -851,6 +889,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     if (tabPrivacy && isPrivacy) tabPrivacy.classList.add('active');
     if (tabChat && isChat) tabChat.classList.add('active');
     if (tabSprites && isSprites) tabSprites.classList.add('active');
+    if (tabAgentSprites && isAgentSpritesTab) tabAgentSprites.classList.add('active');
     if (tabAnimals && isAnimals) tabAnimals.classList.add('active');
     // Update section visibility via admin-section active class
     document.querySelectorAll('.admin-section').forEach(el => el.classList.remove('active'));
@@ -862,6 +901,7 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     if (privacyPanel && isPrivacy) privacyPanel.classList.add('active');
     if (chatPanel && isChat) chatPanel.classList.add('active');
     if (spritesPanel && isSprites) spritesPanel.classList.add('active');
+    if (agentSpritesPanel && isAgentSpritesTab) agentSpritesPanel.classList.add('active');
     if (animalsPanel && isAnimals) animalsPanel.classList.add('active');
     if (isMap) {
       drawMap();
@@ -871,6 +911,9 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
     }
     if (isSprites) {
       loadSpriteSlots();
+    }
+    if (isAgentSpritesTab) {
+      loadAgentSpriteSlots();
     }
     if (isAnimals) {
       loadAnimals();
@@ -1988,6 +2031,9 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
   if (tabSprites) {
     tabSprites.addEventListener('click', () => showTab('sprites'));
   }
+  if (tabAgentSprites) {
+    tabAgentSprites.addEventListener('click', () => showTab('agent_sprites'));
+  }
   if (tabAnimals) {
     tabAnimals.addEventListener('click', () => showTab('animals'));
   }
@@ -2194,6 +2240,356 @@ Effectiveness keys (действия): gather, attack, break, craft, move, rest
       await fetch(`/api/admin/sprites/${slot}?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
       await loadSpriteSlots();
     } catch (e) { alert('Ошибка сети'); }
+  }
+
+  // ── Agent Sprites ──────────────────────────────────────────────────
+  const agentSpriteCards = document.getElementById('agentSpriteCards');
+  const agentSpritesState = document.getElementById('agentSpritesState');
+
+  const AGENT_SPRITE_SLOTS = [
+    { slot: 'agent_male',       label: 'Мужчина',   icon: '👨' },
+    { slot: 'agent_female',     label: 'Женщина',   icon: '👩' },
+    { slot: 'agent_child_boy',  label: 'Мальчик',   icon: '👦' },
+    { slot: 'agent_child_girl', label: 'Девочка',   icon: '👧' },
+    { slot: 'agent_rip',        label: 'Надгробие', icon: '🪦' },
+  ];
+
+  // Frame layout: 4 cols × 2 rows = 8 frames
+  // Row 0: Ход 1, Ход 2, Спит 1, Спит 2
+  // Row 1: Стоит, Работает, Ест 1, Ест 2
+  const FRAME_COLS = 4;
+  const FRAME_ROWS = 2;
+  const FRAME_LABELS = [
+    'Ход 1', 'Ход 2', 'Спит 1', 'Спит 2',
+    'Стоит', 'Работает', 'Ест 1', 'Ест 2',
+  ];
+  const FRAME_DEFAULT_SIZE = 64;
+
+  // Per-slot persistent frame canvases (survive card re-render)
+  const _agentFrameCanvases = {};
+
+  function _getOrCreateFrameCanvases(slot) {
+    if (!_agentFrameCanvases[slot]) {
+      _agentFrameCanvases[slot] = Array.from({ length: FRAME_COLS * FRAME_ROWS }, () => {
+        const c = document.createElement('canvas');
+        c.width = FRAME_DEFAULT_SIZE;
+        c.height = FRAME_DEFAULT_SIZE;
+        return c;
+      });
+    }
+    return _agentFrameCanvases[slot];
+  }
+
+  function _drawCheckerFrame(c) {
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    const sz = Math.max(4, Math.floor(c.width / 8));
+    for (let y = 0; y < c.height; y += sz) {
+      for (let x = (Math.floor(y / sz) % 2) * sz; x < c.width; x += sz * 2) {
+        ctx.fillStyle = '#1e2230';
+        ctx.fillRect(x, y, sz, sz);
+      }
+    }
+    ctx.fillStyle = '#161a27';
+    ctx.fillRect(0, 0, c.width, c.height);
+    // draw X
+    ctx.strokeStyle = '#2a2f44';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(2, 2); ctx.lineTo(c.width - 2, c.height - 2);
+    ctx.moveTo(c.width - 2, 2); ctx.lineTo(2, c.height - 2);
+    ctx.stroke();
+  }
+
+  function _splitSheetIntoFrames(img, slot) {
+    const canvases = _getOrCreateFrameCanvases(slot);
+    const fw = Math.floor(img.width / FRAME_COLS);
+    const fh = Math.floor(img.height / FRAME_ROWS);
+    for (let row = 0; row < FRAME_ROWS; row++) {
+      for (let col = 0; col < FRAME_COLS; col++) {
+        const idx = row * FRAME_COLS + col;
+        const c = canvases[idx];
+        c.width = fw;
+        c.height = fh;
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, fw, fh);
+        ctx.drawImage(img, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
+      }
+    }
+  }
+
+  function _assembleSheet(slot) {
+    const canvases = _agentFrameCanvases[slot];
+    if (!canvases) return null;
+    const fw = canvases[0].width;
+    const fh = canvases[0].height;
+    const sheet = document.createElement('canvas');
+    sheet.width = fw * FRAME_COLS;
+    sheet.height = fh * FRAME_ROWS;
+    const ctx = sheet.getContext('2d');
+    for (let row = 0; row < FRAME_ROWS; row++) {
+      for (let col = 0; col < FRAME_COLS; col++) {
+        ctx.drawImage(canvases[row * FRAME_COLS + col], col * fw, row * fh);
+      }
+    }
+    return sheet;
+  }
+
+  function _buildAgentCard(slotDef, isLoaded) {
+    const { slot, label, icon } = slotDef;
+    const canvases = _getOrCreateFrameCanvases(slot);
+
+    const card = document.createElement('div');
+    card.className = 'panel';
+    card.style.cssText = 'margin:0;';
+    card.dataset.slot = slot;
+
+    // Header
+    const h3 = document.createElement('h3');
+    h3.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:0;';
+    h3.innerHTML = `
+      <span>${icon}</span>
+      ${escapeHtml(label)}
+      <span class="muted mono" style="font-size:11px;font-weight:normal;">${escapeHtml(slot)}</span>
+      <span class="dot ${isLoaded ? 'ok' : ''}" style="margin-left:4px;"
+            title="${isLoaded ? 'Загружен' : 'Дефолтный'}"></span>
+    `;
+    card.appendChild(h3);
+
+    const pad = document.createElement('div');
+    pad.className = 'pad';
+    pad.style.paddingTop = '10px';
+
+    // Hint row
+    const hint = document.createElement('div');
+    hint.className = 'muted';
+    hint.style.cssText = 'font-size:11px;margin-bottom:10px;line-height:1.5;';
+    hint.innerHTML =
+      'Нажмите на кадр, чтобы загрузить его <b>отдельно</b>. ' +
+      'Строка&nbsp;1: ходьба + сон. Строка&nbsp;2: стоит + работает + ест.';
+    pad.appendChild(hint);
+
+    // Frame grid: 2 rows × 4 cols
+    const grid = document.createElement('div');
+    grid.style.cssText =
+      'display:grid;grid-template-columns:repeat(4,64px);gap:8px;';
+
+    for (let i = 0; i < FRAME_COLS * FRAME_ROWS; i++) {
+      const c = canvases[i];
+      c.style.cssText =
+        'image-rendering:pixelated;border:1px solid var(--border-subtle);' +
+        'border-radius:4px;cursor:pointer;width:64px;height:64px;' +
+        'display:block;transition:border-color .15s,box-shadow .15s;';
+      c.title = `${FRAME_LABELS[i]} — нажмите для загрузки`;
+      c.onmouseenter = () => {
+        c.style.borderColor = '#5b8ef5';
+        c.style.boxShadow = '0 0 0 2px #5b8ef544';
+      };
+      c.onmouseleave = () => {
+        c.style.borderColor = '';
+        c.style.boxShadow = '';
+      };
+
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'image/*';
+      fileInput.style.display = 'none';
+      c.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', () => _loadSingleFrame(slot, i, fileInput, card));
+
+      const lbl = document.createElement('div');
+      lbl.style.cssText =
+        'font-size:10px;color:var(--text-muted);text-align:center;line-height:1.3;margin-top:2px;';
+      lbl.textContent = FRAME_LABELS[i];
+
+      const cell = document.createElement('div');
+      cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;';
+      cell.appendChild(c);
+      cell.appendChild(fileInput);
+      cell.appendChild(lbl);
+      grid.appendChild(cell);
+    }
+    pad.appendChild(grid);
+
+    // Divider + sheet controls
+    const ctrl = document.createElement('div');
+    ctrl.style.cssText =
+      'margin-top:14px;padding-top:12px;border-top:1px solid var(--border-subtle);' +
+      'display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
+
+    const sheetLabel = document.createElement('span');
+    sheetLabel.className = 'muted';
+    sheetLabel.style.fontSize = '11px';
+    sheetLabel.textContent = 'Загрузить готовый лист:';
+
+    const sheetInput = document.createElement('input');
+    sheetInput.type = 'file';
+    sheetInput.accept = 'image/png';
+    sheetInput.className = 'sheet-file-input';
+    sheetInput.dataset.slot = slot;
+    sheetInput.style.cssText = 'font-size:11px;max-width:170px;';
+
+    const sheetBtn = document.createElement('button');
+    sheetBtn.className = 'btn btn-secondary btn-sm';
+    sheetBtn.textContent = 'Разобрать на кадры';
+    sheetBtn.addEventListener('click', () => _loadSheetIntoFrames(slot, sheetInput, card));
+
+    const assembleBtn = document.createElement('button');
+    assembleBtn.className = 'btn btn-primary btn-sm';
+    assembleBtn.textContent = 'Применить и загрузить';
+    assembleBtn.addEventListener('click', () => _assembleAndUpload(slot, card));
+
+    ctrl.appendChild(sheetLabel);
+    ctrl.appendChild(sheetInput);
+    ctrl.appendChild(sheetBtn);
+    ctrl.appendChild(assembleBtn);
+
+    if (isLoaded) {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger btn-xs';
+      delBtn.textContent = 'Сбросить';
+      delBtn.addEventListener('click', () => _deleteAgentSprite(slot, label));
+      ctrl.appendChild(delBtn);
+    }
+
+    const statusEl = document.createElement('span');
+    statusEl.className = 'agent-sprite-status muted';
+    statusEl.dataset.slot = slot;
+    statusEl.style.fontSize = '12px';
+    ctrl.appendChild(statusEl);
+
+    pad.appendChild(ctrl);
+    card.appendChild(pad);
+    return card;
+  }
+
+  function _cardStatus(card, slot, msg, color) {
+    const el = card.querySelector(`.agent-sprite-status[data-slot="${slot}"]`);
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = color || '';
+  }
+
+  function _loadSingleFrame(slot, frameIdx, input, card) {
+    if (!input.files.length) return;
+    const file = input.files[0];
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const c = _agentFrameCanvases[slot][frameIdx];
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      _cardStatus(card, slot, `«${FRAME_LABELS[frameIdx]}» обновлён`, '#5b8ef5');
+      input.value = '';
+    };
+    img.onerror = () => {
+      _cardStatus(card, slot, 'Не удалось загрузить', 'var(--danger)');
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  }
+
+  function _loadSheetIntoFrames(slot, input, card) {
+    if (!input.files.length) return;
+    const file = input.files[0];
+    if (file.type !== 'image/png') {
+      _cardStatus(card, slot, 'Только PNG', 'var(--danger)');
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      _splitSheetIntoFrames(img, slot);
+      URL.revokeObjectURL(url);
+      _cardStatus(card, slot, `Лист разобран на ${FRAME_COLS * FRAME_ROWS} кадров`, '#5b8ef5');
+      input.value = '';
+    };
+    img.onerror = () => {
+      _cardStatus(card, slot, 'Ошибка чтения файла', 'var(--danger)');
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  }
+
+  async function _assembleAndUpload(slot, card) {
+    const token = getToken();
+    if (!token) { alert('Нужно войти'); return; }
+    const sheet = _assembleSheet(slot);
+    if (!sheet) return;
+    _cardStatus(card, slot, 'Сборка…', '');
+    sheet.toBlob(async (blob) => {
+      if (!blob) { _cardStatus(card, slot, 'Ошибка сборки', 'var(--danger)'); return; }
+      const fd = new FormData();
+      fd.append('file', new File([blob], `${slot}.png`, { type: 'image/png' }));
+      try {
+        const res = await fetch(
+          `/api/admin/sprites/${slot}?token=${encodeURIComponent(token)}`,
+          { method: 'POST', body: fd }
+        );
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          _cardStatus(card, slot, localizeDetail(d.detail) || 'Ошибка', 'var(--danger)');
+          return;
+        }
+        _cardStatus(card, slot, 'Загружено ✓', 'var(--success)');
+        await loadAgentSpriteSlots();
+      } catch (e) {
+        _cardStatus(card, slot, 'Ошибка сети', 'var(--danger)');
+      }
+    }, 'image/png');
+  }
+
+  async function loadAgentSpriteSlots() {
+    if (!agentSpriteCards) return;
+    if (agentSpritesState) agentSpritesState.textContent = '…';
+    try {
+      const { res, data } = await jsonFetch('/api/sprites', { cache: 'no-store' });
+      if (!res.ok) {
+        if (agentSpritesState) agentSpritesState.textContent = 'Ошибка';
+        return;
+      }
+      const loaded = data.loaded || {};
+      if (agentSpritesState) agentSpritesState.textContent = '';
+      agentSpriteCards.innerHTML = '';
+
+      for (const slotDef of AGENT_SPRITE_SLOTS) {
+        const isLoaded = !!loaded[slotDef.slot];
+        const card = _buildAgentCard(slotDef, isLoaded);
+        agentSpriteCards.appendChild(card);
+
+        const canvases = _getOrCreateFrameCanvases(slotDef.slot);
+        if (isLoaded) {
+          // Load existing sheet and split into per-frame canvases
+          const imgUrl = `/api/sprites/${slotDef.slot}?_=${Date.now()}`;
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => _splitSheetIntoFrames(img, slotDef.slot);
+          img.onerror = () => canvases.forEach(c => _drawCheckerFrame(c));
+          img.src = imgUrl;
+        } else {
+          canvases.forEach(c => _drawCheckerFrame(c));
+        }
+      }
+    } catch (e) {
+      if (agentSpritesState) agentSpritesState.textContent = 'Ошибка сети';
+    }
+  }
+
+  async function _deleteAgentSprite(slot, label) {
+    if (!confirm(`Сбросить спрайт "${label}" к дефолтному?`)) return;
+    const token = getToken();
+    if (!token) return;
+    if (agentSpritesState) agentSpritesState.textContent = 'Сброс…';
+    const canvases = _agentFrameCanvases[slot];
+    if (canvases) canvases.forEach(c => _drawCheckerFrame(c));
+    try {
+      await fetch(`/api/admin/sprites/${slot}?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
+      await loadAgentSpriteSlots();
+    } catch (e) {
+      if (agentSpritesState) agentSpritesState.textContent = 'Ошибка сети';
+    }
   }
 
   // ── Animals ────────────────────────────────────────────────────────

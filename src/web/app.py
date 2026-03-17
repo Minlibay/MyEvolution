@@ -33,6 +33,7 @@ from ..core.simulation import Simulation
 from ..core.agent import AgentFactory, SKILL_RU
 from ..core.objects import ObjectFactory
 from ..core.tools import ToolFactory
+from ..core.agent_actions import BUILDING_RECIPES as _BUILDING_RECIPES
 
 
 app = FastAPI(title="Evolution Simulation")
@@ -769,7 +770,97 @@ def _apply_dynasty_to_agent(agent, uid: int) -> None:
         pass
 
 
-def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
+_MAT_RU: Dict[str, str] = {
+    'wood': 'дерево', 'stone': 'камень', 'rope': 'верёвку',
+    'bone': 'кость', 'fiber': 'волокно', 'clay': 'глину',
+    'ore': 'руду', 'leather': 'кожу', 'herb': 'траву',
+    'berry': 'ягоды', 'plant': 'растение', 'fish': 'рыбу',
+    'metal_ingot': 'слиток', 'cooked_food': 'еду',
+}
+
+_SKILL_RU_SHORT: Dict[str, str] = {
+    'crafting': 'крафт', 'gathering': 'сбор', 'survival': 'выживание',
+    'cooking': 'готовка', 'hunting': 'охота', 'communication': 'общение',
+}
+
+
+def _agent_inv_counts(agent, env) -> Dict[str, int]:
+    """Возвращает {тип: количество} предметов в инвентаре агента."""
+    counts: Dict[str, int] = {}
+    if env is None:
+        return counts
+    for oid in getattr(agent, 'inventory', []) or []:
+        obj = env.objects.get(oid)
+        if obj:
+            counts[obj.type] = counts.get(obj.type, 0) + int(getattr(obj, 'quantity', 1) or 1)
+    return counts
+
+
+def _check_cmd_feasibility(agent, env, cmd_action: str, craft_target: Optional[str],
+                            build_target: Optional[str]) -> Optional[str]:
+    """
+    Проверяет выполнимость команды. Возвращает строку-предупреждение или None.
+    Агент всё равно попытается выполнить команду — это просто честный комментарий.
+    """
+    inv = _agent_inv_counts(agent, env)
+
+    def _ru(mat: str, qty: int) -> str:
+        return f"{_MAT_RU.get(mat, mat)} ×{qty}"
+
+    # ── Строительство здания ──
+    if cmd_action == 'build' and build_target:
+        recipe = _BUILDING_RECIPES.get(build_target)
+        if recipe:
+            missing = []
+            for mat, need in recipe.get('materials', {}).items():
+                have = inv.get(mat, 0)
+                if have < need:
+                    missing.append(_ru(mat, need - have))
+            sk_name, sk_req = recipe.get('skill', ('crafting', 0.0))
+            cur_sk = float(agent.skills.get(sk_name)) if hasattr(agent, 'skills') else 0.0
+            label = recipe.get('label', build_target)
+            reasons = []
+            if missing:
+                reasons.append(f"не хватает: {', '.join(missing)}")
+            if cur_sk < sk_req:
+                lvl_need = int(round(sk_req * 10))
+                lvl_have = int(round(cur_sk * 10))
+                reasons.append(f"нужен {_SKILL_RU_SHORT.get(sk_name, sk_name)} {lvl_need}/10 (у меня {lvl_have}/10)")
+            if reasons:
+                return f"Хочу построить «{label}», но {'; '.join(reasons)}. Всё равно попробую."
+
+    # ── Крафт инструмента/предмета ──
+    if cmd_action == 'combine' and craft_target:
+        recipe_key = ToolFactory.RECIPE_BY_KIND.get(craft_target)
+        if recipe_key:
+            recipe = ToolFactory.NAMED_RECIPES.get(recipe_key, {})
+            required: Dict[str, int] = {}
+            for token in recipe_key:
+                if token.startswith('obj:'):
+                    mat = token[4:]
+                    required[mat] = required.get(mat, 0) + 1
+            missing = []
+            for mat, need in required.items():
+                have = inv.get(mat, 0)
+                if have < need:
+                    missing.append(_ru(mat, need - have))
+            sk_missing = []
+            for sk, val in (recipe.get('skill_req') or {}).items():
+                cur = float(agent.skills.get(sk)) if hasattr(agent, 'skills') else 0.0
+                if cur < val:
+                    sk_missing.append(f"{_SKILL_RU_SHORT.get(sk, sk)} {int(round(val*10))}/10")
+            reasons = []
+            if missing:
+                reasons.append(f"не хватает: {', '.join(missing)}")
+            if sk_missing:
+                reasons.append(f"нужны навыки: {', '.join(sk_missing)}")
+            if reasons:
+                return f"Попробую скрафтить, но {'; '.join(reasons)}."
+
+    return None
+
+
+def _generate_agent_reply(agent, user_text: str, env=None) -> Optional[str]:
     """Генерирует ответ агента на сообщение пользователя (или None — игнорирует)."""
     p = getattr(agent, "personality", None)
     es = getattr(agent, "emotional_state", None)
@@ -792,84 +883,7 @@ def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
 
     u = user_text.lower()
 
-    # Игнорировать только при очень критическом состоянии + интроверсия,
-    # и только если нет прямых команд (привет/как ты/найди и т.д.)
-    is_direct = any(w in u for w in [
-        "привет", "здравствуй", "как ты", "как дела", "что делаешь",
-        "найди", "иди", "пойди", "принеси", "сделай", "помоги",
-        "отдохни", "попей", "поешь", "исследуй", "пообщайся",
-    ])
-    if not is_direct:
-        respond_prob = 0.55 + agreeableness * 0.3 + extraversion * 0.15
-        if random.random() > respond_prob:
-            return None
-
-    # Критическое состояние — короткие ответы
-    if hunger > 0.85:
-        return random.choice([
-            "Есть хочу… не до разговоров.",
-            "Голодный я. Потом.",
-            "Найти бы что поесть.",
-        ])
-    if health < 0.25:
-        return random.choice([
-            "Плохо мне. Говорить трудно.",
-            "Больно…",
-            "Не сейчас. Мне плохо.",
-        ])
-    if energy < 0.15:
-        return random.choice([
-            "Устал очень. Дай отдохнуть.",
-            "Сил нет…",
-            "Сплю почти. Позже.",
-        ])
-
-    # Приветствия
-    if any(w in u for w in ["привет", "здравствуй", "hello", "hi", "эй", "ау"]):
-        if mood > 0.3 and extraversion > 0.5:
-            return random.choice([
-                "Привет! Рад тебя слышать.",
-                "О, привет! Хорошо что ты здесь.",
-                "Приветствую! Как ты?",
-            ])
-        elif mood > 0.3:
-            return random.choice(["Привет.", "А, это ты. Привет.", "Мм. Привет."])
-        else:
-            return random.choice(["Привет… день непростой.", "А, привет.", "Угу."])
-
-    # Вопросы о состоянии
-    if any(w in u for w in ["как ты", "как дела", "что делаешь", "чем занят", "всё хорошо", "ты как"]):
-        action_map = {
-            "move": "хожу, ищу чего-нибудь",
-            "gather": "собираю ресурсы",
-            "consume": "ем наконец-то",
-            "craft": "мастерю кое-что",
-            "rest": "отдыхаю немного",
-            "communicate": "разговариваю с другими",
-            "hunt": "охочусь",
-            "flee": "убегаю от опасности",
-        }
-        act_str = action_map.get(last_act, "просто существую")
-        if mood > 0.4:
-            return random.choice([
-                f"Хорошо! {act_str.capitalize()} сейчас.",
-                f"Неплохо. {act_str.capitalize()}.",
-                f"Всё отлично. {act_str.capitalize()}.",
-            ])
-        elif mood > -0.2:
-            return random.choice([
-                f"Бывало лучше. {act_str.capitalize()}.",
-                f"Так себе. {act_str.capitalize()}.",
-                f"Нормально. {act_str.capitalize()}.",
-            ])
-        else:
-            return random.choice([
-                "Тяжело. Устал.",
-                "Не очень. Но держусь.",
-                "Всё сложно сейчас.",
-            ])
-
-    # Команды / просьбы
+    # ── КОМАНДЫ — обрабатываются первыми; агент всегда слушается владельца ──
     _CMD_KEYWORDS = [
         "иди", "пойди", "найди", "принеси", "сделай", "помоги", "возьми", "атакуй", "беги",
         "отдохни", "восстановись", "попей", "поешь", "исследуй", "пообщайся", "поговори",
@@ -1026,44 +1040,129 @@ def _generate_agent_reply(agent, user_text: str) -> Optional[str]:
             elif any(w in u for w in ["гриб", "mushroom"]):
                 _gather_target = "mushroom"
 
+        # ── Всегда устанавливаем команду (владелец всегда в приоритете) ──
+        if _cmd_action:
+            setattr(agent, 'pending_command', _cmd_action)
+            setattr(agent, 'pending_command_ticks', _cmd_ticks)
+            if _craft_target:
+                setattr(agent, 'pending_craft_target', _craft_target)
+            if _gather_target:
+                setattr(agent, 'pending_gather_target', _gather_target)
+            if _build_target:
+                setattr(agent, 'pending_build_target', _build_target)
+
+        # ── Проверяем выполнимость и формируем ответ ──
+        warn = _check_cmd_feasibility(agent, env, _cmd_action or '', _craft_target, _build_target)
+
+        # Заметка о критическом состоянии (не блокирует команду, только предупреждает)
+        state_note = ""
+        if health < 0.2:
+            state_note = " Я ранен, но постараюсь."
+        elif hunger > 0.82:
+            state_note = " Голоден, но выполню."
+        elif energy < 0.18:
+            state_note = " Устал, но попробую."
+
+        if warn:
+            return warn + state_note
+
+        # Тон ответа зависит от личности
         if agreeableness > 0.65:
-            if _cmd_action:
-                setattr(agent, 'pending_command', _cmd_action)
-                setattr(agent, 'pending_command_ticks', _cmd_ticks)
-                if _craft_target:
-                    setattr(agent, 'pending_craft_target', _craft_target)
-                if _gather_target:
-                    setattr(agent, 'pending_gather_target', _gather_target)
-                if _build_target:
-                    setattr(agent, 'pending_build_target', _build_target)
-            return random.choice([
-                "Попробую! Не обещаю, но постараюсь.",
-                "Хорошо, посмотрю что смогу.",
-                "Ладно, попытаюсь.",
-                "Хорошо! Сделаю что могу.",
-            ])
+            replies = [
+                "Хорошо, займусь этим.",
+                "Понял! Постараюсь.",
+                "Сделаю.",
+                "Ладно, попробую.",
+            ]
         elif agreeableness > 0.35:
-            if _cmd_action and random.random() < 0.5:
-                setattr(agent, 'pending_command', _cmd_action)
-                setattr(agent, 'pending_command_ticks', max(1, _cmd_ticks - 2))
-                if _craft_target:
-                    setattr(agent, 'pending_craft_target', _craft_target)
-                if _gather_target:
-                    setattr(agent, 'pending_gather_target', _gather_target)
-                if _build_target:
-                    setattr(agent, 'pending_build_target', _build_target)
+            replies = [
+                "Ладно.",
+                "Хорошо.",
+                "Попробую.",
+                "Займусь этим.",
+            ]
+        else:  # упрямый, но всё равно слушается
+            replies = [
+                "Ну ладно, раз говоришь.",
+                "Хорошо, хорошо. Сделаю.",
+                "Выполню. Хотя сам знаю лучше.",
+                "Ладно, займусь.",
+            ]
+        return random.choice(replies) + state_note
+
+    # ── Не-командные сообщения ──
+    # Агент может игнорировать флуд в зависимости от личности
+    is_direct = any(w in u for w in [
+        "привет", "здравствуй", "как ты", "как дела", "что делаешь",
+    ])
+    if not is_direct:
+        respond_prob = 0.55 + agreeableness * 0.3 + extraversion * 0.15
+        if random.random() > respond_prob:
+            return None
+
+    # Критическое состояние — короткие ответы (только для не-команд)
+    if hunger > 0.85:
+        return random.choice([
+            "Есть хочу… не до разговоров.",
+            "Голодный я. Потом.",
+            "Найти бы что поесть.",
+        ])
+    if health < 0.25:
+        return random.choice([
+            "Плохо мне. Говорить трудно.",
+            "Больно…",
+            "Не сейчас. Мне плохо.",
+        ])
+    if energy < 0.15:
+        return random.choice([
+            "Устал очень. Дай отдохнуть.",
+            "Сил нет…",
+            "Сплю почти. Позже.",
+        ])
+
+    # Приветствия
+    if any(w in u for w in ["привет", "здравствуй", "hello", "hi", "эй", "ау"]):
+        if mood > 0.3 and extraversion > 0.5:
             return random.choice([
-                "Может быть.",
-                "Посмотрим.",
-                "Я сам знаю что делать.",
-                "Возможно.",
+                "Привет! Рад тебя слышать.",
+                "О, привет! Хорошо что ты здесь.",
+                "Приветствую! Как ты?",
+            ])
+        elif mood > 0.3:
+            return random.choice(["Привет.", "А, это ты. Привет.", "Мм. Привет."])
+        else:
+            return random.choice(["Привет… день непростой.", "А, привет.", "Угу."])
+
+    # Вопросы о состоянии
+    if any(w in u for w in ["как ты", "как дела", "что делаешь", "чем занят", "всё хорошо", "ты как"]):
+        action_map = {
+            "move": "хожу, ищу чего-нибудь",
+            "gather": "собираю ресурсы",
+            "consume": "ем наконец-то",
+            "craft": "мастерю кое-что",
+            "rest": "отдыхаю немного",
+            "communicate": "разговариваю с другими",
+            "hunt": "охочусь",
+            "flee": "убегаю от опасности",
+        }
+        act_str = action_map.get(last_act, "просто существую")
+        if mood > 0.4:
+            return random.choice([
+                f"Хорошо! {act_str.capitalize()} сейчас.",
+                f"Неплохо. {act_str.capitalize()}.",
+                f"Всё отлично. {act_str.capitalize()}.",
+            ])
+        elif mood > -0.2:
+            return random.choice([
+                f"Бывало лучше. {act_str.capitalize()}.",
+                f"Так себе. {act_str.capitalize()}.",
+                f"Нормально. {act_str.capitalize()}.",
             ])
         else:
             return random.choice([
-                "Не командуй мне.",
-                "Я сам решаю.",
-                "Не твоё дело.",
-                "Нет.",
+                "Тяжело. Устал.",
+                "Не очень. Но держусь.",
+                "Всё сложно сейчас.",
             ])
 
     # Вопросы о мире / философия
@@ -1166,11 +1265,16 @@ _SPRITE_MIME_MAP = {
 }
 
 def _find_sprite_path(slot: str):
-    """Возвращает (Path, mime) найденного файла спрайта или (None, None)."""
+    """Возвращает (Path, mime) найденного файла спрайта или (None, None).
+    Для слотов агентов: сначала ищет в data/sprites/, затем fallback на статику."""
     for mime, ext in _SPRITE_MIME_MAP.items():
         p = _SPRITES_DIR / f"{slot}{ext}"
         if p.exists():
             return p, mime
+    # Fallback: для агентских слотов отдаём статичный файл по умолчанию
+    default = _AGENT_SLOT_DEFAULTS.get(slot)
+    if default and default.exists():
+        return default, "image/png"
     return None, None
 _ANIMALS_DIR = Path(__file__).resolve().parents[2] / "data" / "animals"
 _ANIMALS_DIR.mkdir(parents=True, exist_ok=True)
@@ -3413,7 +3517,13 @@ async def api_agents_message(request: Request, token: str, payload: Dict[str, An
     reply = None
     ignored = True
     if agent is not None:
-        reply = _generate_agent_reply(agent, text)
+        # Передаём окружение для проверки инвентаря в командах
+        _env = None
+        try:
+            _env = controller.simulation.state.environment
+        except Exception:
+            pass
+        reply = _generate_agent_reply(agent, text, _env)
         if reply:
             ignored = False
             _agent_chat_push(uid, "agent", reply)
@@ -3613,10 +3723,23 @@ async def api_admin_chat_ban_by_name(token: str, payload: Dict[str, Any]):
 
 # ── Sprites upload/serve API ────────────────────────────────────────────
 _SPRITE_SLOTS = [
+    # Terrain / world
     "ground", "ground_forest", "ground_desert", "ground_mountain", "ground_swamp",
     "ground_winter", "ground_winter_forest", "ground_winter_desert",
     "water", "campfire",
+    # Agent character sprites (sprite sheets 4×2)
+    "agent_male", "agent_female", "agent_child_boy", "agent_child_girl", "agent_rip",
 ]
+
+# Default fallbacks for agent slots → static files shipped with the game
+_STATIC_SPRITES_DIR = Path(__file__).resolve().parent / "static" / "sprites"
+_AGENT_SLOT_DEFAULTS: Dict[str, Path] = {
+    "agent_male":      _STATIC_SPRITES_DIR / "male.png",
+    "agent_female":    _STATIC_SPRITES_DIR / "female.png",
+    "agent_child_boy": _STATIC_SPRITES_DIR / "child_boy.png",
+    "agent_child_girl":_STATIC_SPRITES_DIR / "child_girl.png",
+    "agent_rip":       _STATIC_SPRITES_DIR / "rip.png",
+}
 
 
 @app.get("/api/sprites/{slot}")

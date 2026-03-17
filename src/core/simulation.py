@@ -790,31 +790,30 @@ class SimulationState:
                 if _visit_target:
                     setattr(agent, '_move_target', _visit_target)
 
-            # Команда владельца — переопределяет выбранное действие
+            # Команда владельца — всегда переопределяет решение ИИ
             _pending = getattr(agent, 'pending_command', None)
             _pending_ticks = int(getattr(agent, 'pending_command_ticks', 0))
             if _pending and _pending_ticks > 0:
                 _new_ticks = _pending_ticks - 1
-                # Используем команду если действие доступно или всегда разрешено (rest/sleep/move)
-                if _pending in available_actions or _pending in ('rest', 'sleep', 'move'):
-                    action = _pending
-                    # Передаём целевой крафт/сбор
-                    if _pending == 'combine':
-                        _ct = getattr(agent, 'pending_craft_target', None)
-                        if _ct:
-                            setattr(agent, '_craft_target_kind', _ct)
-                    if _pending == 'gather':
-                        _gt = getattr(agent, 'pending_gather_target', None)
-                        if _gt:
-                            setattr(agent, '_gather_target_type', _gt)
-                    if _pending == 'build':
-                        _bt = getattr(agent, 'pending_build_target', None)
-                        if _bt:
-                            setattr(agent, '_build_target', _bt)
-                    if _pending == 'upgrade':
-                        _ut = getattr(agent, 'pending_upgrade_target', None)
-                        if _ut:
-                            setattr(agent, '_upgrade_target', _ut)
+                # Выполняем команду владельца безусловно; action_executor сам обработает отказ
+                action = _pending
+                # Передаём целевые параметры
+                if _pending == 'combine':
+                    _ct = getattr(agent, 'pending_craft_target', None)
+                    if _ct:
+                        setattr(agent, '_craft_target_kind', _ct)
+                if _pending == 'gather':
+                    _gt = getattr(agent, 'pending_gather_target', None)
+                    if _gt:
+                        setattr(agent, '_gather_target_type', _gt)
+                if _pending == 'build':
+                    _bt = getattr(agent, 'pending_build_target', None)
+                    if _bt:
+                        setattr(agent, '_build_target', _bt)
+                if _pending == 'upgrade':
+                    _ut = getattr(agent, 'pending_upgrade_target', None)
+                    if _ut:
+                        setattr(agent, '_upgrade_target', _ut)
                 setattr(agent, 'pending_command_ticks', _new_ticks)
                 if _new_ticks <= 0:
                     setattr(agent, 'pending_command', None)
